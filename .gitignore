@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Config files (user-specific)
+.config/users.json
+.config/admin.json
+.config/shared_settings.json
+
+# User runtime state
+User/RuntimeState/
+
+# Logs
+log/
+*.log
+
+# Backup files
+*.bak
+*.bak_*
+*_bak/
+*backup/
+*_backup/
+
+# Temporary files
+*.tmp
+temp_*.txt
+err*.txt
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Python compiled
+*.pyc
+.Python

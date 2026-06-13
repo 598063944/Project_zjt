@@ -1,0 +1,378 @@
+{
+  "business_rules": {
+    "crm_option_mappings": {
+      "field_jv2dq__c": {
+        "label": "订单产品类型",
+        "mappings": {
+          "02y6x24jy": "S6500扫描头附件（小扫描头）",
+          "0Qw52a1Ze": "X光机",
+          "0am3Igof1": "牙医管家旗舰版",
+          "0lj6b41c6": "Matrix 6600 (16*16)",
+          "1AfH1457l": "牙医管家基础版",
+          "1h3SuZVdQ": "Matrix 6600（公立）",
+          "1vJz3hyFx": "Dentrix 50",
+          "23tc4jhZ0": "S6500推车",
+          "2fica49r6": "S6000扫描头附件",
+          "2fvN4Tcvs": "F200",
+          "39O5ka94w": "Dentrix 55 云",
+          "5B5uau0Qr": "S6500扫描头附件（标准扫描头）",
+          "76kKpG9wr": "IP板",
+          "Matrix5600（二合一）": "Matrix5600（二合一）",
+          "P4a92gt1C": "S6500临床版推车",
+          "PY2tz6Kl5": "S6500（技工版）",
+          "U9hzzg4e2": "Dentrix 55 NX",
+          "YfevvD0Lo": "Dentrix 55 OEM",
+          "ec13vjUsR": "Matrix 5600 (15*15)",
+          "hm81o5Hga": "F220C",
+          "i30IepnSh": "F220",
+          "jrcgaGwa2": "Dentrix 50 Max",
+          "oHQaTy0cs": "R150",
+          "option_example_options__c": "牙医管家单账号",
+          "option_matrix5600_without_head_si__c": "Matrix5600（二合一）",
+          "option_matrix_7000_face_scan__c": "Matrix 7000（面扫）",
+          "option_matrix_7000_xray_face_scan__c": "Matrix 7000（X光机+面扫）",
+          "option_matrix_7000_xray_machine__c": "Matrix 7000（X光机）",
+          "option_matrix_7600_xray_face_scan__c": "Matrix 7600（X光机+面扫）",
+          "option_s10__c": "S10",
+          "r6ghbhW1t": "Matrix 5000 (15*9)标配版D",
+          "sjblFF9I1": "S6500（临床版）",
+          "x18771w1u": "Matrix 6600 (16*10)"
+        }
+      },
+      "record_7y9oP__c": {
+        "label": "业务类型",
+        "mappings": {
+          "default__c": "CBCT事业部销售订单",
+          "record_0a1lw__c": "SaaS事业部销售订单",
+          "record_7y9oP__c": "海外事业部销售订单",
+          "record_PglSw__c": "口扫事业部销售订单",
+          "record_f06Q4__c": "小产品事业部销售订单"
+        }
+      },
+      "life_status": {
+        "label": "生命周期状态",
+        "mappings": {
+          "normal": "正常"
+        }
+      }
+    },
+    "crm_special_columns": [
+      {
+        "name": "ERP订单号",
+        "format": "{}"
+      },
+      {
+        "name": "产品合计",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品备注",
+        "format": ""
+      },
+      {
+        "name": "保修期",
+        "format": ""
+      },
+      {
+        "name": "创建时间",
+        "format": "%Y-%m-%d"
+      },
+      {
+        "name": "匹配价格",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "发货地址",
+        "format": ""
+      },
+      {
+        "name": "地址",
+        "format": ""
+      },
+      {
+        "name": "备注",
+        "format": ""
+      },
+      {
+        "name": "大写",
+        "format": ""
+      },
+      {
+        "name": "客户名称",
+        "format": ""
+      },
+      {
+        "name": "手机",
+        "format": "{}"
+      },
+      {
+        "name": "规格型号",
+        "format": ""
+      }
+    ],
+    "field_mapping": {
+      "Q1台数": "Q1Task",
+      "Q2台数": "Q2Task",
+      "Q3台数": "Q3Task",
+      "Q4台数": "Q4Task",
+      "产品价格1": "Price1",
+      "产品价格2": "Price2",
+      "产品价格3": "Price3",
+      "产品价格4": "Price4",
+      "产品名称1": "Productname1",
+      "产品名称2": "Productname2",
+      "产品名称3": "Productname3",
+      "产品名称4": "Productname4",
+      "产品型号": "productmodel",
+      "产品规格1": "SoftwareVersion1",
+      "产品规格2": "SoftwareVersion2",
+      "产品规格3": "SoftwareVersion3",
+      "产品规格4": "SoftwareVersion4",
+      "产品金额1": "Totalamount1",
+      "产品金额2": "Totalamount2",
+      "产品金额3": "Totalamount3",
+      "产品金额4": "Totalamount4",
+      "优惠金额1": "Discountamount1",
+      "优惠金额2": "Discountamount2",
+      "优惠金额3": "Discountamount3",
+      "优惠金额4": "Discountamount4",
+      "保证金（大写）": "Marginwords",
+      "保证金（数字）": "Marginamount",
+      "全年台数": "AnnualTask",
+      "协议号（公式）": "ProtocolNumber",
+      "发票电话": "InvoicePhone",
+      "发票税点": "Invoicetaxpoint",
+      "合同数量1": "store1",
+      "合同数量2": "store2",
+      "合同数量3": "store3",
+      "合同数量4": "store4",
+      "合同编号": "YGSO",
+      "合计金额": "Total",
+      "地址": "Address",
+      "备注": "remark",
+      "大写": "CapitalizeRMB",
+      "客户": "Client",
+      "序号1": "nu1",
+      "序号2": "nu2",
+      "序号3": "nu3",
+      "序号4": "nu4",
+      "开始日期": "startdate",
+      "开户银行": "Bank",
+      "授权客户": "authorizedcustomers",
+      "授权模板": "authorizationtemplates",
+      "文件名": "authorizationfilename",
+      "日期": "Date",
+      "服务时间1": "Durationofservice1",
+      "服务时间2": "Durationofservice2",
+      "服务时间3": "Durationofservice3",
+      "服务时间4": "Durationofservice4",
+      "水印": "仅供招投标授权使用他用无效菲森科技招投标水印",
+      "法人": "Legalentity",
+      "注册地址": "Addressjx",
+      "票据类型": "Tickettype",
+      "签约区域全称": "ContractedArea",
+      "签订日期（公式）": "DateofSigning",
+      "管家号": "DentaLinkid",
+      "纳税识别号": "TaxIdentification",
+      "终端客户": "customers",
+      "经销商": "Distributor",
+      "结束日期": "enddate",
+      "联系人": "Contact",
+      "联系电话": "ContactNumber",
+      "联系邮箱": "ContactEmail",
+      "计价单位1": "Unit1",
+      "计价单位2": "Unit2",
+      "计价单位3": "Unit3",
+      "计价单位4": "Unit4",
+      "软件版本": "Softwareversion",
+      "银行账号": "BankAccount",
+      "销售员": "Salesman",
+      "项目名称": "thenameoftheproject",
+      "项目编号": "itemnumber"
+    },
+    "crm_field_mapping": {
+      "ERP订单号": "ERP",
+      "产品合计": "Totalpriceafterdiscountl",
+      "产品备注": "ModelRemarks",
+      "保修期": "WarrantyPeriod",
+      "创建时间": "Date",
+      "匹配价格": "Discountedunitprice",
+      "发货地址": "ShippingAddress",
+      "地址": "Address",
+      "备注": "remark",
+      "大写": "CapitalizeRMB",
+      "客户名称": "Client",
+      "手机": "ContactNumber",
+      "规格型号": "CTModel"
+    },
+    "special_columns": {
+      "合计金额": "{:,.2f}",
+      "产品金额1": "{:,.2f}",
+      "产品金额2": "{:,.2f}",
+      "产品金额3": "{:,.2f}",
+      "产品金额4": "{:,.2f}",
+      "优惠金额1": "{:,.2f}",
+      "优惠金额2": "{:,.2f}",
+      "优惠金额3": "{:,.2f}",
+      "优惠金额4": "{:,.2f}",
+      "联系电话": "{}",
+      "日期": "%Y-%m-%d",
+      "开始日期": "%Y年%m月%d日",
+      "结束日期": "%Y年%m月%d日",
+      "产品价格1": "{:,.2f}",
+      "产品价格2": "{:,.2f}",
+      "产品价格3": "{:,.2f}",
+      "产品价格4": "{:,.2f}"
+    },
+    "product_match_rows": [
+      {
+        "order_product": "Matrix 5000 (15*9)标配版D",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5000",
+        "product_remark": "含软件",
+        "dealer_price": "130000",
+        "end_customer_price": "140000"
+      },
+      {
+        "order_product": "Matrix 5600 (15*15)",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5600",
+        "product_remark": "含软件",
+        "dealer_price": "140000",
+        "end_customer_price": "145000"
+      },
+      {
+        "order_product": "Matrix 7000（X光机）",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件\n配置二",
+        "dealer_price": "140000",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "F200",
+        "product_name": "",
+        "model_spec": "F200",
+        "product_remark": "",
+        "dealer_price": "5500",
+        "end_customer_price": "5500"
+      },
+      {
+        "order_product": "S6500（技工版）",
+        "product_name": "口腔数字印模仪器",
+        "model_spec": "S6500",
+        "product_remark": "标准版，含软件",
+        "dealer_price": "15000",
+        "end_customer_price": "15000"
+      },
+      {
+        "order_product": "S6500（临床版）",
+        "product_name": "口腔数字印模仪器",
+        "model_spec": "S6500",
+        "product_remark": "临床版，含软件",
+        "dealer_price": "18000",
+        "end_customer_price": "18000"
+      },
+      {
+        "order_product": "Matrix 7600（X光机+面扫）",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件\n配置四",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "Matrix 7000（面扫）",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件\n配置三",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "Matrix 6600 (16*16)",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 6600",
+        "product_remark": "含软件",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "F220",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      }
+    ]
+  },
+  "fxiaoke": {
+    "query_record_types": [
+      "CBCT事业部销售订单",
+      "口扫事业部销售订单",
+      "小产品事业部销售订单"
+    ],
+    "apply_crm_address": true,
+    "crm_objects": [
+      {
+        "name": "商机",
+        "api_name": "NewOpportunityObj"
+      },
+      {
+        "name": "销售订单",
+        "api_name": "SalesOrderObj"
+      },
+      {
+        "name": "发货单",
+        "api_name": "DeliveryNoteObj"
+      },
+      {
+        "name": "发货单产品",
+        "api_name": "DeliveryNoteProductObj"
+      }
+    ],
+    "creator_options": [
+      "黄伟萍",
+      "钟艳华",
+      "林润芳",
+      "曾嘉涛",
+      "Cynthia"
+    ],
+    "auto_refresh_interval": 0,
+    "admin_mobile": "15889740213",
+    "product_type_options": [
+      "Matrix 5000 (15*9)标配版D",
+      "Matrix 5600 (15*15)",
+      "Matrix5600（二合一）",
+      "Matrix 6600 (16*16)",
+      "Matrix 7000（X光机）",
+      "Matrix 7000（面扫）",
+      "Matrix 7000（X光机+面扫）",
+      "Matrix 7600（X光机+面扫）",
+      "Dentrix 55 OEM",
+      "F200",
+      "F220C",
+      "R150",
+      "S10",
+      "S6500（技工版）",
+      "S6500（临床版）",
+      "S6500临床版推车",
+      "S6500扫描头附件（标准扫描头）",
+      "S6500扫描头附件（小扫描头）",
+      "IP板",
+      "X光机",
+      "牙医管家单账号",
+      "牙医管家基础版",
+      "牙医管家旗舰版"
+    ],
+    "record_type_options": [
+      "CBCT事业部销售订单",
+      "口扫事业部销售订单",
+      "小产品事业部销售订单",
+      "SaaS事业部销售订单",
+      "海外事业部销售订单"
+    ],
+    "load_count": 100
+  }
+}
