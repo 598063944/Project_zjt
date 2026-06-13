@@ -1,5 +1,20 @@
 {
   "business_rules": {
+    "crm_field_mapping": {
+      "ERP订单号": "ERP",
+      "产品合计": "Totalpriceafterdiscountl",
+      "产品备注": "ModelRemarks",
+      "保修期": "WarrantyPeriod",
+      "创建时间": "Date",
+      "匹配价格": "Discountedunitprice",
+      "发货地址": "ShippingAddress",
+      "地址": "Address",
+      "备注": "remark",
+      "大写": "CapitalizeRMB",
+      "客户名称": "Client",
+      "手机": "ContactNumber",
+      "规格型号": "CTModel"
+    },
     "crm_special_columns": [
       {
         "name": "ERP订单号",
@@ -442,48 +457,50 @@
       "销售员": "Salesman",
       "项目名称": "thenameoftheproject",
       "项目编号": "itemnumber"
-    },
-    "crm_field_mapping": {
-      "ERP订单号": "ERP",
-      "产品合计": "Totalpriceafterdiscountl",
-      "产品备注": "ModelRemarks",
-      "保修期": "WarrantyPeriod",
-      "创建时间": "Date",
-      "匹配价格": "Discountedunitprice",
-      "发货地址": "ShippingAddress",
-      "地址": "Address",
-      "备注": "remark",
-      "大写": "CapitalizeRMB",
-      "客户名称": "Client",
-      "手机": "ContactNumber",
-      "规格型号": "CTModel"
     }
   },
   "fxiaoke": {
-    "product_type_options": [
-      "Matrix 5000 (15*9)标配版D",
-      "Matrix 5600 (15*15)",
-      "Matrix5600（二合一）",
-      "Matrix 6600 (16*16)",
-      "Matrix 7000（X光机）",
-      "Matrix 7000（面扫）",
-      "Matrix 7000（X光机+面扫）",
-      "Matrix 7600（X光机+面扫）",
-      "Dentrix 55 OEM",
-      "F200",
-      "F220C",
-      "R150",
-      "S10",
-      "S6500（技工版）",
-      "S6500（临床版）",
-      "S6500临床版推车",
-      "S6500扫描头附件（标准扫描头）",
-      "S6500扫描头附件（小扫描头）",
-      "IP板",
-      "X光机",
-      "牙医管家单账号",
-      "牙医管家基础版",
-      "牙医管家旗舰版"
+    "crm_objects": [
+      {
+        "name": "销售订单",
+        "api_name": "SalesOrderObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "发货单",
+        "api_name": "DeliveryNoteObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "发货单产品",
+        "api_name": "DeliveryNoteProductObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "高级外勤对象",
+        "api_name": "CheckinsObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "销售合同",
+        "api_name": "object_Hm58x__c",
+        "object_type": "custom"
+      },
+      {
+        "name": "客户",
+        "api_name": "AccountObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "销售线索",
+        "api_name": "LeadsObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "商机",
+        "api_name": "NewOpportunityObj",
+        "object_type": "preset"
+      }
     ],
     "crm_object_fields": {
       "SalesOrderObj": {
@@ -2008,8 +2025,174 @@
         }
       }
     },
-    "admin_mobile": "15889740213",
+    "product_type_options": [
+      "Matrix 5000 (15*9)标配版D",
+      "Matrix 5600 (15*15)",
+      "Matrix5600（二合一）",
+      "Matrix 6600 (16*16)",
+      "Matrix 7000（X光机）",
+      "Matrix 7000（面扫）",
+      "Matrix 7000（X光机+面扫）",
+      "Matrix 7600（X光机+面扫）",
+      "Dentrix 55 OEM",
+      "F200",
+      "F220C",
+      "R150",
+      "S10",
+      "S6500（技工版）",
+      "S6500（临床版）",
+      "S6500临床版推车",
+      "S6500扫描头附件（标准扫描头）",
+      "S6500扫描头附件（小扫描头）",
+      "IP板",
+      "X光机",
+      "牙医管家单账号",
+      "牙医管家基础版",
+      "牙医管家旗舰版"
+    ],
     "creator_options": [],
+    "crm_field_mapping_list": [
+      {
+        "api_name": "new_opportunity_id",
+        "display_name": "商机"
+      },
+      {
+        "api_name": "warranty_period__c",
+        "display_name": "保修期"
+      },
+      {
+        "api_name": "product_amount",
+        "display_name": "产品合计"
+      },
+      {
+        "api_name": "field_41yfW__c",
+        "display_name": "发货地址"
+      },
+      {
+        "api_name": "account_id",
+        "display_name": "客户名称"
+      },
+      {
+        "api_name": "field_2maFO__c",
+        "display_name": "ERP订单号"
+      },
+      {
+        "api_name": "field_3M5ss__c",
+        "display_name": "国家"
+      },
+      {
+        "api_name": "field_1apA5__c",
+        "display_name": "区"
+      },
+      {
+        "api_name": "ship_to_add",
+        "display_name": "收货地址"
+      },
+      {
+        "api_name": "owner_department",
+        "display_name": "负责人主属部门"
+      },
+      {
+        "api_name": "create_time",
+        "display_name": "创建时间"
+      },
+      {
+        "api_name": "field_umlvn__c",
+        "display_name": "销售类型"
+      },
+      {
+        "api_name": "created_by",
+        "display_name": "创建人"
+      },
+      {
+        "api_name": "confirmed_receive_date",
+        "display_name": "收货时间"
+      },
+      {
+        "api_name": "name",
+        "display_name": "销售订单编号"
+      },
+      {
+        "api_name": "province_for_business_stat__c",
+        "display_name": "省（商务统计合同用)"
+      },
+      {
+        "api_name": "field_bSU2c__c",
+        "display_name": "市（商务统计合同用）"
+      },
+      {
+        "api_name": "field_j2Pj7__c",
+        "display_name": "产品发货数"
+      },
+      {
+        "api_name": "field_xlo48__c",
+        "display_name": "关联合同"
+      },
+      {
+        "api_name": "owner",
+        "display_name": "负责人"
+      },
+      {
+        "api_name": "record_type",
+        "display_name": "业务类型"
+      },
+      {
+        "api_name": "field_2xgIX__c",
+        "display_name": "商机来源经销商"
+      },
+      {
+        "api_name": "field_Xqs0n__c",
+        "display_name": "订单数量"
+      },
+      {
+        "api_name": "field_6SV1R__c",
+        "display_name": "代理商名称"
+      },
+      {
+        "api_name": "last_modified_time",
+        "display_name": "最后修改时间"
+      },
+      {
+        "api_name": "life_status",
+        "display_name": "生命状态"
+      },
+      {
+        "api_name": "ship_to_tel",
+        "display_name": "收货人电话"
+      },
+      {
+        "api_name": "field_qm318__c",
+        "display_name": "省"
+      },
+      {
+        "api_name": "field_n9U7s__c",
+        "display_name": "商机来源经销商级别"
+      },
+      {
+        "api_name": "data_own_department",
+        "display_name": "归属部门"
+      },
+      {
+        "api_name": "opportunity_id",
+        "display_name": "商机名称"
+      },
+      {
+        "api_name": "remark",
+        "display_name": "备注"
+      },
+      {
+        "api_name": "last_modified_by",
+        "display_name": "最后修改人"
+      },
+      {
+        "api_name": "field_jv2dq__c",
+        "display_name": "订单产品类型"
+      },
+      {
+        "api_name": "field_8pAwf__c",
+        "display_name": "关联客户（分销商&诊所）"
+      }
+    ],
     "obj_query_settings": {
       "AccountObj": {
         "max_records": 1000,
@@ -2164,192 +2347,60 @@
         ]
       }
     },
-    "crm_objects": [
-      {
-        "name": "销售订单",
-        "api_name": "SalesOrderObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "发货单",
-        "api_name": "DeliveryNoteObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "发货单产品",
-        "api_name": "DeliveryNoteProductObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "高级外勤对象",
-        "api_name": "CheckinsObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "销售合同",
-        "api_name": "object_Hm58x__c",
-        "object_type": "custom"
-      },
-      {
-        "name": "客户",
-        "api_name": "AccountObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "销售线索",
-        "api_name": "LeadsObj",
-        "object_type": "preset"
-      },
-      {
-        "name": "商机",
-        "api_name": "NewOpportunityObj",
-        "object_type": "preset"
-      }
-    ],
-    "crm_field_mapping_list": [
-      {
-        "api_name": "new_opportunity_id",
-        "display_name": "商机"
-      },
-      {
-        "api_name": "warranty_period__c",
-        "display_name": "保修期"
-      },
-      {
-        "api_name": "product_amount",
-        "display_name": "产品合计"
-      },
-      {
-        "api_name": "field_41yfW__c",
-        "display_name": "发货地址"
-      },
-      {
-        "api_name": "account_id",
-        "display_name": "客户名称"
-      },
-      {
-        "api_name": "field_2maFO__c",
-        "display_name": "ERP订单号"
-      },
-      {
-        "api_name": "field_3M5ss__c",
-        "display_name": "国家"
-      },
-      {
-        "api_name": "field_1apA5__c",
-        "display_name": "区"
-      },
-      {
-        "api_name": "ship_to_add",
-        "display_name": "收货地址"
-      },
-      {
-        "api_name": "owner_department",
-        "display_name": "负责人主属部门"
-      },
-      {
-        "api_name": "create_time",
-        "display_name": "创建时间"
-      },
-      {
-        "api_name": "field_umlvn__c",
-        "display_name": "销售类型"
-      },
-      {
-        "api_name": "created_by",
-        "display_name": "创建人"
-      },
-      {
-        "api_name": "confirmed_receive_date",
-        "display_name": "收货时间"
-      },
-      {
-        "api_name": "name",
-        "display_name": "销售订单编号"
-      },
-      {
-        "api_name": "province_for_business_stat__c",
-        "display_name": "省（商务统计合同用)"
-      },
-      {
-        "api_name": "field_bSU2c__c",
-        "display_name": "市（商务统计合同用）"
-      },
-      {
-        "api_name": "field_j2Pj7__c",
-        "display_name": "产品发货数"
-      },
-      {
-        "api_name": "field_xlo48__c",
-        "display_name": "关联合同"
-      },
-      {
-        "api_name": "owner",
-        "display_name": "负责人"
-      },
-      {
-        "api_name": "record_type",
-        "display_name": "业务类型"
-      },
-      {
-        "api_name": "field_2xgIX__c",
-        "display_name": "商机来源经销商"
-      },
-      {
-        "api_name": "field_Xqs0n__c",
-        "display_name": "订单数量"
-      },
-      {
-        "api_name": "field_6SV1R__c",
-        "display_name": "代理商名称"
-      },
-      {
-        "api_name": "last_modified_time",
-        "display_name": "最后修改时间"
-      },
-      {
-        "api_name": "life_status",
-        "display_name": "生命状态"
-      },
-      {
-        "api_name": "ship_to_tel",
-        "display_name": "收货人电话"
-      },
-      {
-        "api_name": "field_qm318__c",
-        "display_name": "省"
-      },
-      {
-        "api_name": "field_n9U7s__c",
-        "display_name": "商机来源经销商级别"
-      },
-      {
-        "api_name": "data_own_department",
-        "display_name": "归属部门"
-      },
-      {
-        "api_name": "opportunity_id",
-        "display_name": "商机名称"
-      },
-      {
-        "api_name": "remark",
-        "display_name": "备注"
-      },
-      {
-        "api_name": "last_modified_by",
-        "display_name": "最后修改人"
-      },
-      {
-        "api_name": "field_jv2dq__c",
-        "display_name": "订单产品类型"
-      },
-      {
-        "api_name": "field_8pAwf__c",
-        "display_name": "关联客户（分销商&诊所）"
-      }
-    ]
+    "admin_mobile": "15889740213"
   },
   "opportunity": {
+    "word_special_columns": [
+      {
+        "name": "授权开始日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "授权结束日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "招标日期",
+        "format": "{:%Y年%m月%d日}"
+      }
+    ],
+    "product_match_rows": [
+      {
+        "order_product": "121LOWwgg",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 55"
+      },
+      {
+        "order_product": "1u2CBz8mi",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 6600"
+      },
+      {
+        "order_product": "5V2ajxk2T",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500"
+      },
+      {
+        "order_product": "Ik1HF4pgo",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5000"
+      },
+      {
+        "order_product": "OktMmkS69",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5600"
+      },
+      {
+        "order_product": "option_matrix_7000_2__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000"
+      },
+      {
+        "order_product": "option_matrix_7000__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000"
+      }
+    ],
     "field_mapping_list": [
       {
         "api_name": "name",
@@ -2444,43 +2495,17 @@
         "display_name": "终端用户准确名称"
       }
     ],
-    "product_match_rows": [
-      {
-        "order_product": "121LOWwgg",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Dentrix 55"
-      },
-      {
-        "order_product": "1u2CBz8mi",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Matrix 6600"
-      },
-      {
-        "order_product": "5V2ajxk2T",
-        "product_name": "口腔数字印模仪",
-        "model_spec": "S6500"
-      },
-      {
-        "order_product": "Ik1HF4pgo",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Matrix 5000"
-      },
-      {
-        "order_product": "OktMmkS69",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Matrix 5600"
-      },
-      {
-        "order_product": "option_matrix_7000_2__c",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Matrix 7000"
-      },
-      {
-        "order_product": "option_matrix_7000__c",
-        "product_name": "口腔颌面锥形束计算机体层摄影设备",
-        "model_spec": "Matrix 7000"
-      }
-    ],
+    "word_field_mapping": {
+      "终端用户准确名称": "customers",
+      "该项目授权代理商名称": "authorizedcustomers",
+      "项目名称": "thenameoftheproject",
+      "项目编号": "itemnumber",
+      "授权开始日期": "startdate",
+      "授权结束日期": "enddate",
+      "产品名称": "Productname",
+      "规格型号": "Specification",
+      "招标日期": "AuthorizationDate"
+    },
     "option_mappings": {
       "field_fEKk5__c": {
         "mappings": {
@@ -2500,31 +2525,6 @@
           "record_q7U1T__c": "口扫商机"
         }
       }
-    },
-    "word_special_columns": [
-      {
-        "name": "授权开始日期",
-        "format": "{:%Y年%m月%d日}"
-      },
-      {
-        "name": "授权结束日期",
-        "format": "{:%Y年%m月%d日}"
-      },
-      {
-        "name": "招标日期",
-        "format": "{:%Y年%m月%d日}"
-      }
-    ],
-    "word_field_mapping": {
-      "终端用户准确名称": "customers",
-      "该项目授权代理商名称": "authorizedcustomers",
-      "项目名称": "thenameoftheproject",
-      "项目编号": "itemnumber",
-      "授权开始日期": "startdate",
-      "授权结束日期": "enddate",
-      "产品名称": "Productname",
-      "规格型号": "Specification",
-      "招标日期": "AuthorizationDate"
     }
   }
 }

@@ -2027,12 +2027,22 @@ class file_generationMixin:
 
 
     def on_clear_output(self):
-        """清除输出窗口内容"""
-        self.output_text.clear()
-        if hasattr(self, 'sub_output_text'):
-            self.sub_output_text.clear()
+       """清除输出窗口内容"""
+       self.output_text.clear()
+       if hasattr(self, 'sub_output_text'):
+           self.sub_output_text.clear()
 
-    # ============== 后台任务状态栏处理 ==============
+    def on_toggle_output(self):
+        """切换输出窗口显隐"""
+        self.output_visible = not getattr(self, 'output_visible', True)
+        if hasattr(self, 'output_frame'):
+            self.output_frame.setVisible(self.output_visible)
+        if hasattr(self, 'sub_output_frame'):
+            self.sub_output_frame.setVisible(not self.output_visible)
+        if hasattr(self, 'toggle_output_btn'):
+            self.toggle_output_btn.setText("隐藏" if self.output_visible else "显示")
+
+   # ============== 后台任务状态栏处理 ==============
 
 
     def _on_task_status_changed(self, task_id, name, status):

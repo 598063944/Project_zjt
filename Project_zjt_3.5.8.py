@@ -5550,11 +5550,16 @@ class custom_report_pageMixin:
     def on_enable_custom_report_button(self, value):
         pass
     def switch_to_custom_report_editor(self, *args, **kwargs):
-        if self._ensure_editor_page() and hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page'):
-            self.content_stack.setCurrentWidget(self.custom_report_page)
-            self.custom_report_page_stack.setCurrentIndex(
-                self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
-            )
+        try:
+           if self._ensure_editor_page() and hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page'):
+               self.content_stack.setCurrentWidget(self.custom_report_page)
+               self.custom_report_page_stack.setCurrentIndex(
+                   self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
+               )
+        except Exception as e:
+            import traceback, logging
+            logging.error(f"切换报表编辑器失败: {e}\n{traceback.format_exc()}")
+            print(f"ERROR: 切换报表编辑器失败: {e}")
     def _ensure_editor_page(self):
         if not hasattr(self, '_report_manager') or not self._report_manager:
             return False
@@ -5686,7 +5691,7 @@ class MainFrame(
         self.config = load_config()
 
         # ===== 初始化自定义报表模块（新版） =====
-        from custom_report.manager import ReportManager
+        from custom_report import ReportManager
         self._report_manager = ReportManager(
             mysql_config=self.config.get('mysql_config', {}),
             crm_client=None,  # 延迟绑定，待 CRM 实例创建后设置
