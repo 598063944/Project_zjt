@@ -2669,37 +2669,43 @@ class object_queryMixin:
             header_order=header_order[:],
             parent=self
         )
-        result = dialog.exec()
-        print(f"[DEBUG-对象查询] dialog.exec() 返回: {result} | Accepted={QDialog.DialogCode.Accepted}")
-        if result == QDialog.DialogCode.Accepted:
-            new_vis, new_order = dialog.get_settings()
-            print(f"[DEBUG-对象查询] ✅ 字段设置确认成功!")
-            print(f"[DEBUG-对象查询] 新可见字段数: {len(new_vis)}")
-            print(f"[DEBUG-对象查询] 新可见字段列表: {new_vis}")
-            if not new_vis:
-                print(f"[DEBUG-对象查询] ❌ 警告: 可见字段为空, 返回")
-                return
-            old_vis = getattr(self, '_obj_query_visible_headers') or []
-            self._obj_query_visible_headers = list(new_vis)
-            self._obj_query_header_order = list(new_order)
-            # 持久化保存：每个对象独立记忆字段显示设置
-            api_name = self.obj_query_object_combo.currentData() or ''
-            if api_name:
-                self._save_obj_query_field_settings(api_name, new_vis, new_order)
-            old_count = len(old_vis) if old_vis else 0
-            new_count = len(new_vis) if new_vis else 0
-            print(f"[DEBUG-对象查询] 已更新 _obj_query_visible_headers: {old_count} → {new_count}")
-            logging.info(f"字段设置变更: 之前{self.obj_query_table.columnCount()}列 → 新设置{len(new_vis)}列, 前5项:{new_vis[:5]}")
+        try:
+            result = dialog.exec()
+            print(f"[DEBUG-对象查询] dialog.exec() 返回: {result} | Accepted={QDialog.DialogCode.Accepted}")
+            if result == QDialog.DialogCode.Accepted:
+                new_vis, new_order = dialog.get_settings()
+                print(f"[DEBUG-对象查询] ✅ 字段设置确认成功!")
+                print(f"[DEBUG-对象查询] 新可见字段数: {len(new_vis)}")
+                print(f"[DEBUG-对象查询] 新可见字段列表: {new_vis}")
+                if not new_vis:
+                    print(f"[DEBUG-对象查询] ❌ 警告: 可见字段为空, 返回")
+                    return
+                old_vis = getattr(self, '_obj_query_visible_headers') or []
+                self._obj_query_visible_headers = list(new_vis)
+                self._obj_query_header_order = list(new_order)
+                # 持久化保存：每个对象独立记忆字段显示设置
+                api_name = self.obj_query_object_combo.currentData() or ''
+                if api_name:
+                    self._save_obj_query_field_settings(api_name, new_vis, new_order)
+                old_count = len(old_vis) if old_vis else 0
+                new_count = len(new_vis) if new_vis else 0
+                print(f"[DEBUG-对象查询] 已更新 _obj_query_visible_headers: {old_count} → {new_count}")
+                logging.info(f"字段设置变更: 之前{self.obj_query_table.columnCount()}列 → 新设置{len(new_vis)}列, 前5项:{new_vis[:5]}")
 
-            print(f"[DEBUG-对象查询] 准备调用 _rebuild_obj_query_table_columns()")
-            print(f"[DEBUG-对象查询] 调用前表格列数: {self.obj_query_table.columnCount()}")
-            self._rebuild_obj_query_table_columns(new_vis)
-            print(f"[DEBUG-对象查询] 调用后表格列数: {self.obj_query_table.columnCount()}")
-            print(f"[DEBUG-对象查询] 表格headers: {[self.obj_query_table.horizontalHeaderItem(i).text() for i in range(min(10, self.obj_query_table.columnCount()))]}")
-            print(f"[DEBUG-对象查询] ✅ _rebuild_obj_query_table_columns() 完成")
-        else:
-            print(f"[DEBUG-对象查询] ❌ 对话框被取消或关闭")
+                print(f"[DEBUG-对象查询] 准备调用 _rebuild_obj_query_table_columns()")
+                print(f"[DEBUG-对象查询] 调用前表格列数: {self.obj_query_table.columnCount()}")
+                self._rebuild_obj_query_table_columns(new_vis)
+                print(f"[DEBUG-对象查询] 调用后表格列数: {self.obj_query_table.columnCount()}")
+                print(f"[DEBUG-对象查询] 表格headers: {[self.obj_query_table.horizontalHeaderItem(i).text() for i in range(min(10, self.obj_query_table.columnCount()))]}")
+                print(f"[DEBUG-对象查询] ✅ _rebuild_obj_query_table_columns() 完成")
+            else:
+                print(f"[DEBUG-对象查询] ❌ 对话框被取消或关闭")
 
+        except Exception as e:
+            import traceback
+            print("[Error] Field settings exception: " + str(e))
+            traceback.print_exc()
+            logging.error("Field settings exception: " + str(e), exc_info=True)
 
     def _rebuild_obj_query_table_columns(self, visible_labels):
         """用给定标签重建表格列"""
@@ -2802,7 +2808,7 @@ class object_queryMixin:
                 api_field = display_to_api.get(h, h)
                 combo.addItem(h, api_field)
             combo.setCurrentIndex(0)
-        combo.blockSignals(False)
+            combo.blockSignals(False)
         print(f"[DEBUG-对象查询] _rebuild_obj_query_table_columns 完成")
 
     # ===== 对象查询方案管理 =====

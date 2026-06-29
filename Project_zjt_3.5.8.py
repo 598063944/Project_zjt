@@ -1,17 +1,20 @@
-#!python3.13
+﻿"""  """#!python3.13
 # 导入所需模块
 
 
 # ===== Safe imports for mixins =====
 import importlib, sys as _sys
+_AVAILABLE_MIXINS = {}
 for _mod, _cls in [
     ('file_generation', 'file_generationMixin'),
     ('order_to_contract', 'order_to_contractMixin'),
     ('file_mover', 'file_moverMixin'),
     ('pdf_watermark', 'pdf_watermarkMixin'),
     ('object_query', 'object_queryMixin'),
-    ('bi_dashboard', 'bi_dashboardMixin'),
+    ('bitable', 'BitableMixin'),
+    ('dashboard', 'DashboardMixin'),
     ('department', 'departmentMixin'),
+    ('spreadsheet_page', 'SpreadsheetPageMixin'),
 ]:
     try:
         _m = importlib.import_module(_mod)
@@ -19,11 +22,14 @@ for _mod, _cls in [
         _sys.modules[_cls] = type(_cls, (), {})
         setattr(_sys.modules[_cls], _cls, _cls_obj)
         globals()[_cls] = _cls_obj
+        _AVAILABLE_MIXINS[_cls] = True
     except Exception:
         # Define stub
         _stub_class = type(_cls, (), {})
         globals()[_cls] = _stub_class
-del importlib, _sys, _mod, _cls, _m, _cls_obj
+        _AVAILABLE_MIXINS[_cls] = False
+try: del importlib, _sys, _mod, _cls, _m, _cls_obj
+except NameError: pass
 try: del _stub_class
 except NameError: pass
 # ===== End safe imports =====
@@ -33,11 +39,28 @@ from common import BrowseLineEdit, CheckableOptionPopup, CRMInlineComboDelegate
 from common import UIToolkit, DatePartPickerDialog, PasswordEntry, MessageBox
 from common import CenteredPopupDialog, _DialogOutsideCloseFilter, QuickDatePickerDialog
 from common import ExcelFieldSettingsDialog, CustomReportFilterDialog
+from common import install_autofilter_header, apply_autofilter_to_table, AutoFilterHeader, CheckBoxAutoFilterHeader
+from common import messagebox, frameless_input_text, frameless_message_box
  
+# custom_report_pageMixin 单独导入（必须在 from common import ... 之后，避免循环导入）
+try:
+    import importlib as _cr_importlib
+    import sys as _cr_sys
+    _cr_mod = _cr_importlib.import_module('custom_report')
+    _cr_mixin = getattr(_cr_mod, 'custom_report_pageMixin')
+    _cr_sys.modules['custom_report_pageMixin'] = type('custom_report_pageMixin', (), {})
+    setattr(_cr_sys.modules['custom_report_pageMixin'], 'custom_report_pageMixin', _cr_mixin)
+    globals()['custom_report_pageMixin'] = _cr_mixin
+    _AVAILABLE_MIXINS['custom_report_pageMixin'] = True
+    del _cr_importlib, _cr_sys, _cr_mod, _cr_mixin
+except Exception:
+    globals()['custom_report_pageMixin'] = type('custom_report_pageMixin', (), {})
+    _AVAILABLE_MIXINS['custom_report_pageMixin'] = False
+
 import os
  
-# QtWebEngine 必须在 QApplication 创建前导入
-import PyQt6.QtWebEngineWidgets  # noqa: F401
+# QtWebEngine 导入移至 __main__ 块内 QApplication 创建之后
+# 避免提前初始化 Qt 平台插件导致 ThemeChangeObserverWindow 注册警告
 
 from pathlib import Path  # 路径处理
 import copy
@@ -72,963 +95,10 @@ import requests  # HTTP请求
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
-class FXiaokeCRM:    #CRM订单字段
-    """纷享销客CRM接口封装。"""
-
-    def __init__(self, app_id, app_secret, permanent_code, admin_mobile):
-
-        """初始化纷享销客CRM客户端。"""
-        self.app_id = app_id
-        self.app_secret = app_secret
-        self.permanent_code = permanent_code
-        self.admin_mobile = admin_mobile
-        self.base_url = "https://open.fxiaoke.com"
-        self.corp_access_token = None
-        self.corp_id = None
-        self.current_open_user_id = None
-
-    def get_corp_access_token(self):
-        """获取纷享销客企业访问令牌。"""
-        url = f"{self.base_url}/cgi/corpAccessToken/get/V2"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "appId": self.app_id,
-            "appSecret": self.app_secret,
-            "permanentCode": self.permanent_code
-        }
-        try:
-            response = perform_requests_request('post', url, headers=headers, json=data, timeout=60) 
-            if response.status_code != 200:
-                return False, f"HTTP Error: {response.status_code}"
-            result = response.json()
-            if result.get("errorCode") == 0:
-                self.corp_access_token = result.get("corpAccessToken")
-                self.corp_id = result.get("corpId")
-                return True, "OK"
-            else:
-                return False, result.get("errorMessage", "Unknown error")
-        except Exception as e:
-            return False, f"{e} | verify={REQUESTS_VERIFY} ssl_ctx={REQUESTS_SSL_CONTEXT is not None} cert_src={_CERT_SOURCE}"
-
-    def get_open_user_id_by_mobile(self):
-        """根据管理员手机号查询对应的 openUserId。"""
-        if not self.corp_access_token:
-            ok, msg = self.get_corp_access_token()
-            if not ok:
-                return None, msg
-        url = f"{self.base_url}/cgi/user/getByMobile"
-        data = {
-            "corpAccessToken": self.corp_access_token,
-            "corpId": self.corp_id,
-            "mobile": self.admin_mobile
-        }
-        try:
-            response = perform_requests_request(
-                'post',
-                url,
-                headers={"Content-Type": "application/json"},
-                json=data,
-                timeout=60,
-            )
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("errorCode") == 0:
-                    emp_list = result.get("empList", [])
-                    if emp_list:
-                        uid = emp_list[0].get("openUserId")
-                        self.current_open_user_id = uid
-                        return uid, emp_list[0].get("name", "")
-            return None, "User not found"
-        except Exception as e:
-            return None, str(e)
-
-    def query_user_list(self, department_id, fetch_child=True, show_department_detail=False):
-        """获取部门下成员信息(详细)。
-
-        Args:
-            department_id: 部门ID，为非负整数，999999 代表全公司
-            fetch_child: 是否同时获取子部门员工
-            show_department_detail: 是否返回部门详情
-        """
-        if not self.corp_access_token:
-            ok, msg = self.get_corp_access_token()
-            if not ok:
-                return None, msg
-
-        url = f"{self.base_url}/cgi/user/list"
-        data = {
-            "corpAccessToken": self.corp_access_token,
-            "corpId": self.corp_id,
-            "departmentId": department_id,
-            "fetchChild": fetch_child,
-        }
-        if show_department_detail:
-            data["showDepartmentIdsDetail"] = True
-        try:
-            response = perform_requests_request(
-                'post',
-                url,
-                headers={"Content-Type": "application/json"},
-                json=data,
-                timeout=60,
-            )
-            if response.status_code != 200:
-                return None, f"HTTP {response.status_code}"
-            result = response.json()
-            if result.get("errorCode") == 0:
-                return result.get("userList"), None
-            return None, result.get("errorMessage", "Query failed")
-        except Exception as e:
-            return None, str(e)
-
-    def query_department_list(self, department_id=999999, fetch_child=True):
-        """获取部门列表。
-
-        Args:
-            department_id: 父部门ID，999999 为根部门
-            fetch_child: 是否获取子部门
-        """
-        if not self.corp_access_token:
-            ok, msg = self.get_corp_access_token()
-            if not ok:
-                return None, msg
-
-        url = f"{self.base_url}/cgi/department/list"
-        data = {
-            "corpAccessToken": self.corp_access_token,
-            "corpId": self.corp_id,
-            "departmentId": department_id,
-            "fetchChild": fetch_child,
-        }
-        try:
-            response = perform_requests_request(
-                'post', url,
-                headers={"Content-Type": "application/json"},
-                json=data, timeout=60,
-            )
-            if response.status_code != 200:
-                return None, f"HTTP {response.status_code}"
-            result = response.json()
-            if result.get("errorCode") == 0:
-                return result.get("departments"), None
-            return None, result.get("errorMessage", "Query failed")
-        except Exception as e:
-            return None, str(e)
-
-    def query_data_object(self, data_object_api_name, offset=0, limit=100, filters=None, field_projection=None, find_explicit_total_num=True, is_custom=False):
-        """按对象类型查询 CRM 数据。
-
-        Args:
-            is_custom: True 使用自定义对象接口 /cgi/crm/custom/v2/data/query，
-                       False 使用预设对象接口 /cgi/crm/v2/data/query
-        """
-        if not self.corp_access_token:
-            ok, msg = self.get_corp_access_token()
-            if not ok:
-                return None, msg
-        if not self.current_open_user_id:
-            uid, msg = self.get_open_user_id_by_mobile()
-            if not uid:
-                return None, msg
-
-        if is_custom:
-            url = f"{self.base_url}/cgi/crm/custom/v2/data/query"
-        else:
-            url = f"{self.base_url}/cgi/crm/v2/data/query"
-
-        search_query_info = {
-            "offset": offset,
-            "limit": limit,
-            "filters": filters or []
-        }
-        if field_projection:
-            search_query_info["fieldProjection"] = field_projection
-
-        data = {
-            "corpAccessToken": self.corp_access_token,
-            "corpId": self.corp_id,
-            "currentOpenUserId": self.current_open_user_id,
-            "data": {
-                "dataObjectApiName": data_object_api_name,
-                "search_query_info": search_query_info
-            },
-            "find_explicit_total_num": find_explicit_total_num
-        }
-        try:
-            response = perform_requests_request(
-                'post',
-                url,
-                headers={"Content-Type": "application/json"},
-                json=data,
-                timeout=60,
-            )
-            if response.status_code != 200:
-                return None, f"HTTP {response.status_code}"
-            result = response.json()
-            if result.get("errorCode") == 0:
-                return result.get("data"), None
-            return None, result.get("errorMessage", "Query failed")
-        except Exception as e:
-            return None, str(e)
-
-    def fetch_all_data_object(self, data_object_api_name, max_records=10000, batch_size=100, filters=None, field_projection=None, callback=None, is_custom=False):
-        """按对象类型分页拉取数据；field_projection 为空时由接口返回全部默认字段。
-
-        Args:
-            is_custom: True 使用自定义对象接口，False 使用预设对象接口
-        """
-        all_rows = []
-        total = 0
-        offset = 0
-        try:
-            target_records = int(max_records)
-        except (TypeError, ValueError):
-            target_records = 10000
-        try:
-            batch_size = int(batch_size)
-        except (TypeError, ValueError):
-            batch_size = 100
-
-        target_records = max(1, min(target_records, 10000))
-        batch_size = max(1, batch_size)
-
-        while offset < target_records:
-            current_limit = min(batch_size, target_records - offset)
-            data, err = self.query_data_object(
-                data_object_api_name=data_object_api_name,
-                offset=offset,
-                limit=current_limit,
-                filters=filters,
-                field_projection=field_projection,
-                find_explicit_total_num=True,
-                is_custom=is_custom,
-            )
-            if err:
-                return all_rows, total, err
-            if not data:
-                break
-            if not isinstance(data, dict):
-                break
-            rows = data.get("dataList", [])
-            total = data.get("total", 0)
-            if not rows:
-                break
-            all_rows.extend(rows)
-            if len(all_rows) >= target_records:
-                all_rows = all_rows[:target_records]
-                if callback:
-                    callback(len(all_rows), total)
-                break
-            if callback:
-                callback(len(all_rows), total)
-            if len(rows) < current_limit:
-                break
-            offset += current_limit
-        return all_rows, total, None
-
-    def fetch_customer_accounts_by_ids(self, account_ids, batch_size=100):
-        """按客户 ID 批量补充客户档案信息。"""
-        account_map = {}
-        unique_ids = [account_id for account_id in dict.fromkeys(account_ids or []) if account_id]
-        if not unique_ids:
-            return account_map, None
-
-        for start in range(0, len(unique_ids), batch_size):
-            batch_ids = unique_ids[start:start + batch_size]
-            data, err = self.query_data_object(
-                data_object_api_name="AccountObj",
-                offset=0,
-                limit=max(len(batch_ids), 1),
-                filters=[{
-                    "field_name": "_id",
-                    "operator": "IN",
-                    "field_values": batch_ids,
-                }],
-                field_projection=["_id", "name", "field_UBjkv__c", "field_WEB1y__c", "tel", "field_Qjze2__c", "address", "location"],
-                find_explicit_total_num=False,
-            )
-            if err:
-                return account_map, err
-
-            for row in (data or {}).get("dataList", []):
-                account_id = str(row.get("_id", "")).strip()
-                if account_id:
-                    account_map[account_id] = row
-        return account_map, None
-
-
-class BackgroundTaskManager:
-    """轻量级后台任务管理器，基于 threading.Thread + pyqtSignal 模式。
-
-    负责追踪活跃任务的生命周期（pending → running → completed/error），
-    并通过 pyqtSignal 通知 UI 更新状态栏。
-    """
-
-    def __init__(self, status_signal, done_signal, error_signal):
-        self._tasks = {}          # task_id -> {'name': str, 'thread': Thread}
-        self._lock = threading.Lock()
-        self.status_changed = status_signal    # pyqtSignal(str, str, str)
-        self.task_done = done_signal           # pyqtSignal(str, bool, str)
-        self.task_error = error_signal         # pyqtSignal(str, str)
-
-    def start(self, task_id, name, worker_fn, *args, timeout=None, **kwargs):
-        """启动后台任务。worker_fn 在 daemon 线程中运行。
-
-        Args:
-            timeout: 超时秒数。超时后自动标记任务失败并通知 UI。
-        """
-        completed = threading.Event()
-
-        def wrapper():
-            try:
-                self.status_changed.emit(task_id, name, 'running')
-                result = worker_fn(*args, **kwargs)
-                if not completed.is_set():
-                    completed.set()
-                    self.status_changed.emit(task_id, name, 'completed')
-                    if isinstance(result, tuple) and len(result) == 2:
-                        self.task_done.emit(task_id, result[0], result[1] or '')
-                    else:
-                        self.task_done.emit(task_id, True, '')
-            except Exception as e:
-                if not completed.is_set():
-                    completed.set()
-                    self.status_changed.emit(task_id, name, 'error')
-                    self.task_error.emit(task_id, str(e)[:200])
-            finally:
-                completed.set()
-                with self._lock:
-                    self._tasks.pop(task_id, None)
-
-        def _on_timeout():
-            if completed.is_set():
-                return
-            completed.set()
-            self.status_changed.emit(task_id, name, 'error')
-            self.task_done.emit(task_id, False, f'连接测试超时（{timeout}秒未响应），已自动停止')
-            with self._lock:
-                self._tasks.pop(task_id, None)
-
-        t = threading.Thread(target=wrapper, daemon=True)
-        with self._lock:
-            self._tasks[task_id] = {'name': name, 'thread': t}
-        self.status_changed.emit(task_id, name, 'pending')
-        t.start()
-
-        if timeout and timeout > 0:
-            timer = threading.Timer(timeout, _on_timeout)
-            timer.daemon = True
-            timer.start()
-
-    def is_running(self, task_id):
-        with self._lock:
-            return task_id in self._tasks
-
-    @property
-    def active_count(self):
-        with self._lock:
-            return len(self._tasks)
-
-    def active_task_names(self):
-        with self._lock:
-            return [v['name'] for v in self._tasks.values()]
-
-
-class MysqlCache:
-    """MySQL 缓存：每个 CRM 对象一张表，_id 为主键，data_json 存行数据"""
-
-    def __init__(self):
-        self._conn = None
-        self._last_error = None
-
-    @property
-    def available(self):
-        """MySQL 是否可用（已启用且连接成功）"""
-        return self._get_conn() is not None
-
-    @property
-    def status_message(self):
-        """当前状态描述"""
-        if self._conn and self._conn.open:
-            return "✅ MySQL 缓存已连接"
-        cfg = load_config().get('mysql_config', {})
-        if not cfg.get('enabled'):
-            return "⚠️ MySQL 缓存未启用（请在 设置→MySQL配置 中启用）"
-        if self._last_error:
-            return f"❌ MySQL 连接失败: {self._last_error}"
-        return "⚠️ MySQL 缓存未连接"
-
-    def _get_conn(self):
-        if self._conn and self._conn.open:
-            return self._conn
-        cfg = load_config().get('mysql_config', {})
-        if not cfg.get('enabled'):
-            self._last_error = '未启用'
-            return None
-        import pymysql
-        try:
-            self._conn = pymysql.connect(
-                host=cfg.get('host', '127.0.0.1'),
-                port=int(cfg.get('port', 3306)),
-                user=cfg.get('user', ''),
-                password=cfg.get('password', ''),
-                database=cfg.get('database', ''),
-                charset='utf8mb4',
-                connect_timeout=5,
-                cursorclass=pymysql.cursors.DictCursor,
-                autocommit=True,
-            )
-            return self._conn
-        except Exception as e:
-            self._last_error = str(e)
-            logging.error(f"[MysqlCache] 连接失败: {e}")
-            return None
-
-    def _table_name(self, api_name):
-        return f"crm_cache_{api_name}"
-
-    def _ensure_table(self, api_name):
-        conn = self._get_conn()
-        if not conn:
-            return False
-        table = self._table_name(api_name)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(f"""CREATE TABLE IF NOT EXISTS `{table}` (
-                    `_id` VARCHAR(128) PRIMARY KEY,
-                    `data_json` LONGTEXT,
-                    `cached_at` DATETIME DEFAULT CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
-            return True
-        except Exception as e:
-            logging.error(f"[MysqlCache] 建表失败 {table}: {e}")
-            return False
-
-    def get_all(self, api_name):
-        conn = self._get_conn()
-        if not conn or not self._ensure_table(api_name):
-            return None
-        table = self._table_name(api_name)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(f"SELECT data_json FROM `{table}`")
-                rows = cur.fetchall()
-            import json
-            return [json.loads(r['data_json']) for r in rows]
-        except Exception as e:
-            logging.error(f"[MysqlCache] 读取失败 {api_name}: {e}")
-            return None
-
-    def upsert_all(self, api_name, rows):
-        if not rows:
-            return
-        conn = self._get_conn()
-        if not conn or not self._ensure_table(api_name):
-            return
-        table = self._table_name(api_name)
-        import json, hashlib
-        skipped = 0
-        inserted = 0
-        updated = 0
-        seen_ids = set()  # 防止同批次 _id 重复导致 1062 主键冲突
-        try:
-            with conn.cursor() as cur:
-                # 确保 _hash 列存在
-                cur.execute(f"SHOW COLUMNS FROM `{table}` LIKE '_hash'")
-                if not cur.fetchone():
-                    cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `_hash` VARCHAR(32) DEFAULT ''")
-                for row in rows:
-                    _id = str(row.get('_id', '')).strip()
-                    if not _id:
-                        skipped += 1
-                        continue
-                    if _id in seen_ids:
-                        skipped += 1
-                        continue
-                    seen_ids.add(_id)
-                    data_json = json.dumps(row, ensure_ascii=False)
-                    row_hash = hashlib.md5(data_json.encode('utf-8')).hexdigest()
-                    cur.execute(
-                        f"INSERT INTO `{table}` (_id, data_json, _hash, cached_at) "
-                        f"VALUES (%s, %s, %s, NOW()) "
-                        f"ON DUPLICATE KEY UPDATE "
-                        f"data_json = IF(VALUES(`_hash`) != `_hash`, VALUES(data_json), data_json), "
-                        f"`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`), "
-                        f"cached_at = IF(VALUES(`_hash`) != `_hash`, NOW(), cached_at)",
-                        (_id, data_json, row_hash)
-                    )
-                    inserted += 1
-                if skipped:
-                    logging.warning(f"[MysqlCache] JSON缓存表 {api_name}: {skipped} 条记录因 _id 为空被跳过")
-            logging.info(f"[MysqlCache] JSON缓存表 {api_name}: 写入 {inserted} 条，跳过 {skipped} 条")
-        except Exception as e:
-            logging.error(f"[MysqlCache] 写入失败 {api_name}: {e}")
-
-    def replace_cleaned_all(self, table_name, rows, headers, cleanup_old=True, field_type_map=None):
-        """增量写入清洗后的数据表（按 _id 比对更新，可选清理不在本次批次中的旧记录）
-
-        Args:
-            table_name: 中文表名（如 对象-销售订单）
-            rows: [{'字段中文名': 清洗值, ...}, ...]，每行含 _id
-            headers: 中文表头列表
-            cleanup_old: 是否清理不在本次批次中的旧记录。全量同步用 True，分页/限量查询用 False
-            field_type_map: {字段中文名: CRM类型}，数值字段用 DOUBLE 列 + 保留数值
-        """
-        if not rows:
-            return False, "无数据"
-        conn = self._get_conn()
-        if not conn:
-            return False, self.status_message
-        import json, hashlib, uuid
-        from custom_report import get_mysql_type_for_field, is_numeric_field_type, safe_numeric_value
-        batch_id = uuid.uuid4().hex
-        type_map = field_type_map or {}
-        try:
-            safe_cols = []
-            for h in headers:
-                safe = h.replace('`', '``')
-                safe_cols.append(safe)
-            with conn.cursor() as cur:
-                # 确保表存在（数值字段用 DOUBLE，其余 LONGTEXT）
-                col_defs = ['`_id` VARCHAR(128) PRIMARY KEY',
-                            '`_hash` VARCHAR(32)',
-                            '`_sync_time` DATETIME DEFAULT CURRENT_TIMESTAMP',
-                            '`_sync_batch_id` VARCHAR(36) DEFAULT \'\'']
-                for h in safe_cols:
-                    ftype = type_map.get(h, '')
-                    mysql_type = get_mysql_type_for_field(ftype)
-                    col_defs.append(f'`{h}` {mysql_type}')
-                cols_sql = ', '.join(col_defs)
-                cur.execute(f"CREATE TABLE IF NOT EXISTS `{table_name}` ({cols_sql}) "
-                            f"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
-
-                # 确保所有字段列存在（动态加列 + 已有列类型迁移）
-                existing = {}
-                cur.execute(f"SHOW COLUMNS FROM `{table_name}`")
-                for r in cur.fetchall():
-                    existing[r.get('Field', '')] = r.get('Type', 'LONGTEXT')
-                for h in safe_cols + ['_hash', '_sync_time', '_sync_batch_id']:
-                    ftype = type_map.get(h, '')
-                    expected_type = get_mysql_type_for_field(ftype) if h not in ('_hash', '_sync_time', '_sync_batch_id') else None
-                    if h not in existing:
-                        col_type = 'VARCHAR(32)' if h == '_hash' else (
-                            'VARCHAR(36)' if h == '_sync_batch_id' else (
-                            'DATETIME DEFAULT CURRENT_TIMESTAMP' if h == '_sync_time' else expected_type or 'LONGTEXT'))
-                        cur.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `{h}` {col_type}")
-                    elif expected_type and expected_type == 'DOUBLE' and 'double' not in existing[h].lower():
-                        # 已有列是 LONGTEXT 但应为 DOUBLE → 迁移
-                        try:
-                            cur.execute(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{h}` DOUBLE")
-                        except Exception:
-                            pass  # 数据无法转换，保持原类型
-
-                # 构建 upsert SQL（含批次标记）
-                upsert_cols = ['_id', '_hash', '_sync_time', '_sync_batch_id'] + safe_cols
-                placeholders = ', '.join(['%s'] * len(upsert_cols))
-                insert_sql = (
-                    f"INSERT INTO `{table_name}` "
-                    f"(`{'`, `'.join(upsert_cols)}`) VALUES ({placeholders}) "
-                    f"ON DUPLICATE KEY UPDATE "
-                )
-                update_parts = []
-                for h in safe_cols:
-                    update_parts.append(
-                        f"`{h}` = IF(VALUES(`_hash`) != `_hash`, VALUES(`{h}`), `{h}`)")
-                update_parts.append(
-                    "`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`)")
-                update_parts.append(
-                    "`_sync_time` = IF(VALUES(`_hash`) != `_hash`, NOW(), `_sync_time`)")
-                # 批次标记始终更新（不受 hash 变更影响）
-                update_parts.append(
-                    "`_sync_batch_id` = VALUES(`_sync_batch_id`)")
-                insert_sql += ', '.join(update_parts)
-
-                # 批量执行（每批 500 行）
-                batch = []
-                inserted = 0
-                skipped = 0
-                seen_ids = set()  # 防止同批次 _id 重复导致 1062 主键冲突
-                for row in rows:
-                    _id = str(row.get('_id', '')).strip()
-                    if not _id:
-                        skipped += 1
-                        continue
-                    if _id in seen_ids:
-                        skipped += 1
-                        continue
-                    seen_ids.add(_id)
-                    # 计算字段值哈希（数值字段用原值，非数值字段转 str）
-                    row_vals = {}
-                    for h in headers:
-                        ftype = type_map.get(h, '')
-                        if is_numeric_field_type(ftype):
-                            v = row.get(h)
-                            try:
-                                row_vals[h] = float(v) if v not in (None, '') else None
-                            except (ValueError, TypeError):
-                                row_vals[h] = str(v) if v is not None else ''
-                        else:
-                            row_vals[h] = str(row.get(h, '') or '')
-                    row_hash = hashlib.md5(
-                        json.dumps(row_vals, sort_keys=True, ensure_ascii=False, default=str).encode('utf-8')
-                    ).hexdigest()
-                    vals = [_id, row_hash, None, batch_id]  # _sync_time 用 NOW()
-                    for h in headers:
-                        ftype = type_map.get(h, '')
-                        val = safe_numeric_value(row.get(h, ''), ftype)
-                        vals.append(val)
-                    batch.append(vals)
-                    inserted += 1
-
-                    if len(batch) >= 500:
-                        cur.executemany(insert_sql, batch)
-                        batch.clear()
-
-                if batch:
-                    cur.executemany(insert_sql, batch)
-
-                # 清理不在本次批次中的旧记录（已在 CRM 中删除的）
-                deleted = 0
-                if cleanup_old:
-                    cur.execute(
-                        f"DELETE FROM `{table_name}` WHERE `_sync_batch_id` != %s",
-                        (batch_id,)
-                    )
-                    deleted = cur.rowcount
-
-            if skipped:
-                logging.warning(f"[MysqlCache] 清洗表 {table_name}: {skipped} 条记录因 _id 为空被跳过")
-            if deleted:
-                logging.info(f"[MysqlCache] 清洗表 {table_name}: 清理 {deleted} 条过期记录")
-            msg = f"已写入 {inserted} 条（增量同步）"
-            if deleted:
-                msg += f"，清理 {deleted} 条过期记录"
-            if skipped:
-                msg += f"，跳过 {skipped} 条（_id 为空）"
-            return True, msg
-        except Exception as e:
-            logging.error(f"[MysqlCache] 清洗表写入失败 {table_name}: {e}")
-            return False, str(e)[:100]
-
-    def clear(self, api_name):
-        conn = self._get_conn()
-        if not conn:
-            return
-        table = self._table_name(api_name)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(f"TRUNCATE TABLE `{table}`")
-        except Exception as e:
-            logging.error(f"[MysqlCache] 清除失败 {api_name}: {e}")
-
-    def close(self):
-        if self._conn and self._conn.open:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            self._conn = None
-
-
-class CRMCache:
-    """SQLite 本地缓存，用于存储从 CRM API 获取的数据对象。
-
-    每个 CRM 对象类型（如 SalesOrderObj、NewOpportunityObj）对应一张表，
-    完整记录存为 JSON，常用字段冗余为独立列并建立索引。
-    """
-
-    def __init__(self, db_path):
-        self._db_path = str(db_path)
-        os.makedirs(str(Path(self._db_path).parent), exist_ok=True)
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._ensure_meta_table()
-
-    # ---------- 内部工具 ----------
-
-    @staticmethod
-    def _sanitize_name(api_name):
-        """将 CRM 对象 API 名称转为安全的表名。"""
-        safe = ''.join(c if c.isalnum() else '_' for c in str(api_name))
-        return f"crm_{safe}"
-
-    def _ensure_meta_table(self):
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS _cache_meta (
-                object_api_name TEXT PRIMARY KEY,
-                total_api_count INTEGER DEFAULT 0,
-                cached_count    INTEGER DEFAULT 0,
-                last_sync_time  TEXT
-            )
-        """)
-        self._conn.commit()
-
-    def _ensure_object_table(self, object_api_name):
-        table = self._sanitize_name(object_api_name)
-        self._conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table} (
-                _id          TEXT PRIMARY KEY NOT NULL,
-                record_data  TEXT NOT NULL,
-                create_time  REAL,
-                owner_name   TEXT,
-                account_name TEXT,
-                life_status  TEXT,
-                record_type  TEXT,
-                name         TEXT,
-                cached_at    TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        self._conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS idx_{table}_create_time
-            ON {table}(create_time)
-        """)
-        self._conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS idx_{table}_life_status
-            ON {table}(life_status)
-        """)
-        self._conn.commit()
-
-    # ---------- 核心 CRUD ----------
-
-    def upsert_records(self, object_api_name, records, total_api_count=None):
-        """批量 upsert：按 _id 有则更新，无则插入。返回 (inserted, updated)。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        inserted = 0
-        updated = 0
-
-        for record in (records or []):
-            if not isinstance(record, dict):
-                continue
-            rid = str(record.get('_id', '')).strip()
-            if not rid:
-                continue
-
-            record_json = json.dumps(record, ensure_ascii=False)
-
-            create_time = record.get('create_time')
-            if isinstance(create_time, (int, float)):
-                create_time = float(create_time)
-            else:
-                create_time = None
-
-            owner = record.get('owner__r', {})
-            owner_name = (owner.get('name', '') if isinstance(owner, dict) else str(owner)) if owner else ''
-            account = record.get('account_id__r', {})
-            account_name = (account.get('name', '') if isinstance(account, dict) else str(account)) if account else ''
-            life_status = str(record.get('life_status', ''))
-            record_type = str(record.get('record_type', ''))
-            name = str(record.get('name', ''))
-
-            existing = self._conn.execute(
-                f"SELECT _id FROM {table} WHERE _id = ?", (rid,)
-            ).fetchone()
-
-            if existing:
-                self._conn.execute(
-                    f"""UPDATE {table} SET record_data=?, create_time=?, owner_name=?,
-                        account_name=?, life_status=?, record_type=?, name=?,
-                        cached_at=datetime('now') WHERE _id=?""",
-                    (record_json, create_time, owner_name, account_name,
-                     life_status, record_type, name, rid)
-                )
-                updated += 1
-            else:
-                self._conn.execute(
-                    f"""INSERT INTO {table} (_id, record_data, create_time, owner_name,
-                        account_name, life_status, record_type, name)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (rid, record_json, create_time, owner_name, account_name,
-                     life_status, record_type, name)
-                )
-                inserted += 1
-
-        self._conn.execute(
-            "INSERT OR REPLACE INTO _cache_meta (object_api_name, total_api_count, cached_count, last_sync_time) VALUES (?, ?, (SELECT COUNT(*) FROM {0}), datetime('now'))".format(table),
-            (object_api_name, total_api_count or 0)
-        )
-        self._conn.commit()
-        return inserted, updated
-
-    def get_all_records(self, object_api_name):
-        """返回指定对象类型的所有缓存记录（完整 JSON 解码）。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        rows = self._conn.execute(
-            f"SELECT record_data FROM {table} ORDER BY create_time DESC"
-        ).fetchall()
-        result = []
-        for (record_data,) in rows:
-            try:
-                result.append(json.loads(record_data))
-            except json.JSONDecodeError:
-                result.append({'_id': '', '_raw': record_data})
-        return result
-
-    def get_record_by_id(self, object_api_name, record_id):
-        """按 _id 获取单条记录，找不到返回 None。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        row = self._conn.execute(
-            f"SELECT record_data FROM {table} WHERE _id = ?", (str(record_id),)
-        ).fetchone()
-        if row:
-            try:
-                return json.loads(row[0])
-            except json.JSONDecodeError:
-                return {'_id': record_id, '_raw': row[0]}
-        return None
-
-    def get_record_count(self, object_api_name):
-        """返回缓存中的记录数。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        return self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-
-    def get_meta(self, object_api_name):
-        """返回同步元数据字典。"""
-        row = self._conn.execute(
-            "SELECT total_api_count, cached_count, last_sync_time FROM _cache_meta WHERE object_api_name = ?",
-            (object_api_name,)
-        ).fetchone()
-        if row:
-            return {'total_api_count': row[0], 'cached_count': row[1], 'last_sync_time': row[2]}
-        return {}
-
-    def delete_record(self, object_api_name, record_id):
-        """删除单条记录。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        self._conn.execute(f"DELETE FROM {table} WHERE _id = ?", (str(record_id),))
-        self._conn.commit()
-
-    def delete_all_records(self, object_api_name):
-        """清空指定对象类型的所有缓存。"""
-        self._ensure_object_table(object_api_name)
-        table = self._sanitize_name(object_api_name)
-        self._conn.execute(f"DELETE FROM {table}")
-        self._conn.commit()
-
-    # ---------- 映射数据表（每个字段独立列，存储映射+清洗后的数据） ----------
-
-    def _ensure_mapped_table(self, object_api_name, field_columns):
-        """创建映射数据表，每个 CRM 字段 + 用户覆盖字段独立一列"""
-        table = self._sanitize_name(object_api_name) + '_mapped'
-        col_defs = ['_id TEXT PRIMARY KEY NOT NULL']
-        for col in field_columns:
-            safe_col = ''.join(c if c.isalnum() else '_' for c in str(col))
-            if safe_col and safe_col != '_id':
-                col_defs.append(f'"{safe_col}" TEXT')
-        col_defs.append('_from_mapped_cache INTEGER DEFAULT 1')
-        col_defs.append("mapped_at TEXT NOT NULL DEFAULT (datetime('now'))")
-        self._conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table} (
-                {', '.join(col_defs)}
-            )
-        """)
-        self._conn.commit()
-        return table
-
-    def _get_mapped_table_columns(self, object_api_name):
-        """获取映射表的所有列名"""
-        table = self._sanitize_name(object_api_name) + '_mapped'
-        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
-        return [r[1] for r in rows]
-
-    def upsert_mapped_records(self, object_api_name, field_columns, rows):
-        """批量写入映射数据：按 _id 有则更新，无则插入。返回 (inserted, updated)。"""
-        table = self._ensure_mapped_table(object_api_name, field_columns)
-        existing_cols = set(self._get_mapped_table_columns(object_api_name))
-        inserted = 0
-        updated = 0
-
-        for row in (rows or []):
-            if not isinstance(row, dict):
-                continue
-            rid = str(row.get('_id', '')).strip()
-            if not rid:
-                continue
-
-            # 只写入表中已存在的列
-            valid_cols = [c for c in row if c in existing_cols and c != '_from_mapped_cache' and c != 'mapped_at']
-            if not valid_cols:
-                continue
-
-            placeholders = ', '.join(['?'] * len(valid_cols))
-            col_names = ', '.join(f'"{c}"' for c in valid_cols)
-            values = [str(row.get(c, '') or '') for c in valid_cols]
-
-            existing = self._conn.execute(
-                f"SELECT _id FROM {table} WHERE _id = ?", (rid,)
-            ).fetchone()
-
-            if existing:
-                set_clause = ', '.join(f'"{c}"=?' for c in valid_cols)
-                self._conn.execute(
-                    f"UPDATE {table} SET {set_clause}, mapped_at=datetime('now') WHERE _id=?",
-                    values + [rid]
-                )
-                updated += 1
-            else:
-                self._conn.execute(
-                    f"INSERT INTO {table} (_id, {col_names}) VALUES (?, {placeholders})",
-                    [rid] + values
-                )
-                inserted += 1
-
-        self._conn.commit()
-        return inserted, updated
-
-    def get_all_mapped_records(self, object_api_name):
-        """返回映射表中所有记录（每个字段已是映射+清洗后的值）"""
-        table = self._sanitize_name(object_api_name) + '_mapped'
-        rows = self._conn.execute(
-            f"SELECT * FROM {table} ORDER BY create_time DESC"
-        ).fetchall()
-        if not rows:
-            return []
-        col_names = [desc[0] for desc in self._conn.execute(
-            f"SELECT * FROM {table} LIMIT 0"
-        ).description]
-        result = []
-        for row in rows:
-            record = dict(zip(col_names, row))
-            record['_from_mapped_cache'] = True
-            result.append(record)
-        return result
-
-    def update_mapped_field(self, object_api_name, record_id, field_name, value):
-        """更新映射表中单条记录的单个字段"""
-        table = self._sanitize_name(object_api_name) + '_mapped'
-        safe_col = ''.join(c if c.isalnum() else '_' for c in str(field_name))
-        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
-        existing_cols = {r[1] for r in rows}
-        if safe_col not in existing_cols:
-            self._conn.execute(f'ALTER TABLE {table} ADD COLUMN "{safe_col}" TEXT')
-            self._conn.commit()
-        self._conn.execute(
-            f'UPDATE {table} SET "{safe_col}"=?, mapped_at=datetime(\'now\') WHERE _id=?',
-            (str(value or ''), str(record_id))
-        )
-        self._conn.commit()
-
-    def get_mapped_record_count(self, object_api_name):
-        """返回映射表中的记录数"""
-        table = self._sanitize_name(object_api_name) + '_mapped'
-        row = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-        return row[0] if row else 0
-
-    def close(self):
-        try:
-            self._conn.close()
-        except Exception:
-            pass
-
-
-# 统一运行根目录，确保打包后始终使用 exe 所在目录
+from network import FXiaokeCRM, BackgroundTaskManager, MysqlCache, CRMCache
+# ????????exe ????????
 try:
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         APP_ROOT = Path(sys.executable).resolve().parent
     else:
         APP_ROOT = Path(__file__).resolve().parent
@@ -1042,19 +112,14 @@ _WORD_PDF_FORCE_SINGLE_USE_LOADED = threading.Event()
 
 
 def is_word_session_disconnect_error(error):
-    """判断 Word COM 会话是否已断开。"""
-    error_code = None
-    if getattr(error, 'args', None):
-        error_code = error.args[0]
-
-    error_text = str(error).lower()
-    return (
-        error_code in (-2147023170, -2147023174)
-        or 'rpc' in error_text
-        or '服务器不可用' in str(error)
-        or '远程过程调用失败' in str(error)
-    )
-
+    """?? Word COM ??????"""
+    error_str = str(error)
+    return any(p in error_str for p in [
+        "RPC_E_DISCONNECTED",
+        "0x80010108",
+        "The object invoked has disconnected from its clients",
+        "Server execution failed",
+    ])
 
 class WordPdfConverterSession:
     """在同一批量任务中复用 Word 进程，避免每个文档重复启动。"""
@@ -1676,12 +741,17 @@ def perform_requests_request(method, url, **kwargs):
 
 
 def resolve_app_path(path_value):
-    """将相对路径解析到程序根目录，绝对路径保持不变"""
+    """将相对路径解析到程序根目录，绝对路径保持不变（若盘符不存在则回退到程序根目录）"""
     if not path_value:
         return APP_ROOT
     path = Path(path_value)
     if path.is_absolute():
-        return path
+        # 验证盘符是否可访问（项目迁移到其他盘符时自动回退）
+        drive_root = str(path.drive) + '\\'
+        if os.path.exists(drive_root):
+            return path
+        # 盘符不存在，回退到程序根目录
+        return APP_ROOT
 
     if getattr(sys, 'frozen', False):
         resource_candidate = RESOURCE_ROOT / path
@@ -1868,7 +938,17 @@ def get_common_config_path(for_save=False):
             pass
 
     if configured_path:
-        config_file = resolve_app_path(configured_path)
+        # 验证配置路径的盘符是否可访问（项目迁移到其他盘符时自动回退）
+        configured_file = Path(configured_path)
+        if configured_file.is_absolute():
+            drive_root = str(configured_file.drive) + '\\'
+            if not os.path.exists(drive_root):
+                # 盘符不存在，回退到程序所在盘符的默认路径
+                config_file = CONFIG_DIR / SHARED_SETTINGS_FILENAME
+            else:
+                config_file = resolve_app_path(configured_path)
+        else:
+            config_file = resolve_app_path(configured_path)
     else:
         config_file = CONFIG_DIR / SHARED_SETTINGS_FILENAME
 
@@ -2097,6 +1177,9 @@ NOISY_RUNTIME_PRINT_MESSAGES = {
 }
 
 NOISY_RUNTIME_PRINT_UI_ONLY_PREFIXES = (
+    "[operation]",
+    "[root] INFO",
+    "✓",
     "[RuntimeState]",
     "[DEBUG-",
     "[列宽恢复]",
@@ -2125,6 +1208,9 @@ def _should_suppress_runtime_print(message):
 
 
 
+# 保存原始内置 print 引用，用于统配版内部调用
+_original_print = builtins.print
+
 def print(*args, **kwargs):
     """包装内置print以统一运行时日志输出。"""
     message = ' '.join(str(arg) for arg in args)
@@ -2133,7 +1219,7 @@ def print(*args, **kwargs):
         return
     if suppress_result == 'ui_only':
         # 仅抑制UI窗口输出，但仍写日志文件
-        return builtins.print(*args, **kwargs)
+        return _original_print(*args, **kwargs)
     # 同时输出到界面运行窗口
     try:
         import sys
@@ -2144,7 +1230,10 @@ def print(*args, **kwargs):
                 mf.instance.append_output(message)
     except Exception:
         pass
-    return builtins.print(*args, **kwargs)
+    return _original_print(*args, **kwargs)
+
+# 替换全局 builtins.print，让所有模块都经过此过滤器
+builtins.print = print
 
 
 
@@ -2290,7 +1379,7 @@ _qt_app_instance = None
 
 
 def ensure_qapplication():
-    """确保当前进程存在QApplication实例。"""
+    """确保当前进程存在QApplication实例，并强制应用全局浅色 tooltip 主题。"""
     global _qt_app_instance
     app = QApplication.instance()
     if app is None:
@@ -2299,6 +1388,66 @@ def ensure_qapplication():
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
         app = QApplication(sys.argv)
+
+    # 强制使用 Fusion 主题，避免系统原生主题把 tooltip 渲染成黑色背景。
+    try:
+        from PyQt6.QtWidgets import QStyleFactory, QToolTip
+        fusion_style = QStyleFactory.create('Fusion')
+        if fusion_style is not None:
+            app.setStyle(fusion_style)
+    except Exception:
+        pass
+
+    # 强制全局浅色 tooltip，覆盖系统/父窗口样式。
+    palette = app.palette()
+    palette.setColor(QPalette.ToolTipBase, QColor('#FFFFFF'))
+    palette.setColor(QPalette.ToolTipText, QColor("#333333"))
+    palette.setColor(QPalette.Window, QColor('#FAFAFA'))
+    palette.setColor(QPalette.WindowText, QColor('#333333'))
+    palette.setColor(QPalette.Base, QColor('#FFFFFF'))
+    palette.setColor(QPalette.AlternateBase, QColor('#F5F5F5'))
+    palette.setColor(QPalette.Text, QColor('#333333'))
+    palette.setColor(QPalette.Button, QColor('#FFFFFF'))
+    palette.setColor(QPalette.ButtonText, QColor('#333333'))
+    palette.setColor(QPalette.BrightText, QColor('#FF8C00'))
+    palette.setColor(QPalette.Highlight, QColor('#E6F7FF'))
+    palette.setColor(QPalette.HighlightedText, QColor('#333333'))
+    app.setPalette(palette)
+    QToolTip.setPalette(palette)
+
+    existing_stylesheet = app.styleSheet() or ''
+    tooltip_stylesheet = (
+        "QToolTip { background-color: #FFFFFF; color: #333333; "
+        "border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }"
+    )
+    if 'QToolTip {' not in existing_stylesheet:
+        app.setStyleSheet(existing_stylesheet + ("\n" if existing_stylesheet else "") + tooltip_stylesheet)
+    else:
+        app.setStyleSheet(existing_stylesheet)
+
+    # 强制全局浅色弹窗背景（QMessageBox / QDialog），覆盖系统深色主题。
+    _current = app.styleSheet()
+    _msgbox_style = (
+        "QMessageBox { background-color: #FAFAFA; color: #333333; }"
+        "QMessageBox QLabel { color: #333333; font-size: 13px; }"
+        "QMessageBox QPushButton { background-color: #FFFFFF; color: #333333;"
+        "  border: 1px solid #D9D9D9; border-radius: 4px;"
+        "  padding: 6px 20px; font-size: 13px; min-width: 80px; }"
+        "QMessageBox QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }"
+        "QDialog { background-color: #FAFAFA; color: #333333; }"
+        "QDialog QLabel { color: #333333; }"
+        "QDialog QPushButton { background-color: #FFFFFF; color: #333333;"
+        "  border: 1px solid #D9D9D9; border-radius: 4px;"
+        "  padding: 6px 16px; font-size: 13px; }"
+        "QDialog QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }"
+        "QDialog QLineEdit { border: 1px solid #D9D9D9; border-radius: 4px;"
+        "  padding: 4px 8px; background-color: #FFFFFF; color: #333333; }"
+        "QDialog QComboBox { border: 1px solid #D9D9D9; border-radius: 4px;"
+        "  padding: 4px 8px; background-color: #FFFFFF; color: #333333; }"
+    )
+    if 'QMessageBox {' not in _current:
+        app.setStyleSheet(_current + "\n" + _msgbox_style)
+ 
     _qt_app_instance = app
     return app
 
@@ -3061,7 +2210,7 @@ def show_multi_select_popup(parent, mappings, current_value='', anchor=None):
     dialog = QDialog(parent)
     dialog.setWindowTitle("选择值")
     dialog.setMinimumSize(260, 320)
-    dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+    dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
 
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(12, 12, 12, 12)
@@ -3322,11 +2471,25 @@ def build_modern_glass_stylesheet(bg_color, fg_color, btn_bg, entry_bg, entry_fg
         QStackedWidget#contentStack {{
             background-color: {_color_to_rgba(panel_color, 184)};
         }}
-        QGroupBox, QTreeWidget, QTableWidget, QTableView, QListWidget, QMenu, QTabWidget::pane {{
+        QGroupBox, QTreeWidget, QTableWidget, QTableView, QListWidget, QTabWidget::pane {{
             background-color: {_color_to_rgba(panel_color, 184)};
             border: 1px solid {_color_to_rgba(border_tint, 170)};
             border-radius: {group_radius}px;
         }}
+        QMenu {{
+            background-color: #FFFFFF;
+            border: 1px solid #D9D9D9;
+            border-radius: 4px;
+            padding: 4px 0;
+            font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+        }}
+        QMenu {
+            background-color: #FFFFFF;
+            border: 1px solid #D9D9D9;
+            border-radius: 4px;
+            padding: 4px 0;
+            font-family: "Microsoft YaHei", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+        }
         QGroupBox {{
             margin-top: {group_margin_top}px;
             padding-top: {button_padding_v}px;
@@ -3413,6 +2576,13 @@ def build_modern_glass_stylesheet(bg_color, fg_color, btn_bg, entry_bg, entry_fg
         QMenu::item:selected {{
             background-color: {_color_to_rgba(accent_color, 215)};
             color: #ffffff;
+        }}
+        QToolTip {{
+            background-color: #FFF7E6;
+            color: {fg_color.name()};
+            border: 1px solid #D9D9D9;
+            border-radius: 4px;
+            padding: 4px 6px;
         }}
         QScrollBar:vertical {{
             background: transparent;
@@ -3699,8 +2869,8 @@ def set_dialog_opacity(dialog):
         palette.setColor(QPalette.WindowText, fg_color)
         palette.setColor(QPalette.Base, entry_bg)
         palette.setColor(QPalette.AlternateBase, bg_color)
-        palette.setColor(QPalette.ToolTipBase, fg_color)
-        palette.setColor(QPalette.ToolTipText, fg_color)
+        palette.setColor(QPalette.ToolTipBase, QColor('#FFFFFF'))
+        palette.setColor(QPalette.ToolTipText, QColor('#333333'))
         palette.setColor(QPalette.Text, entry_fg)
         palette.setColor(QPalette.Button, btn_bg)
         palette.setColor(QPalette.ButtonText, fg_color)
@@ -3887,7 +3057,7 @@ def ask_yes_no(title, message, parent=None, **kwargs):
 # 设置QMessageBox的方法
 
 def setup_logging():
-    """设置统一日志文件（按日期记录所有 INFO+ 级别日志）"""
+    """设置统一日志文件（按日期记录关键操作和异常，过滤调试噪音）"""
     log_dir = Path('log')
     try:
         base_dir = Path(__file__).parent if '__file__' in dir() else Path.cwd()
@@ -3897,17 +3067,28 @@ def setup_logging():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     today = datetime.now().strftime('%Y-%m-%d')
-    log_file = log_dir / f'operation_{today}.log'
+    log_file = log_dir / f'operation_{today}.txt'
 
     # 清除已有 handler，确保 basicConfig 生效
     root = logging.getLogger()
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    # 文件 handler（INFO+ 写日志文件）
+    # 文件 handler（INFO+ 写日志文件，过滤 [DEBUG-...] 噪音）
+    class _OperationFilter(logging.Filter):
+        """只放行 WARNING+ 或不含 [DEBUG- 前缀的 INFO 消息"""
+        def filter(self, record: logging.LogRecord) -> bool:
+            if record.levelno >= logging.WARNING:
+                return True
+            msg = record.getMessage()
+            if '[DEBUG-' in msg or msg.strip().startswith('[DEBUG'):
+                return False
+            return True
+
     fh = logging.FileHandler(log_file, encoding='utf-8')
     fh.setLevel(logging.INFO)
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    fh.addFilter(_OperationFilter())
     root.addHandler(fh)
     # 控制台 handler 必须绑定真实 stderr，避免与 _StderrLogWriter 形成递归
     _real_stderr = getattr(sys.stderr, '_orig', sys.stderr) or sys.__stderr__
@@ -3960,6 +3141,18 @@ def setup_logging():
         sys.stdout = _StdoutLogWriter()
     if not hasattr(sys.stderr, '_orig'):
         sys.stderr = _StderrLogWriter(_real_stderr)
+
+    # 修正 root logger 中指向旧 stderr 的 StreamHandler，避免日志消息
+    # 经由 _StderrLogWriter 被重复输出并错误地标记为 ERROR 级别
+    for handler in list(root.handlers):
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            try:
+                if handler.stream is not _real_stderr:
+                    handler.setStream(_real_stderr)
+            except AttributeError:
+                # 部分 Python 版本的 StreamHandler 无 setStream，直接替换 stream 属性
+                if getattr(handler, 'stream', None) is not _real_stderr:
+                    handler.stream = _real_stderr
 
     # 全局异常捕获
     def _log_exception(exc_type, exc_value, exc_tb):
@@ -4304,7 +3497,7 @@ def is_admin(username, password):
     return (username == "Zengjiataoadmin" or username == "001") and password == "Zeng0213@"
 
 
-def show_login_register_dialog():
+def show_login_register_dialog(skip_cache=False):
     """显示登录或注册界面。在没有显示设备时使用默认用户。"""
     import sys; sys.excepthook = sys.__excepthook__
     from PyQt6.QtWidgets import QApplication
@@ -4318,7 +3511,7 @@ def show_login_register_dialog():
             return "default_user", "admin"
         common._showing_login = True
         try:
-            return common.show_login_register_dialog()
+            return common.show_login_register_dialog(skip_cache=skip_cache)
         finally:
             common._showing_login = False
     except RuntimeError:
@@ -5265,28 +4458,23 @@ def organize_output_files():
                 print(f"删除Word文件失败: {str(e)}")
 
 
-def move_generated_document_files(generated_files, keep_word=None):
+def move_generated_document_files(generated_files, keep_word=None, keep_pdf=None):
     """将指定的生成文件移动到各自目标目录（CRM订单专用）"""
     # ✅ CRM订单使用 keep_crm_output_format 配置
     global _keep_crm_word_override
 
-    if keep_word is None:
+    if keep_word is None or keep_pdf is None:
         if _keep_crm_word_override is not None:
             keep_fmt = _keep_crm_word_override
         else:
             app_config = load_config()
             keep_fmt = app_config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
-        keep_word = keep_fmt in ('word', 'word_pdf')
-        keep_pdf = keep_fmt in ('pdf', 'word_pdf')
+        if keep_word is None:
+            keep_word = keep_fmt in ('word', 'word_pdf')
+        if keep_pdf is None:
+            keep_pdf = keep_fmt in ('pdf', 'word_pdf')
         print(f"[DEBUG-CRM文件整理] 格式: {keep_fmt} | 保留Word: {keep_word} | 保留PDF: {keep_pdf}")
     else:
-        # 显式传入 keep_word 时，也需要从配置/全局变量确定 keep_pdf
-        if _keep_crm_word_override is not None:
-            keep_fmt = _keep_crm_word_override
-        else:
-            app_config = load_config()
-            keep_fmt = app_config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
-        keep_pdf = keep_fmt in ('pdf', 'word_pdf')
         print(f"[DEBUG-CRM文件整理] ✓ 使用参数传入 | keep_word={keep_word} | keep_pdf={keep_pdf}")
 
     moved_roots = []
@@ -5546,99 +4734,6 @@ def install_header_alignment_menu(table, config_key, repopulate_callback=None):
 # from object_query import object_queryMixin  (handled by safe import above)
 
 
-class custom_report_pageMixin:
-    def on_enable_custom_report_button(self, value):
-        pass
-    def switch_to_custom_report_editor(self, *args, **kwargs):
-        try:
-           if self._ensure_editor_page() and hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page'):
-               self.content_stack.setCurrentWidget(self.custom_report_page)
-               self.custom_report_page_stack.setCurrentIndex(
-                   self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
-               )
-        except Exception as e:
-            import traceback, logging
-            logging.error(f"切换报表编辑器失败: {e}\n{traceback.format_exc()}")
-            print(f"ERROR: 切换报表编辑器失败: {e}")
-    def _ensure_editor_page(self):
-        if not hasattr(self, '_report_manager') or not self._report_manager:
-            return False
-        if self.custom_report_editor_page is None:
-            editor = self._report_manager.get_editor_page()
-            self.custom_report_editor_page = editor
-            if self.custom_report_page_stack.indexOf(editor) == -1:
-                self.custom_report_page_stack.addWidget(editor)
-            if hasattr(editor, 'backRequested'):
-                editor.backRequested.connect(self.switch_to_custom_report_list)
-        return True
-    def _ensure_list_page(self):
-        if hasattr(self, 'custom_report_list_page'):
-            return
-        from PyQt6.QtWidgets import QFrame, QVBoxLayout, QStackedWidget
-        self.custom_report_page_stack = QStackedWidget()
-        self.custom_report_page_stack.setStyleSheet('background-color: transparent;')
-        mgr = getattr(self, '_report_manager', None)
-        self.custom_report_list_page = mgr.get_list_page() if mgr else None
-        if self.custom_report_list_page:
-            self.custom_report_page_stack.addWidget(self.custom_report_list_page)
-            if hasattr(self.custom_report_list_page, 'reportEdit'):
-                self.custom_report_list_page.reportEdit.connect(self._on_new_report_edit)
-            if hasattr(self.custom_report_list_page, 'reportEditDirect'):
-                self.custom_report_list_page.reportEditDirect.connect(self._on_new_report_edit)
-            if hasattr(self.custom_report_list_page, 'newReport'):
-                self.custom_report_list_page.newReport.connect(self._on_new_report_create)
-            if hasattr(self.custom_report_list_page, 'newReportInFolder'):
-                self.custom_report_list_page.newReportInFolder.connect(self._on_new_report_create_in_folder)
-        page = QFrame()
-        page_layout = QVBoxLayout(page)
-        page_layout.setContentsMargins(0, 0, 0, 0)
-        page_layout.setSpacing(0)
-        page_layout.addWidget(self.custom_report_page_stack)
-        self.content_stack.addWidget(page)
-        self.custom_report_page = page
-    def switch_to_custom_report_list(self):
-        self._ensure_list_page()
-        if hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page'):
-            self.content_stack.setCurrentWidget(self.custom_report_page)
-        if hasattr(self, 'custom_report_page_stack') and self.custom_report_page_stack.count() > 0:
-            self.custom_report_page_stack.setCurrentIndex(0)
-    def _on_new_report_edit(self, report_id):
-        self._ensure_list_page()
-        if self._ensure_editor_page():
-            mgr = getattr(self, '_report_manager', None)
-            if mgr and hasattr(mgr, '_repo'):
-                report = mgr._repo.get(report_id)
-                if report and hasattr(self.custom_report_editor_page, 'load_report'):
-                    self.custom_report_editor_page.load_report(report)
-            self.custom_report_page_stack.setCurrentIndex(
-                self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
-            )
-    def _on_new_report_create(self):
-        self._ensure_list_page()
-        if self._ensure_editor_page():
-            if hasattr(self.custom_report_editor_page, 'new_report'):
-                self.custom_report_editor_page.new_report()
-            self.custom_report_page_stack.setCurrentIndex(
-                self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
-            )
-    def _on_new_report_create_in_folder(self, folder_path):
-        self._on_new_report_create()
-    def switch_to_custom_report(self):
-        self.switch_to_custom_report_list()
-    def _apply_custom_report_builder_state(self, *args, **kwargs): pass
-    def _apply_custom_report_filters(self, *args, **kwargs): pass
-    def _collect_custom_report_field_configs(self, *args, **kwargs): pass
-    def _format_custom_report_value(self, *args, **kwargs): pass
-    def _guess_custom_report_field_label(self, *args, **kwargs): pass
-    def _load_custom_report_by_key(self, *args, **kwargs): pass
-    def _populate_custom_report_table(self, *args, **kwargs): pass
-    def _refresh_custom_report_field_source_options(self, *args, **kwargs): pass
-    def _refresh_custom_report_list(self, *args, **kwargs): pass
-    def _refresh_custom_report_main_source_options(self, *args, **kwargs): pass
-    def _refresh_custom_report_preset_combo(self, *args, **kwargs): pass
-    def _save_custom_report_builder_state(self, *args, **kwargs): pass
-
-
 class MainFrame(
     QMainWindow,
     file_generationMixin,
@@ -5646,9 +4741,11 @@ class MainFrame(
     file_moverMixin,
     pdf_watermarkMixin,
     object_queryMixin,
-    bi_dashboardMixin,
+    BitableMixin,
+    DashboardMixin,
     departmentMixin,
     custom_report_pageMixin,
+    SpreadsheetPageMixin,
 ):
     """主窗口应用程序类"""
     # 定义信号用于在主线程中更新UI
@@ -5663,6 +4760,10 @@ class MainFrame(
     task_status_changed = pyqtSignal(str, str, str)   # task_id, name, status
     task_completed = pyqtSignal(str, bool, str)        # task_id, success, message
     task_error_occurred = pyqtSignal(str, str)          # task_id, error_message
+
+    # 对象查询后台数据处理信号
+    # 信号: api_name, visible_labels, display_to_api_list, pre_formatted_rows, rebuild_result
+    obj_query_process_done = pyqtSignal(str, list, list, list, object)
 
     # 类变量用于存储实例引用
     instance = None
@@ -5691,15 +4792,19 @@ class MainFrame(
         self.config = load_config()
 
         # ===== 初始化自定义报表模块（新版） =====
-        from custom_report import ReportManager
-        self._report_manager = ReportManager(
-            mysql_config=self.config.get('mysql_config', {}),
-            crm_client=None,  # 延迟绑定，待 CRM 实例创建后设置
-            app_config=self.config,
-            save_config_fn=save_config,
-            load_config_fn=load_config,
-        )
-        self._report_manager.initialize()
+        if _AVAILABLE_MIXINS.get('custom_report_pageMixin'):
+            from custom_report import ReportManager
+            self._report_manager = ReportManager(
+                mysql_config=self.config.get('mysql_config', {}),
+                crm_client=None,  # 延迟绑定，待 CRM 实例创建后设置
+                app_config=self.config,
+                save_config_fn=save_config,
+                load_config_fn=load_config,
+                append_output_fn=self.append_output,
+            )
+            self._report_manager.initialize()
+        else:
+            self._report_manager = None
         self.runtime_state = load_user_runtime_state()
         self.ui_scale_percent = normalize_ui_scale_percent(self.runtime_state.get('ui_scale_percent', 100), default=100)
         self._base_app_font = QFont(QApplication.instance().font()) if QApplication.instance() is not None else QFont()
@@ -5784,27 +4889,37 @@ class MainFrame(
 
         # ✅ 提前创建防抖定时器（避免在使用时未初始化）
         from PyQt6.QtCore import QTimer
-        self._crm_column_width_save_timer = QTimer()
-        self._crm_column_width_save_timer.setSingleShot(True)
-        self._crm_column_width_save_timer.timeout.connect(self._debounced_save_crm_column_widths)
-        self._data_column_width_save_timer = QTimer()
-        self._data_column_width_save_timer.setSingleShot(True)
-        self._data_column_width_save_timer.timeout.connect(self._debounced_save_data_table_column_widths)
-        self._opportunity_column_width_save_timer = QTimer()
-        self._opportunity_column_width_save_timer.setSingleShot(True)
-        self._opportunity_column_width_save_timer.timeout.connect(self._debounced_save_opportunity_column_widths)
-        self._obj_query_column_width_save_timer = QTimer()
-        self._obj_query_column_width_save_timer.setSingleShot(True)
-        self._obj_query_column_width_save_timer.timeout.connect(self._debounced_save_obj_query_column_widths)
-        self._opp_search_debounce_timer = QTimer()
-        self._opp_search_debounce_timer.setSingleShot(True)
-        self._opp_search_debounce_timer.timeout.connect(self._apply_opp_filters)
-        self._opp_filter_debounce_timer = QTimer()
-        self._opp_filter_debounce_timer.setSingleShot(True)
-        self._opp_filter_debounce_timer.timeout.connect(self._apply_opp_filters)
-        self._obj_query_filter_populate_timer = QTimer()
-        self._obj_query_filter_populate_timer.setSingleShot(True)
-        self._obj_query_filter_populate_timer.timeout.connect(self._debounced_obj_query_filter_populate)
+        if hasattr(self, '_debounced_save_crm_column_widths'):
+            self._crm_column_width_save_timer = QTimer()
+            self._crm_column_width_save_timer.setSingleShot(True)
+            self._crm_column_width_save_timer.timeout.connect(self._debounced_save_crm_column_widths)
+        if hasattr(self, '_debounced_save_data_table_column_widths'):
+            self._data_column_width_save_timer = QTimer()
+            self._data_column_width_save_timer.setSingleShot(True)
+            self._data_column_width_save_timer.timeout.connect(self._debounced_save_data_table_column_widths)
+        if hasattr(self, '_debounced_save_opportunity_column_widths'):
+            self._opportunity_column_width_save_timer = QTimer()
+            self._opportunity_column_width_save_timer.setSingleShot(True)
+            self._opportunity_column_width_save_timer.timeout.connect(self._debounced_save_opportunity_column_widths)
+        if hasattr(self, '_debounced_save_obj_query_column_widths'):
+            self._obj_query_column_width_save_timer = QTimer()
+            self._obj_query_column_width_save_timer.setSingleShot(True)
+            self._obj_query_column_width_save_timer.timeout.connect(self._debounced_save_obj_query_column_widths)
+        if hasattr(self, '_apply_opp_filters'):
+            self._opp_search_debounce_timer = QTimer()
+            self._opp_search_debounce_timer.setSingleShot(True)
+            self._opp_search_debounce_timer.timeout.connect(self._apply_opp_filters)
+            self._opp_filter_debounce_timer = QTimer()
+            self._opp_filter_debounce_timer.setSingleShot(True)
+            self._opp_filter_debounce_timer.timeout.connect(self._apply_opp_filters)
+        if hasattr(self, '_debounced_obj_query_filter_populate'):
+            self._obj_query_filter_populate_timer = QTimer()
+            self._obj_query_filter_populate_timer.setSingleShot(True)
+            self._obj_query_filter_populate_timer.timeout.connect(self._debounced_obj_query_filter_populate)
+        if hasattr(self, '_debounced_obj_query_search_populate'):
+            self._obj_query_search_timer = QTimer()
+            self._obj_query_search_timer.setSingleShot(True)
+            self._obj_query_search_timer.timeout.connect(self._debounced_obj_query_search_populate)
 
 
         # ✅ 移除自动保存定时器（避免无操作时频繁写入配置文件）
@@ -5825,10 +4940,10 @@ class MainFrame(
         if settings_window_size[0] < 1100 or settings_window_size[1] < 600:
             settings_window_size = [1100, 600]
 
-        saved_window_size = self.runtime_state.get('window_size') or self.config.get('app_settings', {}).get('window_size')
+        # 每次启动都使用默认桌面70%大小居中，不恢复上次窗口大小
         startup_x, startup_y, width, height = calculate_startup_window_rect(
             self,
-            saved_size=saved_window_size,
+            saved_size=None,
             width_ratio=0.7,
             height_ratio=0.7,
             min_width=850,
@@ -5837,8 +4952,6 @@ class MainFrame(
 
         operation_log.info(f"主窗口大小: {width}x{height}")
         operation_log.info(f"设置窗口大小: {settings_window_size[0]}x{settings_window_size[1]}")
-        if isinstance(saved_window_size, (list, tuple)) and len(saved_window_size) >= 2:
-            operation_log.info(f"恢复上次主窗口大小: {saved_window_size[0]}x{saved_window_size[1]}")
 
         # 设置标题和大小
         self.setWindowTitle("合同生成系统")
@@ -5854,7 +4967,8 @@ class MainFrame(
         main_central_widget = QFrame()
         main_central_widget.setObjectName("glassRoot")
         self.setCentralWidget(main_central_widget)
-        
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
+
         # 创建水平布局（左侧导航 + 右侧内容）
         main_horizontal_layout = QHBoxLayout(main_central_widget)
         main_horizontal_layout.setContentsMargins(0, 0, 0, 0)
@@ -5895,21 +5009,55 @@ class MainFrame(
         
         # 导航按钮列表
         self.nav_buttons = []
-        
-        # 定义导航项：(图标, 名称, 页面索引)
+
+        # 定义页面：(图标, 名称, 页面创建方法, mixin名称, 是否所有人可见)
+        # 导航项：(图标, 名称, 页面key) — 多个导航项可指向同一页面
         is_admin_user = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
-        all_nav_items = [
-            ("📄", "文件生成", 0, True),       # 所有人可见
-            ("📋", "订单转合同", 1, True),     # 所有人可见
-            ("📊", "自定义报表", 2, False),    # 仅管理员
-            ("📈", "BI 报表", 7, False),       # 仅管理员
-            ("📁", "文件移动", 3, True),       # 所有人可见
-            ("🔖", "招投标授权", 4, True),     # 所有人可见
-            ("📦", "对象查询", 5, False),      # 仅管理员
-            ("⚙️", "设   置", 6, True),       # 所有人可见
-            ("🏢", "部门员工", 8, False),      # 仅管理员
+        _page_defs = [
+            # (page_key, method, mixin_name)
+            ("file_gen",    "create_excel_to_pdf_page",  None),
+            ("crm_order",   "create_crm_order_page",     None),
+            ("custom_rpt",  "create_custom_report_page", "custom_report_pageMixin"),
+            ("bitable",     "create_bitable_page",       "BitableMixin"),
+            ("file_move",   "create_file_organize_page", None),
+            ("pdf_watermark","create_pdf_watermark_page", "pdf_watermarkMixin"),   # 招投标/商机
+            ("obj_query",   "create_object_query_page",  "object_queryMixin"),
+            ("settings",    "create_settings_page",      None),
+            ("department",  "create_department_page",    "departmentMixin"),
+            ("spreadsheet", "create_spreadsheet_page",   "SpreadsheetPageMixin"),
         ]
-        nav_items = [(icon, name, idx) for icon, name, idx, show in all_nav_items if show or is_admin_user]
+        _nav_defs = [
+            # (icon, label, page_key, show_to_all)
+            ("📄", "文件生成",   "file_gen",    True),
+            ("📋", "订单转合同", "crm_order",   True),
+            ("📊", "自定义报表", "custom_rpt",  False),
+            ("📊", "多维表格", "bitable",  False),
+            ("📁", "文件移动",   "file_move",   True),
+            ("🔖", "招投标授权", "pdf_watermark", True),   # 指向商机/PDF水印页面
+            ("📦", "对象查询",   "obj_query",   False),
+            ("⚙️", "设   置",   "settings",    True),
+            ("🏢", "部门员工",   "department",  False),
+            ("🧮", "电子表格",   "spreadsheet", False),
+        ]
+        # 过滤可用页面（排除未加载的 mixin）
+        _available_pages = []
+        for key, method, mixin_name in _page_defs:
+            if mixin_name and not _AVAILABLE_MIXINS.get(mixin_name):
+                continue
+            _available_pages.append((key, method))
+        _page_idx_map = {key: idx for idx, (key, method) in enumerate(_available_pages)}
+        self._page_idx_map = _page_idx_map  # 保存供 _rebuild_nav_buttons 使用
+        # 过滤可用导航项（排除不可见 + 页面不存在的）
+        all_nav_items = []
+        for icon, label, page_key, show_to_all in _nav_defs:
+            if page_key not in _page_idx_map:
+                continue
+            if not show_to_all and not is_admin_user:
+                continue
+            all_nav_items.append((icon, label, _page_idx_map[page_key]))
+        nav_items = all_nav_items
+        # 保存页面定义供后续创建
+        self._available_page_defs = _available_pages
 
         # 创建导航按钮
         for icon_text, name, page_idx in nav_items:
@@ -5931,8 +5079,9 @@ class MainFrame(
             self.nav_buttons[0].setChecked(True)
 
         # 缓存导航按钮配置状态
-        self._nav_button_order_cache = list(app_settings_nav.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8]))
-        self._nav_button_visible_cache = dict(app_settings_nav.get('nav_button_visible', {str(i): True for i in range(9)}))
+        _page_count = len(self._available_page_defs)
+        self._nav_button_order_cache = list(app_settings_nav.get('nav_button_order', list(range(_page_count))))
+        self._nav_button_visible_cache = dict(app_settings_nav.get('nav_button_visible', {str(i): True for i in range(_page_count)}))
 
         # 自定义顺序/可见性将在 content_stack 创建后应用
         
@@ -5969,8 +5118,8 @@ class MainFrame(
         nav_layout.addWidget(self.toggle_nav_btn)
 
         # 运行窗口控制按钮
-        saved_ov = self.runtime_state.get("output_visible", True)
-        self.output_visible = saved_ov if isinstance(saved_ov, bool) else True
+        # 始终默认隐藏输出窗口
+        self.output_visible = False
         nav_layout.addSpacing(8)
         nav_btn_row = QHBoxLayout()
         nav_btn_row.setSpacing(4)
@@ -5980,6 +5129,14 @@ class MainFrame(
         self.toggle_output_btn.clicked.connect(self.on_toggle_output)
         self.toggle_output_btn.setStyleSheet("QPushButton { border: 1px solid #A0A0A0; border-radius: 3px; font-size: 10px; padding: 1px 4px; background: transparent; color: #666; } QPushButton:hover { background: #E6F7FF; color: #1890FF; }")
         nav_btn_row.addWidget(self.toggle_output_btn)
+        # 透明度按钮
+        self.output_opacity_nav_btn = QPushButton("\u2299")
+        self.output_opacity_nav_btn.setFixedWidth(28)
+        self.output_opacity_nav_btn.setFixedHeight(26)
+        self.output_opacity_nav_btn.setToolTip("\u8f93\u51fa\u7a97\u53e3\u900f\u660e\u5ea6")
+        self.output_opacity_nav_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.output_opacity_nav_btn.setStyleSheet("QPushButton{border:1px solid #A0A0A0;border-radius:3px;font-size:11px;padding:1px 2px;background:transparent;color:#888;}QPushButton:hover{background:#F0F0F0;color:#333;}")
+        nav_btn_row.addWidget(self.output_opacity_nav_btn)
         self.clear_btn = QPushButton("清除")
         self.clear_btn.setFixedWidth(48)
         self.clear_btn.setFixedHeight(26)
@@ -6000,23 +5157,6 @@ class MainFrame(
         # 导航面板添加到左侧布局（占80%高度）
         left_layout.addWidget(self.nav_panel, 8)
 
-        # 提前读取输出窗口状态
-        saved_ov = self.runtime_state.get('output_visible', True)
-        self.output_visible = saved_ov if isinstance(saved_ov, bool) else True
-
-        # 副运行窗口（占20%高度），主输出隐藏时显示
-        self.sub_output_frame = QFrame(self.left_panel)
-        sub_output_layout = QVBoxLayout(self.sub_output_frame)
-        sub_output_layout.setContentsMargins(5, 3, 5, 3)
-        sub_output_layout.setSpacing(2)
-        sub_label = QLabel("运行结果：")
-        sub_output_layout.addWidget(sub_label)
-        self.sub_output_text = QTextEdit()
-        self.sub_output_text.setReadOnly(True)
-        self.sub_output_text.setPlaceholderText("生成结果...")
-        sub_output_layout.addWidget(self.sub_output_text, 1)
-        left_layout.addWidget(self.sub_output_frame, 2)
-        self.sub_output_frame.setVisible(not self.output_visible)
 
         # 将左侧面板添加到主布局
         main_horizontal_layout.addWidget(self.left_panel)
@@ -6027,19 +5167,16 @@ class MainFrame(
         self.content_stack = QStackedWidget()
         self.content_stack.setObjectName("contentStack")
 
-        self.create_excel_to_pdf_page()   # 页面0: 文件生成
-        self.create_crm_order_page()      # 页面1: CRM订单
-        self.create_custom_report_page()  # 页面2: 自定义报表
-        self.create_file_organize_page()  # 页面3: 文件移动
-        self.create_pdf_watermark_page()  # 页面4: PDF水印
-        self.create_object_query_page()   # 页面5: 对象查询
-        self.create_settings_page()       # 页面6: 设置
-        self.create_bi_dashboard_page()   # 页面7: BI 报表
-        self.create_department_page()     # 页面8: 部门与员工
+        # 按照 _available_page_defs 动态创建页面
+        for _key, _method in self._available_page_defs:
+            getattr(self, _method)()
+
+        # 记录实际创建的页面数量
+        self._total_pages = self.content_stack.count()
 
         # 应用导航按钮自定义顺序/可见性
-        default_order = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-        default_visible = {str(i): True for i in range(9)}
+        default_order = list(range(self._total_pages))
+        default_visible = {str(i): True for i in range(self._total_pages)}
         if self._nav_button_order_cache != default_order or self._nav_button_visible_cache != default_visible:
             self._rebuild_nav_buttons(select_first=True)
 
@@ -6054,27 +5191,133 @@ class MainFrame(
         
 
         # 输出窗口区域
-        self.output_frame = QFrame()
-        output_layout = QVBoxLayout(self.output_frame)
-        output_layout.setContentsMargins(10, 3, 10, 8)
-        output_layout.setSpacing(5)
+        self._output_dialog = QDialog(self)
+        self._output_dialog.setWindowTitle("运行过程")
+        self._output_dialog.setObjectName("outputPopupDialog")
+        self._output_dialog.setWindowFlags(
+            Qt.WindowType.Window |
+            Qt.WindowType.FramelessWindowHint
+        )
+        self._output_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
-        # 运行过程输出窗口 - 宽度跟随主窗口，高度自适应
-        self.output_label = QLabel("过程：")
-        output_layout.addWidget(self.output_label)
-        
-        self.output_text = QTextEdit()
-        self.output_text.setReadOnly(True)
-        output_layout.addWidget(self.output_text, 1)  # 填充剩余空间
-        
-        right_layout.addWidget(self.output_frame, 2)
+        self._output_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        self._output_dialog.setWindowModality(Qt.WindowModality.NonModal)
+        # 设置初始大小（从配置读取）
+        output_window_size = self.config.get('app_settings', {}).get('output_window_size', [600, 300])
+        self._output_dialog.resize(output_window_size[0], output_window_size[1])
+        # 弹出窗口布局
+        _oc = QFrame(self._output_dialog)
+        _oc.setObjectName("oc")
+        _oc.setStyleSheet("#oc{background:#FFF;border:1px solid #D0D0D0;border-radius:8px;}")
+        _ov = QVBoxLayout(_oc); _ov.setContentsMargins(0,0,0,0); _ov.setSpacing(0)
+        self._output_text = QTextEdit()
+        self._output_text.setReadOnly(True)
+        self._output_text.setStyleSheet("QTextEdit{border:none;border-radius:8px;padding:6px 10px;font-size:11px;color:#333;background:transparent;}")
+        _ov.addWidget(self._output_text, 1)
+        from PyQt6.QtWidgets import QSizeGrip
+        _gr = QHBoxLayout(); _gr.setContentsMargins(0,0,0,0); _gr.addStretch()
+        _gs = QSizeGrip(_oc); _gs.setFixedSize(16,16); _gs.setStyleSheet("QSizeGrip{background:transparent;}")
+        _gr.addWidget(_gs); _ov.addLayout(_gr)
+        _ol = QVBoxLayout(self._output_dialog); _ol.setContentsMargins(6,6,6,6); _ol.addWidget(_oc)
+        from PyQt6.QtWidgets import QGraphicsDropShadowEffect
+        _sh = QGraphicsDropShadowEffect(); _sh.setBlurRadius(24); _sh.setOffset(0,4); _sh.setColor(QColor(0,0,0,60))
+        _oc.setGraphicsEffect(_sh)
+        # 初始可见性由 restore 控制，不在此处 show
+        self._apply_output_dialog_opacity()
+        # 事件过滤器：边缘拉伸 + 外部点击隐藏
+        from PyQt6.QtCore import QEvent
+        class _OutFilter(QObject):
+            def __init__(self, dlg, main):
+                super().__init__(dlg)
+                self._dlg = dlg; self._main = main
+                self._resizing = False; self._resize_edge = None
+                self._resize_start = None; self._resize_start_geo = None
+                self._save_timer = None; self._edge_margin = 10
+            def _edge(self, pos):
+                r = self._dlg.rect(); m = self._edge_margin
+                or2 = pos.x() >= r.right() - m; ot2 = pos.y() <= r.top() + m
+                if or2 and ot2: return "tr"
+                if or2: return "r"
+                if ot2: return "t"
+                return None
+            def eventFilter(self, w, e):
+                from PyQt6.QtCore import QTimer
+                t = e.type()
+                on_dlg = (w is self._dlg) or (hasattr(w,"window") and callable(w.window) and w.window() is self._dlg)
+                if w is self._dlg and t == QEvent.Type.Resize:
+                    if hasattr(self._main,"_save_output_dialog_size"):
+                        if not self._save_timer:
+                            self._save_timer = QTimer(); self._save_timer.setSingleShot(True)
+                            self._save_timer.timeout.connect(self._main._save_output_dialog_size)
+                        self._save_timer.start(500)
+                    return False
+                if on_dlg and t == QEvent.Type.MouseMove:
+                    pos = self._dlg.mapFromGlobal(e.globalPosition().toPoint())
+                    if self._resizing:
+                        gp = e.globalPosition().toPoint()
+                        if self._resize_edge == "r":
+                            self._dlg.resize(max(200,gp.x()-self._resize_start_geo.x()),self._resize_start_geo.height())
+                        elif self._resize_edge == "tr":
+                            nw = max(200,gp.x()-self._resize_start_geo.x())
+                            nh = max(100,self._resize_start_geo.height()-(gp.y()-self._resize_start.y()))
+                            dy = self._resize_start_geo.height() - nh
+                            self._dlg.setGeometry(self._resize_start_geo.x(),self._resize_start_geo.y()+dy,nw,nh)
+                        elif self._resize_edge == "t":
+                            nh = max(100,self._resize_start_geo.height()-(gp.y()-self._resize_start.y()))
+                            dy = self._resize_start_geo.height() - nh
+                            self._dlg.setGeometry(self._resize_start_geo.x(),self._resize_start_geo.y()+dy,self._resize_start_geo.width(),nh)
+                        e.accept(); return True
+                    ed = self._edge(pos)
+                    if ed == "tr": self._dlg.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                    elif ed == "t": self._dlg.setCursor(Qt.CursorShape.SizeVerCursor)
+                    elif ed == "r": self._dlg.setCursor(Qt.CursorShape.SizeHorCursor)
+                    else: self._dlg.setCursor(Qt.CursorShape.ArrowCursor)
+                    return False
+                if on_dlg and t == QEvent.Type.MouseButtonPress and e.button() == Qt.MouseButton.LeftButton:
+                    pos = self._dlg.mapFromGlobal(e.globalPosition().toPoint())
+                    ed = self._edge(pos)
+                    if ed:
+                        self._resizing = True; self._resize_edge = ed
+                        self._resize_start = e.globalPosition().toPoint()
+                        self._resize_start_geo = self._dlg.frameGeometry()
+                        e.accept(); return True
+                    return False
+                if on_dlg and t == QEvent.Type.MouseButtonRelease:
+                    if self._resizing:
+                        self._resizing = False; self._resize_edge = None
+                        self._resize_start = None; self._resize_start_geo = None
+                        self._dlg.setCursor(Qt.CursorShape.ArrowCursor)
+                        return True
+                    return False
+                if t == QEvent.Type.MouseButtonPress and e.button() == Qt.MouseButton.LeftButton:
+                    if self._dlg and self._dlg.isVisible():
+                        cp = e.globalPosition().toPoint(); dr = self._dlg.frameGeometry()
+                        if not dr.contains(cp):
+                            from PyQt6.QtWidgets import QApplication
+                            wa = QApplication.widgetAt(cp); skip = False
+                            while wa:
+                                for bn in ("output_opacity_nav_btn","clear_btn","toggle_output_btn"):
+                                    bt = getattr(self._main,bn,None)
+                                    if wa is bt: skip = True; break
+                                if skip: break
+                                wa = wa.parentWidget() if hasattr(wa,"parentWidget") else None
+                            if not skip:
+                                QTimer.singleShot(0, lambda: self._main.on_toggle_output() if getattr(self._main,"output_visible",False) else None)
+                                return False
+                return False
+        _of = _OutFilter(self._output_dialog, self)
+        self._output_dialog.installEventFilter(_of)
+        QApplication.instance().installEventFilter(_of)
+        self._output_dialog.setMouseTracking(True)
+        self._output_dialog_filter = _of
+        # 连接透明度按钮
+        if hasattr(self, "output_opacity_nav_btn"):
+            self.output_opacity_nav_btn.clicked.connect(lambda: self._cycle_output_opacity())
 
         # 将右侧布局添加到主水平布局
         main_horizontal_layout.addLayout(right_layout, 1)
         
-        # 初始可见性：等输出区域挂到父布局后再设置，避免启动时短暂弹出空白顶层窗口
-        self.output_frame.setVisible(self.output_visible)
-        
+                
         # 保存启动时的窗口几何参数，在 showEvent 中设置以确保原生窗口就位
         self._startup_x, self._startup_y, self._startup_width, self._startup_height = startup_x, startup_y, width, height
         self.setMinimumSize(850, 700)  # 调整最小尺寸以适应新布局
@@ -6084,11 +5327,16 @@ class MainFrame(
         self.enable_button.connect(self.enable_confirm_button)
         self.enable_crm_generate_button.connect(self._enable_crm_generate_button)
         self.toggle_output.connect(self.on_toggle_output)
-        self.enable_pdf_watermark_button.connect(self._enable_pdf_watermark_button)
+        if hasattr(self, '_enable_pdf_watermark_button'):
+            self.enable_pdf_watermark_button.connect(self._enable_pdf_watermark_button)
         self.enable_crm_button.connect(self.on_enable_crm_button)
-        self.obj_query_data_ready.connect(self._obj_query_populate_table_safe)
+        if hasattr(self, 'obj_query_data_ready') and hasattr(self, '_obj_query_populate_table_safe'):
+            self.obj_query_data_ready.connect(self._obj_query_populate_table_safe)
+        if hasattr(self, 'obj_query_process_done') and hasattr(self, '_obj_query_on_process_done'):
+            self.obj_query_process_done.connect(self._obj_query_on_process_done)
         self.opportunity_data_ready.connect(self._on_opportunity_data_ready)
-        self.enable_custom_report_button.connect(self.on_enable_custom_report_button)
+        if hasattr(self, 'on_enable_custom_report_button'):
+            self.enable_custom_report_button.connect(self.on_enable_custom_report_button)
         self.task_status_changed.connect(self._on_task_status_changed)
         self.task_completed.connect(self._on_task_completed)
         self.task_error_occurred.connect(self._on_task_error_occurred)
@@ -6778,6 +6026,8 @@ class MainFrame(
         # 连接列表页信号
         if mgr and hasattr(self.custom_report_list_page, 'reportEdit'):
             self.custom_report_list_page.reportEdit.connect(self._on_new_report_edit)
+        if mgr and hasattr(self.custom_report_list_page, 'reportSelected'):
+            self.custom_report_list_page.reportSelected.connect(self.switch_to_custom_report_detail)
         if mgr and hasattr(self.custom_report_list_page, 'newReport'):
             self.custom_report_list_page.newReport.connect(self._on_new_report_create)
         if mgr and hasattr(self.custom_report_list_page, 'newReportInFolder'):
@@ -6785,6 +6035,7 @@ class MainFrame(
 
         page_layout.addWidget(self.custom_report_page_stack)
         self.content_stack.addWidget(page)
+        self.custom_report_page = page  # 让 mixin 中 switch_to_custom_report_editor 等方法能通过 hasattr 检查
 
         # 兼容旧版：保留状态变量（部分方法仍会引用）
         self.crm_object_fields_cache = {}
@@ -7102,6 +6353,12 @@ class MainFrame(
         self.custom_report_scope_field_combo.setMinimumWidth(140)
         self.custom_report_scope_field_combo.setEditable(True)
         self.custom_report_scope_field_combo.setPlaceholderText("选择字段...")
+        # 安装模糊搜索补全器
+        _c = QCompleter([], self.custom_report_scope_field_combo)
+        _c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _c.setFilterMode(Qt.MatchFlag.MatchContains)
+        _c.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.custom_report_scope_field_combo.setCompleter(_c)
         add_cond_row.addWidget(self.custom_report_scope_field_combo)
 
         self.custom_report_scope_op_combo = QComboBox()
@@ -7286,6 +6543,7 @@ class MainFrame(
         self.custom_report_source_table = QTableWidget()
         self.custom_report_source_table.setColumnCount(4)
         self.custom_report_source_table.setHorizontalHeaderLabels(["", "名称", "API", "匹配"])
+        install_autofilter_header(self.custom_report_source_table)
         self.custom_report_source_table.verticalHeader().setVisible(False)
         self.custom_report_source_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.custom_report_source_table.setMaximumHeight(120)
@@ -7397,6 +6655,12 @@ class MainFrame(
                 background-color: #FFFFFF; font-size: 12px; min-height: 26px;
             }
         """)
+        # 安装模糊搜索补全器
+        _c = QCompleter([], self.custom_report_quick_field_combo)
+        _c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _c.setFilterMode(Qt.MatchFlag.MatchContains)
+        _c.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.custom_report_quick_field_combo.setCompleter(_c)
         filter_row1.addWidget(self.custom_report_quick_field_combo)
 
         self.custom_report_quick_op_combo = QComboBox()
@@ -7554,6 +6818,7 @@ class MainFrame(
         self.custom_report_field_builder_table = QTableWidget()
         self.custom_report_field_builder_table.setColumnCount(5)
         self.custom_report_field_builder_table.setHorizontalHeaderLabels(["显示名", "来源对象", "字段名", "主表关联字段", "源表匹配字段"])
+        install_autofilter_header(self.custom_report_field_builder_table)
         self.custom_report_field_builder_table.verticalHeader().setVisible(False)
         self.custom_report_field_builder_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.custom_report_field_builder_table.setAlternatingRowColors(True)
@@ -7618,7 +6883,7 @@ class MainFrame(
 
         func_buttons = [
             ("字段显示", self.open_custom_report_field_settings_dialog),
-            ("排序", lambda: None),
+            ("排序", self._on_custom_report_sort),
             ("过滤", lambda: None),
             ("导出", lambda: None),
         ]
@@ -7662,6 +6927,7 @@ class MainFrame(
         preview_section_layout.addLayout(preview_header)
 
         self.custom_report_preview_table = QTableWidget()
+        install_autofilter_header(self.custom_report_preview_table)
         self.custom_report_preview_table.setAlternatingRowColors(True)
         self.custom_report_preview_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.custom_report_preview_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -7769,14 +7035,22 @@ class MainFrame(
         if level == 0 and hasattr(self, 'custom_report_scope_field_combo'):
             self.custom_report_scope_field_combo.blockSignals(True)
             self.custom_report_scope_field_combo.clear()
+            _scope_labels = []
             try:
                 field_options = self.get_object_field_options(api_name)
                 for key, label in sorted(field_options, key=lambda x: x[1] or x[0]):
                     display = f"{label} ({key})" if label else key
                     self.custom_report_scope_field_combo.addItem(display, key)
+                    _scope_labels.append(display)
             except Exception:
                 pass
             self.custom_report_scope_field_combo.blockSignals(False)
+            # 刷新模糊搜索补全器
+            _sc = QCompleter(_scope_labels, self.custom_report_scope_field_combo)
+            _sc.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            _sc.setFilterMode(Qt.MatchFlag.MatchContains)
+            _sc.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            self.custom_report_scope_field_combo.setCompleter(_sc)
 
         # 如果是最后一列，则不加载下一级
         if level >= 3:
@@ -7830,7 +7104,7 @@ class MainFrame(
                 break
 
         if not selected_objects:
-            QMessageBox.warning(self, "提示", "请至少选择一个主数据对象。")
+            frameless_message_box(self, "提示", "请至少选择一个主数据对象。")
             return
 
         primary_obj = selected_objects[0]
@@ -7908,6 +7182,7 @@ class MainFrame(
         dialog = QDialog(self)
         dialog.setWindowTitle("设置数据对象匹配关系")
         dialog.setMinimumWidth(550)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dialog.setStyleSheet("""
             QDialog { background-color: #FAFAFA; }
             QGroupBox { font-weight: 600; font-size: 13px; border: 1px solid #E8E8E8;
@@ -7950,6 +7225,12 @@ class MainFrame(
             for key, label in main_options_sorted:
                 display = f"{label} ({key})" if label else key
                 main_combo.addItem(display, key)
+            # 安装模糊搜索补全器
+            _mc = QCompleter([f"{l} ({k})" if l else k for k, l in main_options_sorted], main_combo)
+            _mc.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            _mc.setFilterMode(Qt.MatchFlag.MatchContains)
+            _mc.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            main_combo.setCompleter(_mc)
 
             source_combo = QComboBox()
             source_combo.setMinimumWidth(220)
@@ -7959,6 +7240,12 @@ class MainFrame(
             for key, label in join_options_sorted:
                 display = f"{label} ({key})" if label else key
                 source_combo.addItem(display, key)
+            # 安装模糊搜索补全器
+            _sc = QCompleter([f"{l} ({k})" if l else k for k, l in join_options_sorted], source_combo)
+            _sc.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            _sc.setFilterMode(Qt.MatchFlag.MatchContains)
+            _sc.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            source_combo.setCompleter(_sc)
 
             # 智能推荐匹配字段
             join_api_lower = join_obj['api_name'].lower().replace('obj', '')
@@ -8037,7 +7324,7 @@ class MainFrame(
                 if not main_field or not source_field:
                     missing.append(f"关联 {idx+1}：{main_obj['name']} → {join_obj['name']}")
             if missing:
-                QMessageBox.warning(
+                frameless_message_box(
                     dialog, "匹配字段不完整",
                     "以下关联尚未设置匹配字段，请补充：\n\n" + "\n".join(missing)
                 )
@@ -8194,11 +7481,11 @@ class MainFrame(
 
         # 懒加载详情页面
         if not hasattr(self, 'custom_report_detail_page') or self.custom_report_detail_page is None:
-            from custom_report.views.report_detail_page import ReportDetailPage
+            from custom_report import ReportDetailPage
             db = mgr._db if hasattr(mgr, '_db') else None
 
             def _save_filters(report_id, conditions):
-                from custom_report.models import FilterCondition
+                from custom_report import FilterCondition
                 filters = [
                     FilterCondition(
                         field_api=c.get('field', ''),
@@ -8307,6 +7594,124 @@ class MainFrame(
         """详情页点击「编辑报表」→ 进入编辑器"""
         self.switch_to_custom_report_editor(report_id)
 
+    def _apply_output_dialog_opacity(self):
+        """应用输出窗口透明度"""
+        if not hasattr(self, "_output_dialog") or not self._output_dialog:
+            return
+        opacity_value = self.config.get("app_settings", {}).get("output_opacity", 100)
+        if 0 <= opacity_value <= 100:
+            self._output_dialog.setWindowOpacity(opacity_value / 100.0)
+        else:
+            self._output_dialog.setWindowOpacity(1.0)
+
+    def append_output(self, msg):
+        """追加文本到输出窗口"""
+        if hasattr(self, "_output_text") and self._output_text:
+            # ???????? NOISY_RUNTIME_PRINT_UI_ONLY_PREFIXES ?????????
+            _txt = str(msg)
+            try:
+                from __main__ import NOISY_RUNTIME_PRINT_UI_ONLY_PREFIXES as _UP
+            except Exception:
+                _UP = ()
+            if any(_txt.startswith(p) for p in _UP):
+                return
+            if any(p in _txt for p in _UP):
+                return
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self._output_text.append(_txt) if hasattr(self,"_output_text") else None)
+
+    def on_clear_output(self):
+        """清除输出窗口内容"""
+        if hasattr(self, "_output_text") and self._output_text:
+            self._output_text.clear()
+
+    def on_toggle_output(self):
+        """切换输出窗口显示/隐藏"""
+        self.output_visible = not getattr(self, "output_visible", False)
+        if hasattr(self, "save_user_runtime_state_patch"):
+            self.save_user_runtime_state_patch({"output_visible": self.output_visible}, immediate=True)
+        if self.output_visible:
+            self._output_dialog.show()
+            self._position_output_dialog()
+        else:
+            self._output_dialog.hide()
+        if hasattr(self, "toggle_output_btn"):
+            self.toggle_output_btn.setText("隐藏" if self.output_visible else "显示")
+
+    def _position_output_dialog(self):
+        """将输出窗口定位到隐藏按钮上方"""
+        if not hasattr(self, "_output_dialog") or not self._output_dialog:
+            return
+        if not hasattr(self, "toggle_output_btn"):
+            return
+        btn = self.toggle_output_btn
+        dlg_size = self._output_dialog.size()
+        btn_global = btn.mapToGlobal(btn.rect().topLeft())
+        x = btn_global.x()
+        y = btn_global.y() - dlg_size.height() - 4
+        screen = self.screen()
+        if screen:
+            sg = screen.availableGeometry()
+            x = max(sg.left() + 10, min(x, sg.right() - dlg_size.width() - 10))
+            y = max(sg.top() + 10, min(y, sg.bottom() - dlg_size.height() - 10))
+        self._output_dialog.move(x, y)
+
+    def _save_output_dialog_size(self):
+        """保存输出窗口尺寸"""
+        if not hasattr(self, "_output_dialog") or not self._output_dialog:
+            return
+        size = self._output_dialog.size()
+        import json, os
+        cp = os.path.join(os.getcwd(), ".config", "shared_settings.json")
+        try:
+            with open(cp, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+        if "app_settings" not in cfg:
+            cfg["app_settings"] = {}
+        cfg["app_settings"]["output_window_size"] = [size.width(), size.height()]
+        with open(cp, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        if hasattr(self, "save_user_runtime_state_patch"):
+            self.save_user_runtime_state_patch({"output_window_size": [size.width(), size.height()]}, immediate=True)
+
+    def _cycle_output_opacity(self):
+        """循环切换透明度 100->80->60->40"""
+        if not hasattr(self, "_output_dialog") or not self._output_dialog:
+            return
+        import json, os
+        cp = os.path.join(os.getcwd(), ".config", "shared_settings.json")
+        try:
+            with open(cp, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            cur = cfg.get("app_settings", {}).get("output_opacity", 100)
+        except:
+            cur = 100
+        nxt = {100:80, 80:60, 60:40, 40:100}.get(cur, 100)
+        try:
+            with open(cp, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+        if "app_settings" not in cfg:
+            cfg["app_settings"] = {}
+        cfg["app_settings"]["output_opacity"] = nxt
+        with open(cp, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        self._output_dialog.setWindowOpacity(max(0.1, min(1.0, nxt / 100.0)))
+        if hasattr(self, "output_opacity_nav_btn"):
+            self.output_opacity_nav_btn.setText("\u2299" if nxt >= 100 else str(nxt) + "%")
+        # 保存到个人 RuntimeState 配置文件，重启后保持
+        if hasattr(self, "save_user_runtime_state_patch"):
+            self.save_user_runtime_state_patch({"output_opacity": nxt}, immediate=True)
+        print(f"[\u8f93\u51fa\u7a97\u53e3\u900f\u660e\u5ea6] \u2192 {nxt}%")
+
+    def update_output_window_size(self, w, h):
+        """更新输出窗口大小，随主窗口缩放重新定位"""
+        self._output_dialog.resize(int(w), int(h))
+        self._position_output_dialog()
+
     def _on_report_refresh_data(self, report_id: str):
         """详情页点击「更新数据」→ CRM 同步 → 拼表 → 刷新页面（后台线程）。
         复用对象查询已有的同步逻辑（MysqlCache.replace_cleaned_all），
@@ -8326,7 +7731,7 @@ class MainFrame(
 
         apis = rpt.get_object_apis()
         if not apis:
-            QMessageBox.warning(self, "提示", "报表未配置数据对象。")
+            frameless_message_box(self, "提示", "报表未配置数据对象。")
             return
 
         rpt_name = rpt.name or report_id
@@ -8348,6 +7753,9 @@ class MainFrame(
         if page and hasattr(page, '_refresh_btn'):
             page._refresh_btn.setText("⏳ 更新中...")
             page._refresh_btn.setEnabled(False)
+        if page and hasattr(page, '_freshness_refresh_btn'):
+            page._freshness_refresh_btn.setEnabled(False)
+            page._freshness_refresh_btn.setText("⏳...")
 
         # 使用 pyqtSignal 跨线程通信（QTimer.singleShot 在非主线程不可靠）
         class _RefreshSignals(QObject):
@@ -8386,7 +7794,10 @@ class MainFrame(
             if page and hasattr(page, '_refresh_btn'):
                 page._refresh_btn.setText("🔄 更新数据")
                 page._refresh_btn.setEnabled(True)
-            if success:
+                page._refresh_btn.setEnabled(True)
+                if page and hasattr(page, '_freshness_refresh_btn'):
+                    page._freshness_refresh_btn.setEnabled(True)
+                    page._freshness_refresh_btn.setText('刷新数据')
                 print(f"[更新报表] ✅ 完成！共 {row_count} 条记录",
                       file=sys.stderr, flush=True)
                 if page:
@@ -8394,7 +7805,7 @@ class MainFrame(
                     page.load_report(report_id, rpt_name, _detail_filters_from_report(refreshed_rpt), report_def=refreshed_rpt)
             else:
                 print(f"[更新报表] ❌ 失败: {message}", file=sys.stderr, flush=True)
-                QMessageBox.warning(self, "更新失败", message)
+                frameless_message_box(self, "更新失败", message)
 
         signals.done.connect(_on_done)
 
@@ -8424,7 +7835,7 @@ class MainFrame(
                     load_count = int(api_settings.get('max_records', global_load_default))
                 except (TypeError, ValueError):
                     load_count = global_load_default
-                load_count = max(1, min(load_count, 10000))
+                load_count = max(1, load_count)
                 saved_filter_count = len(api_settings.get('filters', [])) if isinstance(api_settings.get('filters', []), list) else 0
                 api_filters = self._build_api_filters_from_settings(api)
                 api_fields = crm_fields.get(api, {})
@@ -8669,10 +8080,10 @@ class MainFrame(
 
     def _add_custom_report_source(self):
         """添加一个自定义 CRM 对象。"""
-        name, ok = QInputDialog.getText(self, '添加对象', '请输入对象名称:')
+        name, ok = frameless_input_text(self, '添加对象', '请输入对象名称:')
         if not ok:
             return
-        api_name, ok = QInputDialog.getText(self, '添加对象', '请输入对象 API 名称:')
+        api_name, ok = frameless_input_text(self, '添加对象', '请输入对象 API 名称:')
         if not ok:
             return
 
@@ -8824,9 +8235,11 @@ class MainFrame(
         self.custom_report_quick_field_combo.blockSignals(True)
         current_text = self.custom_report_quick_field_combo.currentText()
         self.custom_report_quick_field_combo.clear()
+        _quick_labels = []
         for key, label in options:
             display_text = f"{label}"
             self.custom_report_quick_field_combo.addItem(display_text, key)
+            _quick_labels.append(display_text)
             self.custom_report_quick_field_combo.setItemData(
                 self.custom_report_quick_field_combo.count() - 1,
                 f"({key})",
@@ -8838,6 +8251,12 @@ class MainFrame(
             if idx >= 0:
                 self.custom_report_quick_field_combo.setCurrentIndex(idx)
         self.custom_report_quick_field_combo.blockSignals(False)
+        # 刷新模糊搜索补全器
+        _qc = QCompleter(_quick_labels, self.custom_report_quick_field_combo)
+        _qc.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _qc.setFilterMode(Qt.MatchFlag.MatchContains)
+        _qc.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.custom_report_quick_field_combo.setCompleter(_qc)
 
     def _on_candidate_field_double_click(self, item):
         """候选字段双击：添加到字段拼接表并保存状态。"""
@@ -9520,7 +8939,7 @@ class MainFrame(
         if not isinstance(state, dict):
             show_warning('提示', '未找到该配置，无法复制。', self)
             return
-        new_name, ok = QInputDialog.getText(self, '复制报表', '请输入新报表名称:')
+        new_name, ok = frameless_input_text(self, '复制报表', '请输入新报表名称:')
         if not ok or not new_name.strip():
             return
         presets[new_name.strip()] = copy.deepcopy(state)
@@ -9535,7 +8954,7 @@ class MainFrame(
         if key == '__last_state__':
             show_warning('提示', '不能删除临时配置。', self)
             return
-        ok = QMessageBox.question(self, '确认删除', f'确认删除报表: {key}?')
+        ok = frameless_message_box(self, '确认删除', f'确认删除报表: {key}?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if ok != QMessageBox.StandardButton.Yes:
             return
         config = load_config()
@@ -9555,7 +8974,7 @@ class MainFrame(
         if key == '__last_state__':
             show_warning('提示', '不能移动临时配置，请先另存为报表。', self)
             return
-        new_name, ok = QInputDialog.getText(self, '移动/重命名报表', '请输入新的报表名称（或文件夹路径）:', text=key)
+        new_name, ok = frameless_input_text(self, '移动/重命名报表', '请输入新的报表名称（或文件夹路径）:', key)
         if not ok or not new_name.strip():
             return
         new_name = new_name.strip()
@@ -9589,6 +9008,7 @@ class MainFrame(
         """弹出一个小对话框用于多行文本输入，返回文本或 None。"""
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel(label))
         te = QTextEdit()
@@ -9609,7 +9029,7 @@ class MainFrame(
 
     def on_add_custom_report_hook(self, hook_type):
         """添加前置或后置钩子，并保存到配置中。"""
-        name, ok = QInputDialog.getText(self, '添加钩子', '请输入钩子名称:')
+        name, ok = frameless_input_text(self, '添加钩子', '请输入钩子名称:')
         if not ok or not name.strip():
             return
         code = self._ask_multiline_text('钩子代码', '请输入钩子代码（支持 Python）：')
@@ -9665,7 +9085,7 @@ class MainFrame(
 
     def on_save_custom_report_preset(self):
         """保存当前自定义报表预设。"""
-        preset_name, ok = QInputDialog.getText(self, '保存预设', '请输入预设名称:')
+        preset_name, ok = frameless_input_text(self, '保存预设', '请输入预设名称:')
         if not ok:
             return
         preset_name = str(preset_name or '').strip()
@@ -9890,7 +9310,7 @@ class MainFrame(
 
     def on_create_custom_report_folder(self):
         """新建文件夹。"""
-        name, ok = QInputDialog.getText(self, '新建文件夹', '请输入文件夹名称:')
+        name, ok = frameless_input_text(self, '新建文件夹', '请输入文件夹名称:')
         if not ok or not name.strip():
             return
         state = {
@@ -9939,7 +9359,7 @@ class MainFrame(
         if key == '__last_state__':
             show_info('提示', '不能复制临时配置。', self)
             return
-        new_name, ok = QInputDialog.getText(self, '复制报表', '请输入新报表名称:')
+        new_name, ok = frameless_input_text(self, '复制报表', '请输入新报表名称:')
         if ok and new_name.strip():
             config = load_config()
             custom_reports = config.get('custom_reports', {}) if isinstance(config, dict) else {}
@@ -9958,7 +9378,7 @@ class MainFrame(
         if key == '[上次配置]':
             show_info('提示', '不能删除临时配置。', self)
             return
-        ok = QMessageBox.question(self, '确认删除', f'确认删除报表: {key}?')
+        ok = frameless_message_box(self, '确认删除', f'确认删除报表: {key}?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if ok != QMessageBox.StandardButton.Yes:
             return
         config = load_config()
@@ -9989,7 +9409,7 @@ class MainFrame(
         if key == '[上次配置]':
             show_warning('提示', '不能删除临时配置。', self)
             return
-        ok = QMessageBox.question(self, '确认删除', f'确认删除报表: {key}?')
+        ok = frameless_message_box(self, '确认删除', f'确认删除报表: {key}?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if ok != QMessageBox.StandardButton.Yes:
             return
         config = load_config()
@@ -10211,6 +9631,59 @@ class MainFrame(
             operation_log.info(f"自定义报表字段设置已变更 | 显示字段数:{len(new_visible)}")
             self._update_custom_report_filter_summary()
             self._populate_custom_report_table()
+
+    def _on_custom_report_sort(self):
+        """打开排序配置对话框并应用排序。"""
+        from custom_report import SortConfigDialog
+
+        all_headers = self.custom_report_headers or self._get_custom_report_fallback_fields()
+        if not all_headers:
+            show_warning("提示", "请先刷新加载报表字段。", self)
+            return
+
+        display_headers = self._get_custom_report_display_headers(all_headers)
+        current_config = getattr(self, '_custom_report_sort_config', [])
+
+        dlg = SortConfigDialog(display_headers, current_config, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._custom_report_sort_config = dlg.get_sort_config()
+            self._apply_custom_report_sort()
+
+    def _apply_custom_report_sort(self):
+        """应用排序配置到 custom_report_all_data。"""
+        config = getattr(self, '_custom_report_sort_config', [])
+        if not config or not hasattr(self, 'custom_report_all_data') or not self.custom_report_all_data:
+            return
+
+        cfg = config[0]
+        sort_field = cfg.get('field', '')
+        reverse = cfg.get('direction', 'desc') == 'desc'
+
+        if not sort_field:
+            return
+
+        # 将显示名映射回数据 key
+        label_to_field = getattr(self, 'custom_report_label_to_field', {})
+        data_key = label_to_field.get(sort_field, sort_field)
+
+        def sort_key(row):
+            val = row.get(data_key, '')
+            if val is None:
+                val = ''
+            # 尝试数值排序
+            try:
+                return (0, float(val))
+            except (ValueError, TypeError):
+                return (1, str(val))
+
+        try:
+            self.custom_report_all_data.sort(key=sort_key, reverse=reverse)
+            # 同步更新 filtered_data
+            self.custom_report_filtered_data = self.custom_report_all_data.copy()
+            self.custom_report_current_page = 1
+            self._populate_custom_report_table()
+        except Exception as e:
+            operation_log.error(f"自定义报表排序失败: {e}")
 
     def _resolve_custom_report_field_settings(self, all_headers):
         """读取并整理自定义报表字段设置。
@@ -10663,7 +10136,7 @@ class MainFrame(
                 load_count = int(raw_load_count)
             except (TypeError, ValueError):
                 load_count = 100
-            load_count = max(1, min(load_count, 10000))
+            load_count = max(1, load_count)
 
             # 构建数据范围筛选条件（应用于主表）
             scope_filters = []
@@ -11334,23 +10807,26 @@ class MainFrame(
     # ===== 部门与员工页面（页面8） =====
     usergroup_data_ready = pyqtSignal(str)
 
+    def _on_nav_clicked(self, cs_idx, nav_label):
+        """导航按钮点击处理（区分共享页面的不同模式）"""
+        self._last_nav_label = nav_label
+        self.switch_to_page(cs_idx)
+
     def switch_to_page(self, index):
         """切换到指定页面"""
         # 权限检查：普通用户不能访问管理员页面
         is_admin_user = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
-        restricted_pages = {2, 5, 7, 8}  # 自定义报表、对象查询、BI报表、部门员工（仅管理员）
+        restricted_pages = {2, 3, 6, 8, 9}  # 自定义报表、多维表格、对象查询、部门员工、电子表格（仅管理员）
         if index in restricted_pages and not is_admin_user:
             return
 
         flush_pending_config()
 
-        # ✅【2026-05-12 修复】页面名称列表必须与 content_stack 的创建顺序一致
-        # 创建顺序（见第6911-6917行）：
-        # 0:文件生成, 1:CRM订单, 2:自定义报表, 3:文件移动, 4:PDF水印, 5:对象查询, 6:设置
-        page_names = ["文件生成", "订单转合同", "自定义报表", "文件移动", "PDF水印", "对象查询", "设置", "BI 报表", "部门员工"]
+        # ✅【2026-06-18 修复】页面名称列表与 content_stack 创建顺序一致
+        page_names = ["文件生成", "订单转合同", "自定义报表", "多维表格", "文件移动", "招投标授权", "对象查询", "设置", "部门员工", "电子表格"]
         page_name = page_names[index] if index < len(page_names) else f"页面{index}"
 
-        if index == 6:  # 设置页面
+        if index == 7:  # 设置页面
             if getattr(self, 'output_visible', False):
                 self.on_toggle_output()
                 self.output_auto_hidden_by_settings = True
@@ -11365,7 +10841,7 @@ class MainFrame(
                 self.on_toggle_output()
             self.output_auto_hidden_by_settings = False
 
-        # ✅【新增】CRM订单首次自动加载检测
+        # ✅【2026-06-18 修复】CRM订单首次自动加载
         if index == 1:  # CRM订单页面
             if not getattr(self, '_crm_first_load_completed', False):
                 print(f"\n[DEBUG-CRM] 🎯 首次进入CRM订单页面，自动加载数据...")
@@ -11373,15 +10849,16 @@ class MainFrame(
                 from PyQt6.QtCore import QTimer
                 QTimer.singleShot(100, self._crm_first_auto_load)
 
-        # 招投标授权首次自动加载检测
-        if index == 4:  # 招投标授权页面
+        # ✅【2026-06-18 修复】招投标授权（商机）首次自动加载 — index=5（pdf_watermark 页面）
+        if index == 5:  # 招投标授权页面
             if not getattr(self, '_opportunity_first_load_completed', False):
+                print(f"\n[DEBUG-商机] 🎯 首次进入招投标授权页面，自动加载商机数据...")
                 self._opportunity_first_load_completed = True
                 from PyQt6.QtCore import QTimer
                 QTimer.singleShot(200, self._opportunity_first_auto_load)
 
-        # ✅【2026-05-12 修复】对象查询首次自动加载检测 - 修正为index=5
-        if index == 5:  # 对象查询页面
+        # ✅【2026-05-12 修复】对象查询首次自动加载检测 — index=6（dashboard 移除后偏移）
+        if index == 6:  # 对象查询页面
             if not getattr(self, '_obj_query_first_auto_load_done', False):
                 print(f"\n[DEBUG-对象查询] 🎯 首次进入对象查询页面，准备自动加载数据...")
                 self._obj_query_first_auto_load_done = True
@@ -11479,31 +10956,7 @@ class MainFrame(
                         self._refresh_custom_report_field_source_options()
                     except Exception:
                         pass
-            # 切换到 BI 报表时刷新数据（同步自定义报表更新）
-            if index == 7 and hasattr(self, 'bi_dashboard_page_stack'):
-                try:
-                    mgr = getattr(self, '_report_manager', None)
-                    current_widget = self.bi_dashboard_page_stack.currentWidget()
-                    if mgr and current_widget:
-                        # 如果是查看页，刷新查看页数据
-                        if (self.bi_dashboard_view_page
-                                and current_widget is self.bi_dashboard_view_page
-                                and self.bi_dashboard_view_page._dashboard):
-                            dashboard = self.bi_dashboard_view_page._dashboard
-                            data_map = mgr.query_all_chart_data(dashboard)
-                            self.bi_dashboard_view_page.load_dashboard(dashboard, data_map)
-                        # 如果是设计器，刷新设计器数据
-                        elif (self.bi_dashboard_designer_page
-                              and current_widget is self.bi_dashboard_designer_page
-                              and self.bi_dashboard_designer_page._dashboard):
-                            dashboard = self.bi_dashboard_designer_page._dashboard
-                            data_map = mgr.query_all_chart_data(dashboard)
-                            self.bi_dashboard_designer_page.refresh_data(data_map)
-                        # 列表页刷新
-                        elif hasattr(self, 'bi_dashboard_list_page'):
-                            self.bi_dashboard_list_page.refresh()
-                except Exception:
-                    pass
+            # 切换到多维表格页面时无需自动刷新（数据按需加载）
 
         if hasattr(self, 'nav_items_info'):
             for item in self.nav_items_info:
@@ -11526,10 +10979,11 @@ class MainFrame(
                     item['btn'].setText(f"{item['icon']}  {item['name']}")
             if hasattr(self, 'toggle_output_btn'):
                 self.toggle_output_btn.setVisible(True)
+            if hasattr(self, 'output_opacity_nav_btn'):
+                self.output_opacity_nav_btn.setVisible(True)
             if hasattr(self, 'clear_btn'):
                 self.clear_btn.setVisible(True)
-            if hasattr(self, 'sub_output_frame'):
-                self.sub_output_frame.setVisible(not self.output_visible)
+            # sub_output_frame 已移除
         else:
             self.toggle_nav_btn.setText("▶ ▶")
             if hasattr(self, 'nav_items_info'):
@@ -11537,10 +10991,11 @@ class MainFrame(
                     item['btn'].setText(item['icon'])
             if hasattr(self, 'toggle_output_btn'):
                 self.toggle_output_btn.setVisible(False)
+            if hasattr(self, 'output_opacity_nav_btn'):
+                self.output_opacity_nav_btn.setVisible(False)
             if hasattr(self, 'clear_btn'):
                 self.clear_btn.setVisible(False)
-            if hasattr(self, 'sub_output_frame'):
-                self.sub_output_frame.setVisible(False)
+            # sub_output_frame 已移除
 
     def set_navbar_visible(self, visible):
         """显示或隐藏导航栏"""
@@ -11588,11 +11043,23 @@ class MainFrame(
 
         # 2. 读取配置
         app_settings = self.config.get('app_settings', {})
-        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8]))
-        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(9)}))
+        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
+        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
 
-        # 兼容旧配置：确保新页面 7、8 始终存在
-        for pi in (7, 8):
+        # 迁移旧配置：11 页 → 10 页（仪表盘已合并到多维表格，原 index 4 移除）
+        _old_to_new = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9}
+        if len(button_order) > 10 and 4 in button_order:
+            button_order = [_old_to_new.get(x, -1) for x in button_order if x != 4]
+            button_order = [x for x in button_order if x >= 0]
+            new_visible = {}
+            for k, v in button_visible.items():
+                new_k = _old_to_new.get(int(k))
+                if new_k is not None:
+                    new_visible[str(new_k)] = v
+            button_visible = new_visible
+
+        # 兼容旧配置：确保页面 5（招投标）、7（设置）、8（部门）、9（电子表格）始终存在
+        for pi in (5, 7, 8, 9):
             if pi not in button_order:
                 button_order.append(pi)
             if str(pi) not in button_visible:
@@ -11600,41 +11067,60 @@ class MainFrame(
 
         is_admin = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
 
-        # 3. page_idx → (icon, name) 映射
-        item_map = {
-            0: ("📄", "文件生成"),
-            1: ("📋", "订单转合同"),
-            2: ("📊", "自定义报表"),
-            3: ("📁", "文件移动"),
-            4: ("🔖", "招投标授权"),
-            5: ("📦", "对象查询"),
-            6: ("⚙️", "设   置"),
-            7: ("📈", "BI 报表"),
-            8: ("🏢", "部门员工"),
-        }
+        # 3. 按 _nav_defs 构建每项的 (icon, name, content_stack_idx, nav_label)
+        _nav_entries = []
+        _nav_defs_full = [
+            ("📄", "文件生成",   "file_gen"),
+            ("📋", "订单转合同", "crm_order"),
+            ("📊", "自定义报表", "custom_rpt"),
+            ("📊", "多维表格", "bitable"),
+            ("📁", "文件移动",   "file_move"),
+            ("🔖", "招投标授权", "pdf_watermark"),
+            ("📦", "对象查询",   "obj_query"),
+            ("⚙️", "设   置",   "settings"),
+            ("🏢", "部门员工",   "department"),
+            ("🧮", "电子表格",   "spreadsheet"),
+        ]
+        pmap = getattr(self, '_page_idx_map', {})
+        for icon, name, pk in _nav_defs_full:
+            cs_idx = pmap.get(pk, -1)
+            _nav_entries.append((icon, name, cs_idx, name))
 
         # 4. 按配置顺序创建按钮
-        for page_idx in button_order:
-            if page_idx in {2, 5, 7, 8} and not is_admin:
+        for nav_idx in button_order:
+            if nav_idx >= len(_nav_entries):
                 continue
-            if page_idx not in {6}:
-                vis = button_visible.get(str(page_idx), True)
-                if not vis:
+            icon, name, cs_idx, nav_label = _nav_entries[nav_idx]
+            if cs_idx < 0:
+                continue  # 页面不存在
+
+            # 权限过滤（与 _nav_defs 的 show_to_all 对应）
+            _admin_only_keys = {"custom_rpt", "obj_query", "bitable", "department", "spreadsheet"}
+            _nav_defs_admin_only = {2, 3, 6, 8, 9}  # nav_idx of admin-only entries
+            if nav_idx in _nav_defs_admin_only and not is_admin:
+                continue
+
+            # 可见性过滤（settings 始终显示）
+            vis_key = str(nav_idx)
+            if name.strip() != "设置":
+                if not button_visible.get(vis_key, True):
                     continue
 
-            icon, name = item_map.get(page_idx, ("?", "未知"))
             btn_text = f"{icon}  {name}" if self.nav_expanded else icon
             btn = QPushButton(btn_text)
             btn.setCheckable(True)
             btn.setMinimumHeight(10)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(get_nav_button_style(self.ui_scale_percent))
-            btn.clicked.connect(lambda checked, idx=page_idx: self.switch_to_page(idx))
+            # ✅ 传递 content_stack 索引 + 导航标签（用于区分"订单转合同"和"招投标授权"）
+            btn.clicked.connect(
+                lambda checked, idx=cs_idx, lbl=nav_label: self._on_nav_clicked(idx, lbl)
+            )
 
             self.nav_buttons_layout.addWidget(btn)
             self.nav_buttons.append(btn)
             self.nav_items_info.append({
-                'icon': icon, 'name': name, 'btn': btn, 'page_idx': page_idx
+                'icon': icon, 'name': name, 'btn': btn, 'page_idx': cs_idx
             })
 
         # 5. 恢复选中状态
@@ -11897,7 +11383,7 @@ class MainFrame(
                 combo.setCurrentText(fmt_map.get(keep_fmt, "Word+PDF"))
                 combo.blockSignals(False)
 
-            output_window_size = app_settings.get('output_window_size', [400, 15])
+            output_window_size = app_settings.get('output_window_size', [600, 300])
             if len(output_window_size) >= 2:
                 self.update_output_window_size(output_window_size[0], output_window_size[1])
 
@@ -12044,9 +11530,9 @@ class MainFrame(
                 if new_expanded != getattr(self, '_navbar_default_expanded', True):
                     self.set_navbar_default_expanded(new_expanded)
                 # 同步导航按钮配置
-                new_btn_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8]))
-                new_btn_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(9)}))
-                for pi in (7, 8):
+                new_btn_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
+                new_btn_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
+                for pi in (7, 8, 9):
                     if pi not in new_btn_order:
                         new_btn_order.append(pi)
                     if str(pi) not in new_btn_visible:
@@ -12088,25 +11574,7 @@ class MainFrame(
                 if hasattr(timer, 'isActive') and timer.isActive():
                     timer.stop()
 
-        # 保存窗口大小和位置，供下次启动恢复
-        try:
-            if self.isMaximized():
-                normal_geo = self.normalGeometry()
-                window_size = [normal_geo.width(), normal_geo.height()]
-                window_pos = [normal_geo.x(), normal_geo.y()]
-            elif not self.isMinimized():
-                window_size = [self.width(), self.height()]
-                window_pos = [self.x(), self.y()]
-            else:
-                window_size = None
-                window_pos = None
-            if window_size is not None:
-                save_user_runtime_state({
-                    'window_size': window_size,
-                    'window_pos': window_pos,
-                }, immediate=True, merge=True)
-        except Exception as e:
-            logging.error(f"关闭时保存窗口几何失败: {str(e)}")
+        # 窗口大小不再持久化，每次启动默认70%桌面居中
 
         try:
             self._persist_ui_scale_percent()
@@ -12231,28 +11699,17 @@ class MainFrame(
         target_y = geo.top() + max(0, (geo.height() - current.height()) // 2)
         self.move(target_x, target_y)
 
-    def resizeEvent(self, event):
-        """主窗口大小改变事件处理（I/O去抖300ms）"""
-        new_size = [self.width(), self.height()]
-        self._pending_window_size = new_size
-        if not hasattr(self, '_resize_save_timer'):
-            self._resize_save_timer = QTimer(self)
-            self._resize_save_timer.setSingleShot(True)
-            self._resize_save_timer.timeout.connect(self._on_resize_save)
-        self._resize_save_timer.start(300)
-        super().resizeEvent(event)
+    def moveEvent(self, event):
+        """主窗口移动时同步更新输出窗口位置"""
+        super().moveEvent(event)
+        if getattr(self, "output_visible", False) and hasattr(self, "_position_output_dialog"):
+            self._position_output_dialog()
 
-    def _on_resize_save(self):
-        """延迟保存窗口尺寸（避免resize期间I/O风暴）"""
-        new_size = getattr(self, '_pending_window_size', None)
-        if not new_size:
-            return
-        config = load_config()
-        if 'app_settings' not in config:
-            config['app_settings'] = {}
-        config['app_settings']['window_size'] = new_size
-        save_config(config, immediate=True)
-        self.save_user_runtime_state_patch({'window_size': new_size}, immediate=True)
+    def resizeEvent(self, event):
+        """主窗口大小改变事件处理"""
+        super().resizeEvent(event)
+        if getattr(self, "output_visible", False) and hasattr(self, "_position_output_dialog"):
+            self._position_output_dialog()
 
     def on_browse_product_path(self):
         """浏览产品文件路径"""
@@ -12312,7 +11769,7 @@ class SettingsDialog(QFrame):
         self._main_window = parent
 
         # 加载配置文件
-        import sys; print("[DEBUG-设置初始化] SettingsDialog.__init__ 开始", flush=True, file=sys.stderr)
+        # SettingsDialog 初始化
         self.config = load_config()
         self.runtime_state = load_user_runtime_state()
         self.crm_object_fields_cache = {}
@@ -12653,6 +12110,9 @@ class SettingsDialog(QFrame):
         # 刷新商机字段映射列表
         if hasattr(self, 'opp_field_mapping_list_table'):
             self._reload_opp_field_mapping_table_from_config()
+        # 刷新商机-Word字段映射表格
+        if hasattr(self, 'opp_word_mapping_table'):
+            self._reload_opp_word_mapping_table_from_config()
         # 重新加载商机选项映射（招投标映射值表格依赖此数据）
         saved_opp_mappings = self.config.get('opportunity', {}).get('option_mappings', {})
         if isinstance(saved_opp_mappings, dict):
@@ -13115,31 +12575,44 @@ class SettingsDialog(QFrame):
         nav_buttons_mgmt_layout.setContentsMargins(0, 0, 0, 0)
         nav_buttons_mgmt_layout.setSpacing(4)
 
-        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8]))
-        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(9)}))
+        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
+        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
 
-        # 兼容旧配置：确保新页面 7、8 始终存在
-        for pi in (7, 8):
+        # 迁移旧配置：11 页 → 10 页（仪表盘已合并到多维表格，原 index 4 移除）
+        _old_to_new = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9}
+        if len(button_order) > 10 and 4 in button_order:
+            button_order = [_old_to_new.get(x, -1) for x in button_order if x != 4]
+            button_order = [x for x in button_order if x >= 0]
+            new_visible = {}
+            for k, v in button_visible.items():
+                new_k = _old_to_new.get(int(k))
+                if new_k is not None:
+                    new_visible[str(new_k)] = v
+            button_visible = new_visible
+
+        # 兼容旧配置：确保页面 5（招投标）、7（设置）、8（部门）、9（电子表格）始终存在
+        for pi in (5, 7, 8, 9):
             if pi not in button_order:
                 button_order.append(pi)
             if str(pi) not in button_visible:
                 button_visible[str(pi)] = True
 
-        # 非管理员过滤掉仅管理员可见的页面（自定义报表、对象查询、BI 报表、部门员工）
+        # 非管理员过滤掉仅管理员可见的页面（自定义报表、多维表格、对象查询、部门员工、电子表格）
         is_admin_user = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
         if not is_admin_user:
-            button_order = [idx for idx in button_order if idx not in {2, 5, 7, 8}]
+            button_order = [idx for idx in button_order if idx not in {2, 3, 6, 8, 9}]
 
         btn_item_map = {
             0: ("📄", "文件生成"),
             1: ("📋", "订单转合同"),
             2: ("📊", "自定义报表"),
-            3: ("📁", "文件移动"),
-            4: ("🔖", "招投标授权"),
-            5: ("📦", "对象查询"),
-            6: ("⚙️", "设   置"),
-            7: ("📈", "BI 报表"),
+            3: ("📊", "多维表格"),
+            4: ("📁", "文件移动"),
+            5: ("🔖", "招投标授权"),
+            6: ("📦", "对象查询"),
+            7: ("⚙️", "设   置"),
             8: ("🏢", "部门员工"),
+            9: ("🧮", "电子表格"),
         }
 
         def save_nav_buttons_config():
@@ -13160,7 +12633,7 @@ class SettingsDialog(QFrame):
 
             for i, page_idx in enumerate(button_order):
                 icon, name = btn_item_map.get(page_idx, ("?", "未知"))
-                is_settings = (page_idx == 6)
+                is_settings = (page_idx == 7)
                 is_first = (i == 0)
                 is_last = (i == len(button_order) - 1)
 
@@ -13222,7 +12695,7 @@ class SettingsDialog(QFrame):
             refresh_nav_button_rows()
 
         def toggle_button_visible(page_idx, checked):
-            if page_idx == 6:
+            if page_idx == 7:
                 return
             button_visible[str(page_idx)] = checked
             save_nav_buttons_config()
@@ -13274,6 +12747,7 @@ class SettingsDialog(QFrame):
         self.organize_table.setRowCount(len(organize_presets))
         self.organize_table.setColumnCount(5)
         self.organize_table.setHorizontalHeaderLabels(["预设名", "源文件夹", "目标文件夹", "文件后缀", "包含字段"])
+        install_autofilter_header(self.organize_table)
         self.organize_table.setMinimumHeight(420)
         
         # 设置表格为可编辑
@@ -13395,6 +12869,7 @@ class SettingsDialog(QFrame):
         self.feature_table.setRowCount(len(gui_options))
         self.feature_table.setColumnCount(4)
         self.feature_table.setHorizontalHeaderLabels(["Excel文件路径", "功能名称", "Excel Sheet", "生成文件路径"])
+        install_autofilter_header(self.feature_table)
         
         # 获取Excel文件路径配置
         excel_paths = self.config.get('path_config', {}).get('excel_paths', {})
@@ -14913,13 +14388,13 @@ class SettingsDialog(QFrame):
             {
                 'id': 'deepseek', 'name': 'DeepSeek', 'color': '#4D6BFE',
                 'default_url': 'https://api.deepseek.com/v1/chat/completions',
-                'models': ['deepseek-chat', 'deepseek-reasoner'],
+                'models': ['deepseek-v4-flash', 'deepseek-v4-pro'],
                 'help_url': 'https://platform.deepseek.com/api_keys',
             },
             {
                 'id': 'xiaomi_mimo', 'name': '小米 MiMo', 'color': '#FF6900',
-                'default_url': 'https://api.xiaomimimo.com/v1/chat/completions',
-                'models': ['mimo-large', 'mimo-pro', 'mimo-flash'],
+                'default_url': 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
+                'models': ['mimo-v2.5-pro'],
                 'help_url': 'https://studio.xiaomimimo.com',
             },
             {
@@ -15196,6 +14671,9 @@ class SettingsDialog(QFrame):
 
     def _on_api_field_changed(self, pid, field, value):
         """API 卡片字段变化时同步更新内存数据"""
+        # URL 字段自动去除首尾空白（含换行符）
+        if field == 'api_url' and isinstance(value, str):
+            value = value.strip()
         for p in self._api_providers_data:
             if p.get('id') == pid:
                 p[field] = value
@@ -15222,7 +14700,7 @@ class SettingsDialog(QFrame):
         dialog = QDialog(self)
         dialog.setWindowTitle("添加 API 配置")
         dialog.setFixedSize(500, 380)
-        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
 
         layout = QVBoxLayout(dialog)
         layout.setSpacing(12)
@@ -15306,13 +14784,13 @@ class SettingsDialog(QFrame):
             api_url = url_entry.text().strip()
 
             if not api_key:
-                QMessageBox.warning(dialog, "提示", "请输入 API Key")
+                frameless_message_box(dialog, "提示", "请输入 API Key")
                 return
             if not api_url:
-                QMessageBox.warning(dialog, "提示", "请输入 API 地址")
+                frameless_message_box(dialog, "提示", "请输入 API 地址")
                 return
             if not model:
-                QMessageBox.warning(dialog, "提示", "请选择或输入模型名称")
+                frameless_message_box(dialog, "提示", "请选择或输入模型名称")
                 return
 
             # 生成唯一 ID
@@ -15350,10 +14828,10 @@ class SettingsDialog(QFrame):
         if not target:
             return
         name = target.get('name', pid)
-        reply = QMessageBox.question(self, "确认删除",
+        reply = frameless_message_box(self, "确认删除",
             f"确定要删除 API 配置「{name}」吗？\n此操作不可恢复。",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply != QMessageBox.Yes:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         was_enabled = target.get('enabled', False)
@@ -15379,11 +14857,15 @@ class SettingsDialog(QFrame):
                 break
         count = len(self._api_providers_data)
         config_file = get_config_path(for_save=True)
-        QMessageBox.information(self, "成功", f"API 配置已保存到:\n{config_file}\n\n已配置 {count} 个 API | 当前启用: {active_name or '(无)'}")
+        frameless_message_box(self, "成功", f"API 配置已保存到:\n{config_file}\n\n已配置 {count} 个 API | 当前启用: {active_name or '(无)'}")
         print("[API 配置] 已保存")
 
     def _save_api_config_silent(self):
         """静默保存 API 配置（添加/删除后自动调用，无弹窗）"""
+        # 保存前清理 URL 字段（去除首尾空白/换行符）
+        for p in self._api_providers_data:
+            if isinstance(p.get('api_url'), str):
+                p['api_url'] = p['api_url'].strip()
         save_data = {
             'providers': list(self._api_providers_data),
             'active': self._api_active_id,
@@ -15414,16 +14896,16 @@ class SettingsDialog(QFrame):
                         timeout=15,
                     )
                     if response.status_code == 200:
-                        QMessageBox.information(self, "连接成功", f"✅「{name}」连接成功！\n模型: {model}")
+                        frameless_message_box(self, "连接成功", f"✅「{name}」连接成功！\n模型: {model}")
                         print(f"[API 配置] {name} 连接成功")
                     else:
-                        QMessageBox.warning(self, "连接失败", f"❌「{name}」连接失败\nHTTP {response.status_code}: {response.text[:200]}")
+                        frameless_message_box(self, "连接失败", f"❌「{name}」连接失败\nHTTP {response.status_code}: {response.text[:200]}")
                         print(f"[API 配置] 测试失败 HTTP {response.status_code}: {response.text[:200]}")
                 except Exception as e:
-                    QMessageBox.warning(self, "连接失败", f"❌「{name}」连接失败\n{str(e)[:300]}")
+                    frameless_message_box(self, "连接失败", f"❌「{name}」连接失败\n{str(e)[:300]}")
                     print(f"[API 配置] 测试失败: {e}")
                 return
-        QMessageBox.information(self, "提示", "没有可测试的 API 配置。\n请先启用一个并填写 API Key。")
+        frameless_message_box(self, "提示", "没有可测试的 API 配置。\n请先启用一个并填写 API Key。")
         print("[API 配置] 没有可测试的提供商（需启用并填写 API Key）")
 
     def refresh_user_list(self):
@@ -15947,11 +15429,12 @@ class SettingsDialog(QFrame):
         from PyQt6.QtGui import QFont
         from PyQt6.QtCore import QEvent, QObject
         if not hasattr(self, 'mapping_table'):
-            QMessageBox.warning(self, "提示", "字段配置表格未初始化")
+            frameless_message_box(self, "提示", "字段配置表格未初始化")
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("批量粘贴")
         dialog.setMinimumSize(700, 400)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel("从Excel复制数据直接粘贴。支持Tab/逗号/空格分隔。\n格式：源字段\t目标字段\t字段格式（可选）"))
         text_edit = QTextEdit()
@@ -16061,11 +15544,12 @@ class SettingsDialog(QFrame):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QTextEdit, QMessageBox
         from PyQt6.QtGui import QFont
         if not hasattr(self, 'crm_mapping_table'):
-            QMessageBox.warning(self, "提示", "CRM字段映射表格未初始化")
+            frameless_message_box(self, "提示", "CRM字段映射表格未初始化")
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("批量粘贴")
         dialog.setMinimumSize(700, 400)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel("从Excel复制数据直接粘贴。支持Tab/逗号/空格分隔。"))
         text_edit = QTextEdit()
@@ -16137,11 +15621,12 @@ class SettingsDialog(QFrame):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QTextEdit, QMessageBox
         from PyQt6.QtGui import QFont
         if not hasattr(self, 'opp_word_mapping_table'):
-            QMessageBox.warning(self, "提示", "商机-Word字段映射表格未初始化")
+            frameless_message_box(self, "提示", "商机-Word字段映射表格未初始化")
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("批量粘贴")
         dialog.setMinimumSize(700, 400)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel("从Excel复制数据直接粘贴。支持Tab/逗号/空格分隔。"))
         text_edit = QTextEdit()
@@ -16166,46 +15651,50 @@ class SettingsDialog(QFrame):
             item = table.item(r, 0)
             if item:
                 existing[item.text().strip()] = r
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            candidates = []
-            if '\t' in line:
-                candidates.append([p.strip() for p in line.split('\t')])
-            if ',' in line and line.count(',') >= 2:
-                candidates.append([p.strip() for p in line.split(',')])
-            candidates.append([p.strip() for p in line.split(None, 1)])
-            parts = max(candidates, key=len) if candidates else []
-            if not parts or not parts[0]:
-                continue
-            src = parts[0]
-            tgt = parts[1] if len(parts) > 1 else src
-            if src in existing:
-                r = existing[src]
-                table.setItem(r, 0, QTableWidgetItem(src))
-                table.setItem(r, 1, QTableWidgetItem(tgt))
-                updated += 1
-            else:
-                r = table.rowCount()
-                table.insertRow(r)
-                table.setItem(r, 0, QTableWidgetItem(src))
-                table.setItem(r, 1, QTableWidgetItem(tgt))
-                # 为新行创建格式下拉框（不覆盖已有格式）
-                from PyQt6.QtWidgets import QComboBox
-                from PyQt6.QtCore import QEvent, QObject
-                fmt_combo = QComboBox()
-                fmt_combo.addItems(["文本", "日期(yyyy-MM-dd)", "日期(yyyy/MM/dd)",
-                                    "日期(yyyy年MM月dd日)", "人民币大写",
-                                    "金额(千分位)", "数字", "整数"])
-                fmt_combo.currentIndexChanged.connect(lambda idx, r=r: self._on_save_opp_word_mapping())
-                wf = QObject()
-                wf.eventFilter = lambda obj, ev: ev.type() == QEvent.Wheel
-                self.opp_word_mapping_wheel_filters.append(wf)
-                fmt_combo.installEventFilter(wf)
-                table.setCellWidget(r, 2, fmt_combo)
-                existing[src] = r
-                added += 1
+        self._loading_opp_word_mapping = True
+        try:
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                candidates = []
+                if '\t' in line:
+                    candidates.append([p.strip() for p in line.split('\t')])
+                if ',' in line and line.count(',') >= 2:
+                    candidates.append([p.strip() for p in line.split(',')])
+                candidates.append([p.strip() for p in line.split(None, 1)])
+                parts = max(candidates, key=len) if candidates else []
+                if not parts or not parts[0]:
+                    continue
+                src = parts[0]
+                tgt = parts[1] if len(parts) > 1 else src
+                if src in existing:
+                    r = existing[src]
+                    table.setItem(r, 0, QTableWidgetItem(src))
+                    table.setItem(r, 1, QTableWidgetItem(tgt))
+                    updated += 1
+                else:
+                    r = table.rowCount()
+                    table.insertRow(r)
+                    table.setItem(r, 0, QTableWidgetItem(src))
+                    table.setItem(r, 1, QTableWidgetItem(tgt))
+                    # 为新行创建格式下拉框（不覆盖已有格式）
+                    from PyQt6.QtWidgets import QComboBox
+                    from PyQt6.QtCore import QEvent, QObject
+                    fmt_combo = QComboBox()
+                    fmt_combo.addItems(["文本", "日期(yyyy-MM-dd)", "日期(yyyy/MM/dd)",
+                                        "日期(yyyy年MM月dd日)", "人民币大写",
+                                        "金额(千分位)", "数字", "整数"])
+                    fmt_combo.currentIndexChanged.connect(lambda idx, r=r: self._on_save_opp_word_mapping())
+                    wf = QObject()
+                    wf.eventFilter = lambda obj, ev: ev.type() == QEvent.Wheel
+                    self.opp_word_mapping_wheel_filters.append(wf)
+                    fmt_combo.installEventFilter(wf)
+                    table.setCellWidget(r, 2, fmt_combo)
+                    existing[src] = r
+                    added += 1
+        finally:
+            self._loading_opp_word_mapping = False
         self._on_save_opp_word_mapping()
         print(f"[商机Word字段映射批量粘贴] 新增: {added}, 更新: {updated}")
     def on_add_crm_mapping(self):
@@ -16789,7 +16278,7 @@ class SettingsDialog(QFrame):
             config['app_settings'] = {}
         
         # 只处理运行窗口的大小设置
-        output_window_size = config.get('app_settings', {}).get('output_window_size', [400, 15])
+        output_window_size = config.get('app_settings', {}).get('output_window_size', [600, 300])
         new_size = [value, output_window_size[1]]
         config['app_settings']['output_window_size'] = new_size
         # 立即更新MainFrame中的运行窗口大小
@@ -16807,7 +16296,7 @@ class SettingsDialog(QFrame):
             config['app_settings'] = {}
         
         # 只处理运行窗口的大小设置
-        output_window_size = config.get('app_settings', {}).get('output_window_size', [400, 15])
+        output_window_size = config.get('app_settings', {}).get('output_window_size', [600, 300])
         new_size = [output_window_size[0], value]
         config['app_settings']['output_window_size'] = new_size
         # 立即更新MainFrame中的运行窗口大小
@@ -16835,6 +16324,7 @@ class SettingsDialog(QFrame):
         dialog = QDialog(self)
         dialog.setWindowTitle("自定义主题设置")
         dialog.setGeometry(300, 300, 600, 400)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         
         # 设置主题
         set_dialog_opacity(dialog)
@@ -17204,7 +16694,7 @@ class SettingsDialog(QFrame):
                 
             folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹", current_path)
             if folder_path:
-                # 更新表格单元格的值
+                # 更新表格单元格的值吗
                 item = self.feature_table.item(row, column)
                 if item:
                     item.setText(folder_path)
@@ -17464,8 +16954,8 @@ class SettingsDialog(QFrame):
 
     def on_switch_account(self):
         """切换账号"""
-        # 显示登录/注册对话框
-        username, new_user_type = show_login_register_dialog()
+        # 显示登录/注册对话框（跳过缓存，强制弹出登录界面）
+        username, new_user_type = show_login_register_dialog(skip_cache=True)
         if username:
             # 更新全局变量
             global current_user, user_type
@@ -17502,8 +16992,8 @@ class SettingsDialog(QFrame):
             current_user = None
             user_type = None
             
-            # 直接弹出登录界面
-            new_user, new_user_type = show_login_register_dialog()
+            # 直接弹出登录界面（跳过缓存）
+            new_user, new_user_type = show_login_register_dialog(skip_cache=True)
             if new_user:
                 # 更新全局变量
                 current_user = new_user
@@ -17544,7 +17034,7 @@ class SettingsDialog(QFrame):
         load_count_layout = QHBoxLayout(load_count_group)
         load_count_layout.setContentsMargins(8, 4, 8, 4)
         self.opp_load_count_spin = QSpinBox()
-        self.opp_load_count_spin.setRange(50, 10000)
+        self.opp_load_count_spin.setRange(50, 999999)
         self.opp_load_count_spin.setFixedWidth(100)
         self.opp_load_count_spin.setToolTip("商机数据默认加载条数")
         self.opp_load_count_spin.valueChanged.connect(lambda v: self._save_opp_config_param('opportunity_load_count', v))
@@ -17642,6 +17132,7 @@ class SettingsDialog(QFrame):
         self.product_table = QTableWidget()
         self.product_table.setColumnCount(2)
         self.product_table.setHorizontalHeaderLabels(["预设名称", "PDF文件夹路径"])
+        install_autofilter_header(self.product_table)
         self.product_table.setMinimumHeight(420)
         
         # 加载产品列表
@@ -17847,6 +17338,7 @@ class SettingsDialog(QFrame):
         self.opp_field_mapping_list_table = QTableWidget()
         self.opp_field_mapping_list_table.setColumnCount(2)
         self.opp_field_mapping_list_table.setHorizontalHeaderLabels(["显示名称", "API名称"])
+        install_autofilter_header(self.opp_field_mapping_list_table)
         self.opp_field_mapping_list_table.verticalHeader().setVisible(False)
         self.opp_field_mapping_list_table.setAlternatingRowColors(True)
         self.opp_field_mapping_list_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -17969,6 +17461,7 @@ class SettingsDialog(QFrame):
         self.opp_option_field_selector.currentIndexChanged.connect(self._on_opp_unified_field_changed)
 
         self.opp_unified_mapping_table = QTableWidget()
+        install_autofilter_header(self.opp_unified_mapping_table)
         self._update_opp_mapping_table_columns(2)
 
         self.opp_unified_mapping_table.setEditTriggers(
@@ -18067,25 +17560,28 @@ class SettingsDialog(QFrame):
                        "金额(千分位)": "{:,.2f}", "数字": "{:}", "整数": "{:.0f}"}
         format_list = list(format_dict.keys())
         self.opp_word_mapping_wheel_filters = []
-
-        for i, field_name in enumerate(sorted(all_opp_fields)):
-            src_item = QTableWidgetItem(field_name)
-            self.opp_word_mapping_table.setItem(i, 0, src_item)
-            target = opp_field_mapping.get(field_name, field_name)
-            self.opp_word_mapping_table.setItem(i, 1, QTableWidgetItem(target))
-            fmt_combo = QComboBox()
-            fmt_combo.addItems(format_list)
-            saved_fmt = next((c.get('format', '') for c in opp_special_cols
-                              if isinstance(c, dict) and c.get('name') == field_name), '')
-            cur_fmt = next((k for k, v in format_dict.items() if v == saved_fmt), "文本")
-            fmt_combo.setCurrentText(cur_fmt)
-            fmt_combo.currentIndexChanged.connect(
-                lambda idx, row=i: self._on_save_opp_word_mapping())
-            wf = QObject()
-            wf.eventFilter = lambda obj, ev: ev.type() == QEvent.Wheel
-            self.opp_word_mapping_wheel_filters.append(wf)
-            fmt_combo.installEventFilter(wf)
-            self.opp_word_mapping_table.setCellWidget(i, 2, fmt_combo)
+        self._loading_opp_word_mapping = True
+        try:
+            for i, field_name in enumerate(sorted(all_opp_fields)):
+                src_item = QTableWidgetItem(field_name)
+                self.opp_word_mapping_table.setItem(i, 0, src_item)
+                target = opp_field_mapping.get(field_name, field_name)
+                self.opp_word_mapping_table.setItem(i, 1, QTableWidgetItem(target))
+                fmt_combo = QComboBox()
+                fmt_combo.addItems(format_list)
+                saved_fmt = next((c.get('format', '') for c in opp_special_cols
+                                  if isinstance(c, dict) and c.get('name') == field_name), '')
+                cur_fmt = next((k for k, v in format_dict.items() if v == saved_fmt), "文本")
+                fmt_combo.setCurrentText(cur_fmt)
+                fmt_combo.currentIndexChanged.connect(
+                    lambda idx, row=i: self._on_save_opp_word_mapping())
+                wf = QObject()
+                wf.eventFilter = lambda obj, ev: ev.type() == QEvent.Wheel
+                self.opp_word_mapping_wheel_filters.append(wf)
+                fmt_combo.installEventFilter(wf)
+                self.opp_word_mapping_table.setCellWidget(i, 2, fmt_combo)
+        finally:
+            self._loading_opp_word_mapping = False
 
         self.opp_word_mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         rtcw = self.runtime_state.get('table_column_widths', {})
@@ -18442,6 +17938,8 @@ class SettingsDialog(QFrame):
 
     def _on_save_opp_word_mapping(self):
         """保存商机-Word字段映射配置"""
+        if getattr(self, '_loading_opp_word_mapping', False):
+            return
         try:
             mappings = {}
             special_columns = []
@@ -18476,6 +17974,57 @@ class SettingsDialog(QFrame):
             self.config = load_config()
         except Exception as e:
             logging.error(f"保存商机-Word字段映射失败: {str(e)}")
+
+    def _reload_opp_word_mapping_table_from_config(self):
+        """从配置重新加载商机-Word字段映射表格"""
+        if not hasattr(self, 'opp_word_mapping_table'):
+            return
+        if getattr(self, '_loading_opp_word_mapping', False):
+            return
+
+        config = load_config()
+        opp_field_mapping = config.get('opportunity', {}).get('word_field_mapping', {})
+        opp_special_cols = config.get('opportunity', {}).get('word_special_columns', [])
+
+        format_dict = {"文本": "{}", "日期(yyyy-MM-dd)": "{:%Y-%m-%d}", "日期(yyyy/MM/dd)": "{:%Y/%m/%d}",
+                       "日期(yyyy年MM月dd日)": "{:%Y年%m月%d日}", "人民币大写": "rmb_upper",
+                       "金额(千分位)": "{:,.2f}", "数字": "{:}", "整数": "{:.0f}"}
+        format_list = list(format_dict.keys())
+
+        all_opp_fields = set(opp_field_mapping.keys())
+        for col in opp_special_cols:
+            if isinstance(col, dict):
+                all_opp_fields.add(col.get('name', ''))
+            else:
+                all_opp_fields.add(str(col))
+        all_opp_fields.discard('')
+
+        self._loading_opp_word_mapping = True
+        try:
+            table = self.opp_word_mapping_table
+            table.setRowCount(max(1, len(all_opp_fields)))
+            for i, field_name in enumerate(sorted(all_opp_fields)):
+                table.setItem(i, 0, QTableWidgetItem(field_name))
+                target = opp_field_mapping.get(field_name, field_name)
+                table.setItem(i, 1, QTableWidgetItem(target))
+                fmt_combo = table.cellWidget(i, 2)
+                if not isinstance(fmt_combo, QComboBox):
+                    fmt_combo = QComboBox()
+                    fmt_combo.addItems(format_list)
+                    from PyQt6.QtCore import QEvent, QObject
+                    wf = QObject()
+                    wf.eventFilter = lambda obj, ev: ev.type() == QEvent.Wheel
+                    self.opp_word_mapping_wheel_filters.append(wf)
+                    fmt_combo.installEventFilter(wf)
+                    table.setCellWidget(i, 2, fmt_combo)
+                saved_fmt = next((c.get('format', '') for c in opp_special_cols
+                                  if isinstance(c, dict) and c.get('name') == field_name), '')
+                cur_fmt = next((k for k, v in format_dict.items() if v == saved_fmt), "文本")
+                fmt_combo.blockSignals(True)
+                fmt_combo.setCurrentText(cur_fmt)
+                fmt_combo.blockSignals(False)
+        finally:
+            self._loading_opp_word_mapping = False
 
     def _on_add_opp_word_mapping(self):
         """添加商机-Word字段映射行"""
@@ -18763,7 +18312,7 @@ class SettingsDialog(QFrame):
         row1.addSpacing(12)
         row1.addWidget(QLabel("加载数量:"))
         self.crm_load_count_spin = QSpinBox()
-        self.crm_load_count_spin.setRange(50, 10000)
+        self.crm_load_count_spin.setRange(50, 999999)
         self.crm_load_count_spin.setSingleStep(100)
         self.crm_load_count_spin.valueChanged.connect(lambda v: self._save_crm_config('load_count', v))
         # 加载已保存的值，没有则用默认值并立即写入配置
@@ -18829,6 +18378,13 @@ class SettingsDialog(QFrame):
         row2.addStretch()
         crm_layout.addLayout(row2)
 
+        # 地址Excel状态提示（加载错误时显示）
+        self.crm_address_excel_status = QLabel("")
+        self.crm_address_excel_status.setStyleSheet("color: #e74c3c; font-size: 12px;")
+        self.crm_address_excel_status.setWordWrap(True)
+        self.crm_address_excel_status.hide()
+        crm_layout.addWidget(self.crm_address_excel_status)
+
         # ===== 字段映射列表 + 订单产品类型（并排布局） =====
         combined_tables_row = QHBoxLayout()
         combined_tables_row.setSpacing(12)
@@ -18841,6 +18397,7 @@ class SettingsDialog(QFrame):
         self.crm_field_mapping_list_table = QTableWidget()
         self.crm_field_mapping_list_table.setColumnCount(2)
         self.crm_field_mapping_list_table.setHorizontalHeaderLabels(["显示名称", "API名称"])
+        install_autofilter_header(self.crm_field_mapping_list_table)
         self.crm_field_mapping_list_table.verticalHeader().setVisible(False)
         self.crm_field_mapping_list_table.setAlternatingRowColors(True)
         self.crm_field_mapping_list_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -18990,6 +18547,7 @@ class SettingsDialog(QFrame):
 
         # ✅【改进】创建动态列表格（初始2列，根据选择的字段动态调整）
         self.crm_unified_mapping_table = QTableWidget()
+        install_autofilter_header(self.crm_unified_mapping_table)
         self._update_unified_mapping_table_columns(2)  # 初始设置为2列
 
         self.crm_unified_mapping_table.setEditTriggers(
@@ -19309,6 +18867,7 @@ class SettingsDialog(QFrame):
         self.crm_object_mgmt_table = QTableWidget()
         self.crm_object_mgmt_table.setColumnCount(4)  # ✅【修改】增加列：默认选择复选框 + 对象类型
         self.crm_object_mgmt_table.setHorizontalHeaderLabels(["🔒 默认选择", "对象名称", "API名称", "对象类型"])  # ✅【修改】更新表头
+        install_autofilter_header(self.crm_object_mgmt_table)
         self.crm_object_mgmt_table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.EditKeyPressed |
@@ -19415,6 +18974,7 @@ class SettingsDialog(QFrame):
         self.crm_field_mgmt_table = QTableWidget()
         self.crm_field_mgmt_table.setColumnCount(2)
         self.crm_field_mgmt_table.setHorizontalHeaderLabels(["配置名称", "API名称"])
+        install_autofilter_header(self.crm_field_mgmt_table)
         self.crm_field_mgmt_table.verticalHeader().setVisible(False)
         self.crm_field_mgmt_table.setAlternatingRowColors(True)
         self.crm_field_mgmt_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -19501,10 +19061,10 @@ class SettingsDialog(QFrame):
         load_row.setSpacing(8)
         load_row.addWidget(QLabel("加载条数:"))
         self.obj_query_max_records_spin = QSpinBox()
-        self.obj_query_max_records_spin.setRange(1, 10000)
+        self.obj_query_max_records_spin.setRange(1, 999999)
         self.obj_query_max_records_spin.setValue(20)
         self.obj_query_max_records_spin.setFixedWidth(100)
-        self.obj_query_max_records_spin.setToolTip("对象查询时从CRM获取的最大记录数（1~10000）")
+        self.obj_query_max_records_spin.setToolTip("对象查询时从CRM获取的最大记录数（无上限）")
         load_row.addWidget(self.obj_query_max_records_spin)
         load_row.addStretch()
         settings_layout.addLayout(load_row)
@@ -19577,6 +19137,7 @@ class SettingsDialog(QFrame):
         self.crm_detail_mapping_values_table = QTableWidget()
         self.crm_detail_mapping_values_table.setColumnCount(2)
         self.crm_detail_mapping_values_table.setHorizontalHeaderLabels(["文本显示", "选项ID"])
+        install_autofilter_header(self.crm_detail_mapping_values_table)
         self.crm_detail_mapping_values_table.verticalHeader().setVisible(False)
         self.crm_detail_mapping_values_table.setAlternatingRowColors(True)
         self.crm_detail_mapping_values_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -19684,6 +19245,7 @@ class SettingsDialog(QFrame):
         field_combo.setPlaceholderText("字段")
         field_combo.setStyleSheet("QComboBox { font-size: 11px; border: 1px solid #D9D9D9; border-radius: 3px; padding: 1px 3px; background: #FFF; }")
         # 填充当前对象的字段列表（显示映射名称，非 API name）
+        _field_labels = []
         api_name = self._get_current_settings_api_name()
         if api_name:
             field_config = self.config.get('fxiaoke', {}).get('crm_object_fields', {}).get(api_name, {})
@@ -19696,6 +19258,13 @@ class SettingsDialog(QFrame):
                     label = field_key
                 if label:
                     field_combo.addItem(label, field_key)
+                    _field_labels.append(label)
+        # 安装模糊搜索补全器
+        _fc = QCompleter(_field_labels, field_combo)
+        _fc.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _fc.setFilterMode(Qt.MatchFlag.MatchContains)
+        _fc.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        field_combo.setCompleter(_fc)
         saved_field = str(condition.get('field', '') or '').strip()
         saved_field_api = str(condition.get('field_api', '') or '').strip()
         if saved_field or saved_field_api:
@@ -20310,7 +19879,7 @@ class SettingsDialog(QFrame):
         api_name = self.crm_field_mgmt_object_combo.currentData()
         if not api_name:
             if not silent:
-                QMessageBox.warning(self, "提示", "请先选择一个业务对象。")
+                frameless_message_box(self, "提示", "请先选择一个业务对象。")
             return
 
         # ✅【用户体验优化】显示加载状态
@@ -20334,12 +19903,12 @@ class SettingsDialog(QFrame):
 
                 if error:
                     if not silent:
-                        QMessageBox.warning(self, "错误", f"获取字段失败: {error}")
+                        frameless_message_box(self, "错误", f"获取字段失败: {error}")
                     return
 
                 if not fields:
                     if not silent:
-                        QMessageBox.information(self, "提示", "未获取到字段数据。")
+                        frameless_message_box(self, "提示", "未获取到字段数据。")
                     return
 
                 # 继续处理字段数据...
@@ -20357,7 +19926,7 @@ class SettingsDialog(QFrame):
                 field_data = mw.fetch_object_fields(api_name)
             except Exception as e:
                 if not silent:
-                    QMessageBox.warning(self, "错误", f"获取字段失败: {str(e)}")
+                    frameless_message_box(self, "错误", f"获取字段失败: {str(e)}")
                 return
         else:
             # 回退：使用 SettingsDialog 自己的方法
@@ -20367,12 +19936,12 @@ class SettingsDialog(QFrame):
                 field_data = self.fetch_object_fields(api_name)
             except Exception as e:
                 if not silent:
-                    QMessageBox.warning(self, "错误", f"获取字段失败: {str(e)}")
+                    frameless_message_box(self, "错误", f"获取字段失败: {str(e)}")
                 return
 
         if not field_data:
             if not silent:
-                QMessageBox.information(self, "提示", "未获取到字段数据。")
+                frameless_message_box(self, "提示", "未获取到字段数据。")
             return
 
         # 加载已保存的覆盖配置（保留用户的配置名称）
@@ -20486,7 +20055,7 @@ class SettingsDialog(QFrame):
         msg_parts.append("\n\n配置名称已自动保存，可直接关闭或继续编辑。")
 
         if not silent:
-            QMessageBox.information(self, "完成", "；".join(msg_parts))
+            frameless_message_box(self, "完成", "；".join(msg_parts))
 
     def _save_crm_field_config_internal(self, api_name, fields_config):
         """内部保存：将字段配置写入 config 文件，不弹提示框。"""
@@ -20531,7 +20100,7 @@ class SettingsDialog(QFrame):
             }
 
         self._save_crm_field_config_internal(api_name, fields_config)
-        QMessageBox.information(self, "保存成功", f"已保存 {len(fields_config)} 个字段的配置。\n\n✅ 对象查询已自动刷新，新配置立即生效！")
+        frameless_message_box(self, "保存成功", f"已保存 {len(fields_config)} 个字段的配置。\n\n✅ 对象查询已自动刷新，新配置立即生效！")
 
     def _refresh_obj_query_after_save(self, saved_api_name):
         """
@@ -20676,7 +20245,7 @@ class SettingsDialog(QFrame):
             return
         api_name = self.crm_field_mgmt_object_combo.currentData()
         if not api_name:
-            QMessageBox.warning(self, "提示", "请先选择一个业务对象。")
+            frameless_message_box(self, "提示", "请先选择一个业务对象。")
             return
 
         row = self.crm_field_mgmt_table.rowCount()
@@ -20712,7 +20281,7 @@ class SettingsDialog(QFrame):
         from PyQt6.QtWidgets import QInputDialog
         api_name = self.crm_field_mgmt_object_combo.currentData()
         if not api_name:
-            QMessageBox.warning(self, "提示", "请先选择一个业务对象。")
+            frameless_message_box(self, "提示", "请先选择一个业务对象。")
             return
 
         text, ok = QInputDialog.getMultiLineText(self, "批量粘贴字段",
@@ -20824,7 +20393,7 @@ class SettingsDialog(QFrame):
 
         selected_rows = sorted({idx.row() for idx in self.crm_field_mgmt_table.selectedIndexes()}, reverse=True)
         if not selected_rows:
-            QMessageBox.information(self, "提示", "请先选择要删除的字段行。")
+            frameless_message_box(self, "提示", "请先选择要删除的字段行。")
             return
 
         # 记录删除数量
@@ -21032,7 +20601,7 @@ class SettingsDialog(QFrame):
         
         if state == Qt.CheckState.Checked.value:
             if not api_name:
-                QMessageBox.warning(self, "提示", "请先在上方选择一个业务对象。")
+                frameless_message_box(self, "提示", "请先在上方选择一个业务对象。")
                 self.obj_query_default_checkbox.setChecked(False)
                 return
             
@@ -21047,7 +20616,7 @@ class SettingsDialog(QFrame):
             obj_name = self.crm_object_mgmt_object_combo.currentText() or api_name
             
             print(f"[DEBUG-对象管理] ✅ 已设置默认对象 | API: '{api_name}' | 名称: '{obj_name}'")
-            QMessageBox.information(self, "成功", f"已将「{obj_name}」设为对象查询的默认选择。\n\n下次打开对象查询时将自动选择此对象。")
+            frameless_message_box(self, "成功", f"已将「{obj_name}」设为对象查询的默认选择。\n\n下次打开对象查询时将自动选择此对象。")
         else:
             # 清除默认对象
             config = load_config()
@@ -21202,7 +20771,7 @@ class SettingsDialog(QFrame):
             # ✅ 勾选：设置为默认对象
             
             if not api_name:
-                QMessageBox.warning(self, "提示", "该行没有有效的API名称，无法设为默认。")
+                frameless_message_box(self, "提示", "该行没有有效的API名称，无法设为默认。")
                 return
             
             # 🔒 互斥逻辑：取消其他所有行的勾选
@@ -21350,12 +20919,12 @@ class SettingsDialog(QFrame):
 
         current_row = self.crm_object_mgmt_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "提示", "请先选择要删除的对象。")
+            frameless_message_box(self, "提示", "请先选择要删除的对象。")
             return
 
         name_item = self.crm_object_mgmt_table.item(current_row, 1)
         object_name = name_item.text().strip() if name_item else "未知对象"
-        reply = QMessageBox.question(
+        reply = frameless_message_box(
             self, "确认删除",
             f"确定要删除对象「{object_name}」吗？\n删除后将立即生效并更新配置。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -21691,7 +21260,7 @@ class SettingsDialog(QFrame):
             reverse=True
         )
         if not selected:
-            QMessageBox.information(self, "提示", "请先选择要删除的行。")
+            frameless_message_box(self, "提示", "请先选择要删除的行。")
             return
         for row in selected:
             self.crm_detail_mapping_values_table.removeRow(row)
@@ -21705,7 +21274,7 @@ class SettingsDialog(QFrame):
         api_name = self.crm_detail_mapping_object_combo.currentData()
         field_key = self.crm_detail_field_selector.currentData()
         if not api_name or not field_key:
-            QMessageBox.warning(self, "提示", "请先选择业务对象和字段。")
+            frameless_message_box(self, "提示", "请先选择业务对象和字段。")
             return
         text, ok = QInputDialog.getMultiLineText(self, "批量粘贴映射值",
             "从Excel复制数据直接粘贴。支持Tab/逗号/空格分隔。\n格式：文本显示[分隔符]选项ID")
@@ -21816,6 +21385,66 @@ class SettingsDialog(QFrame):
         self.crm_address_excel_path_input.setText(file_path)
         self._on_crm_address_excel_path_changed()
 
+    def _validate_address_excel_status(self):
+        """快速验证地址Excel文件是否可读，更新状态标签。"""
+        if not hasattr(self, 'crm_address_excel_status'):
+            return
+        errors = []
+        # 检查主地址 Excel
+        path1 = getattr(self, 'crm_address_excel_path_input', None)
+        if path1:
+            p = path1.text().strip()
+            if p:
+                err = getattr(self, 'crm_customer_address_excel_error', '')
+                if err:
+                    errors.append(f"地址Excel: {err}")
+                else:
+                    try:
+                        from pathlib import Path as _Path
+                        try:
+                            rp = resolve_app_path(p)
+                        except Exception:
+                            rp = _Path(p)
+                        if not rp.exists():
+                            errors.append(f"地址Excel: 文件不存在 — {p}")
+                        elif rp.suffix.lower() == '.xls':
+                            try:
+                                import xlrd  # noqa: F401
+                            except ImportError:
+                                errors.append("地址Excel: 读取 .xls 需要 xlrd，请执行 pip install \"xlrd<2.0\"")
+                    except Exception:
+                        pass
+        # 检查备用地址 Excel
+        path2 = getattr(self, 'crm_address2_excel_path_input', None)
+        if path2:
+            p = path2.text().strip()
+            if p:
+                err = getattr(self, 'crm_customer_address2_excel_error', '')
+                if err:
+                    errors.append(f"地址2 Excel: {err}")
+                else:
+                    try:
+                        from pathlib import Path as _Path
+                        try:
+                            rp = resolve_app_path(p)
+                        except Exception:
+                            rp = _Path(p)
+                        if not rp.exists():
+                            errors.append(f"地址2 Excel: 文件不存在 — {p}")
+                        elif rp.suffix.lower() == '.xls':
+                            try:
+                                import xlrd  # noqa: F401
+                            except ImportError:
+                                errors.append("地址2 Excel: 读取 .xls 需要 xlrd，请执行 pip install \"xlrd<2.0\"")
+                    except Exception:
+                        pass
+        if errors:
+            self.crm_address_excel_status.setText("⚠ " + "；".join(errors))
+            self.crm_address_excel_status.show()
+        else:
+            self.crm_address_excel_status.setText("")
+            self.crm_address_excel_status.hide()
+
     def _on_crm_address_excel_path_changed(self):
         """内部方法：响应CRM地址Excel路径changed相关操作。"""
         if not hasattr(self, 'crm_address_excel_path_input'):
@@ -21823,6 +21452,7 @@ class SettingsDialog(QFrame):
 
         self.apply_settings_immediately({'crm'})
         self.settings_updated.emit(['crm'])
+        self._validate_address_excel_status()
 
     def _browse_crm_address2_excel_path(self):
         if not hasattr(self, 'crm_address2_excel_path_input'):
@@ -21844,6 +21474,7 @@ class SettingsDialog(QFrame):
 
     def _on_crm_address2_excel_path_changed(self):
         self.apply_settings_immediately({'crm'})
+        self._validate_address_excel_status()
 
     def _on_crm_option_mapping_cell_changed(self, row, col):
         """处理CRM选项值映射表格单元格变化 - 性能优化版"""
@@ -21913,6 +21544,7 @@ class SettingsDialog(QFrame):
         table.setObjectName(attr_name)
         table.setColumnCount(1)
         table.setHorizontalHeaderLabels([title])
+        install_autofilter_header(table)
         table.horizontalHeader().setVisible(False)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(
@@ -22155,7 +21787,7 @@ class SettingsDialog(QFrame):
                 selected_rows = [current_row]
 
         if not selected_rows:
-            QMessageBox.information(self, "提示", "请先选择要删除的字段映射行。\n\n💡 提示：可以按住 Ctrl 键选择多行")
+            frameless_message_box(self, "提示", "请先选择要删除的字段映射行。\n\n💡 提示：可以按住 Ctrl 键选择多行")
             return
 
         # 统计要删除的数据
@@ -22181,9 +21813,9 @@ class SettingsDialog(QFrame):
             + "\n\n⚠️ 此操作不可撤销，删除后将永久移除！"
         )
         
-        reply = QMessageBox.question(
-            self, 
-            "🗑 确认批量删除", 
+        reply = frameless_message_box(
+            self,
+            "🗑 确认批量删除",
             confirm_msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -22222,7 +21854,7 @@ class SettingsDialog(QFrame):
             
         except Exception as e:
             print(f"[ERROR-字段删除] ❌ 保存失败: {e}")
-            QMessageBox.critical(self, "错误", f"删除成功但保存失败：\n{str(e)}")
+            frameless_message_box(self, "错误", f"删除成功但保存失败：\n{str(e)}")
 
         # 刷新右侧下拉框
         self._refresh_option_field_selector()
@@ -22235,7 +21867,7 @@ class SettingsDialog(QFrame):
             f"• 剩余数量: {table.rowCount()} 条\n\n"
             f"💾 数据已保存3次，确保永久生效！"
         )
-        QMessageBox.information(self, "🗑 删除完成", result_msg)
+        frameless_message_box(self, "🗑 删除完成", result_msg)
 
     def _on_batch_paste_crm_field_mapping(self):
         """
@@ -22285,12 +21917,13 @@ class SettingsDialog(QFrame):
         # 创建自定义对话框（更大的文本编辑区）
         dialog = QInputDialog(self)
         dialog.setWindowTitle("批量粘贴字段映射")
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dialog.setLabelText(
             "从Excel复制两列数据（显示名称 + API名称），直接粘贴即可。\n"
             "已存在的API名称将更新显示名称，粘贴后自动保存。"
         )
         dialog.setTextValue("")
-        
+
         # 设置文本框为多行模式，支持更大输入区域
         text_edit = dialog.findChild(QTextEdit)
         if text_edit:
@@ -22376,7 +22009,7 @@ class SettingsDialog(QFrame):
                         added += 1
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"解析数据时出错：\n{str(e)}")
+            frameless_message_box(self, "错误", f"解析数据时出错：\n{str(e)}")
             return
 
         finally:
@@ -22693,13 +22326,13 @@ class SettingsDialog(QFrame):
         mapping_table = self.crm_field_mapping_list_table
         current_row = mapping_table.currentRow()
         if current_row < 0 or current_row >= mapping_table.rowCount():
-            QMessageBox.warning(self, "提示", "请先从左侧选择一个字段")
+            frameless_message_box(self, "提示", "请先从左侧选择一个字段")
             return
 
-        api_item = mapping_table.item(current_row, 0)
+        api_item = mapping_table.item(current_row, 1)  # 列1 = API名称
         api_name = api_item.text().strip() if api_item else ''
         if not api_name:
-            QMessageBox.warning(self, "提示", "请先从左侧选择一个字段")
+            frameless_message_box(self, "提示", "请先从左侧选择一个字段")
             return
 
         text, ok = QInputDialog.getMultiLineText(self, "批量粘贴字段值",
@@ -23359,9 +22992,10 @@ class SettingsDialog(QFrame):
         dialog.setWindowTitle("批量粘贴")
         dialog.setMinimumSize(800, 600)  # 更大的对话框
         dialog.resize(900, 700)  # 默认尺寸
-        
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
+
         layout = QVBoxLayout(dialog)
-        
+
         # 简洁提示标签
         if current_col_count == 7:
             hint_label = QLabel("从Excel复制数据直接粘贴。支持Tab/逗号/空格分隔。")
@@ -23508,7 +23142,7 @@ class SettingsDialog(QFrame):
                     added += 1
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"解析数据时出错：\n{str(e)}")
+            frameless_message_box(self, "错误", f"解析数据时出错：\n{str(e)}")
             return
 
         finally:
@@ -23710,7 +23344,7 @@ class SettingsDialog(QFrame):
                 selected_rows = [current_row]
 
         if not selected_rows:
-            QMessageBox.information(self, "提示", "请先选择要删除的字段映射行。\n\n提示：可以按住 Ctrl 键选择多行")
+            frameless_message_box(self, "提示", "请先选择要删除的字段映射行。\n\n提示：可以按住 Ctrl 键选择多行")
             return
 
         delete_count = len(selected_rows)
@@ -23734,7 +23368,7 @@ class SettingsDialog(QFrame):
             + "\n\n⚠️ 此操作不可撤销，删除后将永久移除！"
         )
 
-        reply = QMessageBox.question(
+        reply = frameless_message_box(
             self, "🗑 确认批量删除", confirm_msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -23766,7 +23400,7 @@ class SettingsDialog(QFrame):
             f"• 剩余数量: {table.rowCount()} 条\n\n"
             f"💾 数据已保存，确保永久生效！"
         )
-        QMessageBox.information(self, "🗑 删除完成", result_msg)
+        frameless_message_box(self, "🗑 删除完成", result_msg)
 
     def _on_batch_paste_opp_field_mapping(self):
         """批量粘贴招标设置字段映射"""
@@ -23778,6 +23412,7 @@ class SettingsDialog(QFrame):
 
         dialog = QInputDialog(self)
         dialog.setWindowTitle("批量粘贴字段映射")
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dialog.setLabelText(
             "从Excel复制两列数据（显示名称 + API名称），直接粘贴即可。\n"
             "已存在的API名称将更新显示名称，粘贴后自动保存。"
@@ -23863,7 +23498,7 @@ class SettingsDialog(QFrame):
                         added += 1
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"解析数据时出错：\n{str(e)}")
+            frameless_message_box(self, "错误", f"解析数据时出错：\n{str(e)}")
             return
 
         finally:
@@ -23966,6 +23601,9 @@ class SettingsDialog(QFrame):
         # 刷新招标设置字段映射列表
         if hasattr(self, 'opp_field_mapping_list_table'):
             self._reload_opp_field_mapping_table_from_config()
+        # 刷新商机-Word字段映射表格
+        if hasattr(self, 'opp_word_mapping_table'):
+            self._reload_opp_word_mapping_table_from_config()
         # 刷新CRM字段映射列表
         if hasattr(self, 'crm_field_mapping_list_table'):
             self._reload_crm_field_mapping_table_from_config()
@@ -24240,8 +23878,8 @@ class SettingsDialog(QFrame):
         """初始化招标设置映射字段选择器"""
         if not hasattr(self, 'opp_option_field_selector') or not hasattr(self, 'opp_field_mapping_list_table'):
             return
-
         combo = self.opp_option_field_selector
+
         combo.blockSignals(True)
         combo.clear()
         combo.addItem("请选择要配置的字段...", "")
@@ -24344,6 +23982,7 @@ class SettingsDialog(QFrame):
         dialog.setWindowTitle("批量粘贴")
         dialog.setMinimumSize(800, 600)
         dialog.resize(900, 700)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         layout = QVBoxLayout(dialog)
 
         # 提示标签
@@ -24465,7 +24104,7 @@ class SettingsDialog(QFrame):
                     added += 1
 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"解析数据时出错：\n{str(e)}")
+            frameless_message_box(self, "错误", f"解析数据时出错：\n{str(e)}")
             return
 
         finally:
@@ -24647,7 +24286,7 @@ class SettingsDialog(QFrame):
         field_key = combo.currentData()
         if not field_key:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "提示", "请先从下拉框选择一个字段")
+            frameless_message_box(self, "提示", "请先从下拉框选择一个字段")
             return
 
         row = table.rowCount()
@@ -24716,7 +24355,7 @@ class SettingsDialog(QFrame):
         combo = self.crm_option_field_selector
         current_field_key = combo.currentData()
         if not current_field_key:
-            QMessageBox.warning(self, "提示", "请先从下拉框选择一个字段")
+            frameless_message_box(self, "提示", "请先从下拉框选择一个字段")
             return
 
         field_label = self.CRM_OPTION_FIELDS.get(current_field_key, current_field_key)
@@ -24865,34 +24504,6 @@ class SettingsDialog(QFrame):
         except Exception as e:
             print(f"延迟刷新CRM表格失败: {e}")
 
-
-        """保存所有设置"""
-        operation_log.info("--- 开始保存设置 ---")
-
-        if hasattr(self, 'crm_option_mapping_table'):
-            try:
-                self.crm_option_mappings = self._build_crm_option_mappings_from_table()
-                self._crm_mapping_dirty = False
-            except Exception as crm_mapping_error:
-                logging.error(f"保存设置前整理CRM选项映射失败: {str(crm_mapping_error)}")
-
-        # 保存所有设置
-        config = load_config()
-
-        # 确保配置结构存在
-        if 'app_settings' not in config:
-            config['app_settings'] = {}
-        if 'business_rules' not in config:
-            config['business_rules'] = {}
-        if 'file_config' not in config:
-            config['file_config'] = {}
-        if 'path_config' not in config:
-            config['path_config'] = {}
-        config['business_rules']['crm_option_mappings'] = dict(getattr(self, 'crm_option_mappings', {}) or {})
-
-        saved_items = []  # 记录保存的配置项
-
-        # 保存透明度设置
     def _get_crm_filter_option_table_specs(self):
         return [
             ('creator_options', '创建人', 'crm_creator_options_table'),
@@ -25142,16 +24753,11 @@ class SettingsDialog(QFrame):
             field_mappings = []
             table = self.crm_field_mapping_list_table
             for row in range(table.rowCount()):
-                api_item = table.item(row, 0)
-
-
-                display_item = table.item(row, 1)
-
-
-                api_name = api_item.text().strip() if api_item else ''
-
+                display_item = table.item(row, 0)  # 列0 = 显示名称
+                api_item = table.item(row, 1)       # 列1 = API名称
 
                 display_name = display_item.text().strip() if display_item else ''
+                api_name = api_item.text().strip() if api_item else ''
 
 
                 if api_name:  # 只保存有效的字段映射
@@ -25207,30 +24813,18 @@ class SettingsDialog(QFrame):
             # 兼容旧UI：如果仍是文本框，保持原有解析逻辑
             if hasattr(self, 'crm_creator_options_input'):
                 raw = self.crm_creator_options_input.text().strip()
-
-            if raw:
-
-                config['fxiaoke']['creator_options'] = [x.strip() for x in raw.replace('\uff0c', '\u3001').split('\u3001') if x.strip()]
-
-                saved_items.append(f"CRM创建人选项({len(config['fxiaoke']['creator_options'])}个)")
-
-            else:
-
-                config['fxiaoke']['creator_options'] = []
-
-
+                if raw:
+                    config['fxiaoke']['creator_options'] = [x.strip() for x in raw.replace('\uff0c', '\u3001').split('\u3001') if x.strip()]
+                    saved_items.append(f"CRM创建人选项({len(config['fxiaoke']['creator_options'])}个)")
+                else:
+                    config['fxiaoke']['creator_options'] = []
             if hasattr(self, 'crm_product_type_options_input'):
-                 raw = self.crm_product_type_options_input.text().strip()
-
-            if raw:
-
-                config['fxiaoke']['product_type_options'] = [x.strip() for x in raw.replace('\uff0c', '\u3001').split('\u3001') if x.strip()]
-
-                saved_items.append(f"CRM产品类型选项({len(config['fxiaoke']['product_type_options'])}个)")
-
-            else:
-
-                config['fxiaoke']['product_type_options'] = []
+                raw = self.crm_product_type_options_input.text().strip()
+                if raw:
+                    config['fxiaoke']['product_type_options'] = [x.strip() for x in raw.replace('\uff0c', '\u3001').split('\u3001') if x.strip()]
+                    saved_items.append(f"CRM产品类型选项({len(config['fxiaoke']['product_type_options'])}个)")
+                else:
+                    config['fxiaoke']['product_type_options'] = []
 
 
         # 保存设置（立即写入，确保 split_config_by_scope 将共享字段写入系统配置文件）
@@ -25289,6 +24883,11 @@ if __name__ == "__main__":
 
         # 创建QApplication实例
         app = ensure_qapplication()
+        # 在 QApplication 创建后导入 QtWebEngine，避免提前初始化 QPA 平台插件
+        try:
+            import PyQt6.QtWebEngineWidgets  # noqa: F401
+        except ImportError:
+            pass  # 精简版打包时可能不包含 WebEngine
 
         # 创建主窗口
         main_window = MainFrame()

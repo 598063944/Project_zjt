@@ -537,10 +537,11 @@ class pdf_watermarkMixin:
         # 选中行时显示该商机的授权备注
         self.opportunity_table.itemSelectionChanged.connect(self._on_opportunity_selection_changed)
 
-        # 安装复选框表头（与CRM订单一致）
-        self.opportunity_table_header = CheckBoxHeader(self.opportunity_table)
+        # 安装复选框表头（与CRM订单一致）+ 列头筛选
+        self.opportunity_table_header = CheckBoxAutoFilterHeader(self.opportunity_table)
         self.opportunity_table.setHorizontalHeader(self.opportunity_table_header)
         self.opportunity_table_header.toggled.connect(self.on_opportunity_header_select_all_toggled)
+        self.opportunity_table_header.filter_changed.connect(lambda: apply_autofilter_to_table(self.opportunity_table, self.opportunity_table_header))
 
         header = self.opportunity_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)

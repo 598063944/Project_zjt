@@ -274,7 +274,7 @@ def init_user_database():
                         "username": "Zengjiataoadmin",
                         "password": "Zeng0213@",
                         "user_id": "001",
-                        "created_at": get_current_time().strftime('%Y-%m-%d %H:%M:%S'),
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         "role": "admin",
                         "permissions": {
                             "field_format": True,

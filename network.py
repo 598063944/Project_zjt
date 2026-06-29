@@ -273,7 +273,7 @@ class FXiaokeCRM:    #CRM订单字段
         except (TypeError, ValueError):
             batch_size = 100
 
-        target_records = max(1, min(target_records, 10000))
+        target_records = max(1, target_records)
         batch_size = max(1, batch_size)
 
         while offset < target_records:
@@ -288,6 +288,11 @@ class FXiaokeCRM:    #CRM订单字段
                 is_custom=is_custom,
             )
             if err:
+                # CRM API offset上限（纷享销客限制offset≤10000）
+                if "offset out of range" in str(err).lower():
+                    if callback:
+                        callback(len(all_rows), total)
+                    break
                 return all_rows, total, err
             if not data:
                 break
@@ -529,6 +534,15 @@ class MysqlCache:
                     cur_len = int(m.group()) if m else 0
                     if cur_len < 40:
                         cur.execute(f"ALTER TABLE `{table}` MODIFY COLUMN `_hash` VARCHAR(40) DEFAULT ''")
+                upsert_sql = (
+                    f"INSERT INTO `{table}` (_id, data_json, _hash, cached_at) "
+                    f"VALUES (%s, %s, %s, NOW()) "
+                    f"ON DUPLICATE KEY UPDATE "
+                    f"data_json = IF(VALUES(`_hash`) != `_hash`, VALUES(data_json), data_json), "
+                    f"`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`), "
+                    f"cached_at = IF(VALUES(`_hash`) != `_hash`, NOW(), cached_at)"
+                )
+                batch = []
                 for row in rows:
                     _id = str(row.get('_id', '')).strip()
                     if not _id:
@@ -540,22 +554,18 @@ class MysqlCache:
                     seen_ids.add(_id)
                     data_json = json.dumps(row, ensure_ascii=False)
                     row_hash = hashlib.sha1(data_json.encode('utf-8')).hexdigest()
-                    cur.execute(
-                        f"INSERT INTO `{table}` (_id, data_json, _hash, cached_at) "
-                        f"VALUES (%s, %s, %s, NOW()) "
-                        f"ON DUPLICATE KEY UPDATE "
-                        f"data_json = IF(VALUES(`_hash`) != `_hash`, VALUES(data_json), data_json), "
-                        f"`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`), "
-                        f"cached_at = IF(VALUES(`_hash`) != `_hash`, NOW(), cached_at)",
-                        (_id, data_json, row_hash)
-                    )
+                    batch.append((_id, data_json, row_hash))
                     inserted += 1
+                    if len(batch) >= 500:
+                        cur.executemany(upsert_sql, batch)
+                        batch.clear()
+                if batch:
+                    cur.executemany(upsert_sql, batch)
                 if skipped:
                     logging.warning(f"[MysqlCache] JSON缓存表 {api_name}: {skipped} 条记录因 _id 为空被跳过")
             logging.info(f"[MysqlCache] JSON缓存表 {api_name}: 写入 {inserted} 条，跳过 {skipped} 条")
         except Exception as e:
             logging.error(f"[MysqlCache] 写入失败 {api_name}: {e}")
-
     def replace_cleaned_all(self, table_name, rows, headers, cleanup_old=True, field_type_map=None):
         """增量写入清洗后的数据表（按 _id 比对更新，可选清理不在本次批次中的旧记录）
 
@@ -1029,3 +1039,4 @@ class CRMCache:
 
 
 user_type = None
+

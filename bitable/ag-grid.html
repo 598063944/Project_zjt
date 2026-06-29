@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多维表格</title>
+    <link rel="stylesheet" href="ag-grid.min.css">
+    <link rel="stylesheet" href="ag-theme-balham.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif; }
+
+        /* ── 主容器 ── */
+        #bitable-wrapper { display: flex; flex-direction: column; height: 100%; width: 100%; }
+        #bitable-grid { flex: 1; width: 100%; }
+
+        /* ── 飞书风格 AG Grid ── */
+        .ag-theme-balham {
+            --ag-background-color: #ffffff;
+            --ag-header-background-color: #f7f8fa;
+            --ag-header-foreground-color: #646a73;
+            --ag-foreground-color: #1f2329;
+            --ag-border-color: #dee0e3;
+            --ag-row-hover-color: #f2f7ff;
+            --ag-selected-row-background-color: #e8f0fe;
+            --ag-range-selection-border-color: #3370ff;
+            --ag-odd-row-background-color: #ffffff;
+            --ag-font-size: 13px;
+            --ag-header-font-size: 13px;
+            --ag-grid-size: 4px;
+            --ag-row-height: 36px;
+            --ag-header-height: 36px;
+        }
+        .ag-root-wrapper { border: none !important; }
+        .ag-root { border: none !important; }
+        .ag-header { border-bottom: 1px solid #dee0e3 !important; }
+        .ag-header-cell { font-weight: 400 !important; font-size: 13px; color: #646a73; padding: 0 12px; }
+        .ag-header-cell-label { gap: 4px; }
+        .ag-cell { font-size: 13px; line-height: 36px; padding: 0 12px; color: #1f2329; border: none; border-bottom: 1px solid #f0f1f2; }
+        .ag-cell-focus { border: 1px solid #3370ff !important; z-index: 1; }
+        .ag-cell-inline-editing { border: 1px solid #3370ff !important; background: #fff; }
+        .ag-row-hover { background-color: #f2f7ff !important; }
+        .ag-row-selected { background-color: #e8f0fe !important; }
+        .ag-selection-checkbox .ag-checkbox-input-wrapper { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #c9cdd4; }
+        .ag-selection-checkbox .ag-checkbox-input-wrapper.ag-checked { background: #3370ff; border-color: #3370ff; }
+        .ag-paging-panel { border-top: 1px solid #dee0e3 !important; background: #f7f8fa; font-size: 12px; color: #646a73; height: 36px; padding: 0 12px; }
+        .ag-paging-button { color: #3370ff; border: none; background: transparent; }
+        .ag-paging-button:hover { background: #f2f7ff; }
+        .ag-paging-button.ag-disabled { color: #c9cdd4; }
+        .ag-overlay-no-rows-wrapper { color: #8f959e; font-size: 14px; padding: 40px; }
+        .ag-column-drop-cell { background: #f2f7ff; border: 1px solid #3370ff; border-radius: 4px; color: #3370ff; }
+
+        /* ── 搜索高亮 ── */
+        .ag-cell.search-highlight { background: #FFF7E6 !important; }
+
+        /* ── 底部操作栏 ── */
+        #add-record-bar {
+            height: 36px; border-top: 1px solid #dee0e3; background: #fff;
+            display: flex; align-items: center; padding: 0 16px; cursor: pointer;
+            color: #3370ff; font-size: 13px; user-select: none; flex-shrink: 0;
+        }
+        #add-record-bar:hover { background: #f2f7ff; }
+        #add-record-bar .icon { margin-right: 6px; font-size: 15px; }
+
+        /* ── 搜索栏 ── */
+        #search-bar {
+            display: none; height: 36px; background: #fff; border-bottom: 1px solid #dee0e3;
+            align-items: center; padding: 0 12px; gap: 8px; flex-shrink: 0;
+        }
+        #search-bar input {
+            flex: 1; border: 1px solid #dee0e3; border-radius: 4px; padding: 4px 10px;
+            font-size: 13px; outline: none; max-width: 300px;
+        }
+        #search-bar input:focus { border-color: #3370ff; }
+        #search-bar .search-info { font-size: 12px; color: #8f959e; }
+        #search-bar .search-close { cursor: pointer; color: #646a73; font-size: 16px; padding: 2px 6px; border-radius: 4px; }
+        #search-bar .search-close:hover { background: #f2f3f5; }
+
+        /* ── 自定义右键菜单 ── */
+        .ctx-menu {
+            display: none; position: fixed; z-index: 9999; background: #fff;
+            border: 1px solid #e5e6eb; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            padding: 4px 0; min-width: 180px; font-size: 13px; color: #1f2329;
+        }
+        .ctx-menu .ctx-item {
+            padding: 8px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+        }
+        .ctx-menu .ctx-item:hover { background: #f2f7ff; }
+        .ctx-menu .ctx-item.danger { color: #f54a45; }
+        .ctx-menu .ctx-item.danger:hover { background: #fef0f0; }
+        .ctx-menu .ctx-sep { height: 1px; background: #f0f1f2; margin: 4px 0; }
+        .ctx-menu .ctx-item .shortcut { margin-left: auto; color: #bbb; font-size: 12px; }
+
+        /* ── 图表区域 ── */
+        #bitable-chart { display: none; width: 100%; height: 100%; padding: 16px; overflow: auto; background: #f7f8fa; }
+        #chart-container { width: 100%; height: 100%; min-height: 400px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+        /* ── 空状态 ── */
+        #empty-hint { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #8f959e; font-size: 14px; gap: 8px; }
+        #empty-hint .icon { font-size: 48px; opacity: 0.3; }
+    </style>
+</head>
+<body>
+    <div id="bitable-wrapper">
+        <div id="search-bar">
+            <input type="text" id="search-input" placeholder="搜索...">
+            <span class="search-info" id="search-info"></span>
+            <span class="search-close" id="search-close">✕</span>
+        </div>
+        <div id="bitable-grid" class="ag-theme-balham" style="display:none;"></div>
+        <div id="add-record-bar" style="display:none;" onclick="window.addRecord()">
+            <span class="icon">＋</span> 添加记录
+        </div>
+        <div id="bitable-chart"><div id="chart-container"></div></div>
+        <div id="empty-hint"><div class="icon">📊</div><div>选择数据源开始使用</div></div>
+    </div>
+
+    <!-- 自定义右键菜单 -->
+    <div class="ctx-menu" id="ctx-menu"></div>
+
+    <script src="qwebchannel.js"></script>
+    <script src="ag-grid-community.min.js"></script>
+    <script src="echarts/echarts.min.js"></script>
+    <script>
+    // ============================================================
+    // 全局状态
+    // ============================================================
+    let gridApi = null, bridge = null, _pendingGridParams = null;
+    let _searchTimer = null;
+
+    // ============================================================
+    // QWebChannel
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof qt !== 'undefined' && typeof QWebChannel !== 'undefined') {
+            new QWebChannel(qt.webChannelTransport, function(ch) {
+                bridge = ch.objects.bridge;
+                if (bridge) bridge.handle_js_action('page_ready', '{}');
+            });
+        }
+    });
+
+    // ============================================================
+    // 中文本地化
+    // ============================================================
+    var ZH = {
+        page:'第',more:'更多',to:'至',of:'共',next:'下一页',last:'末页',first:'首页',previous:'上一页',
+        loadingOoo:'加载中...',noRowsToShow:'暂无数据',searchOoo:'搜索...',
+        filterOoo:'筛选...',contains:'包含',notContains:'不包含',startsWith:'开头是',endsWith:'结尾是',
+        equals:'等于',notEqual:'不等于',greaterThan:'大于',greaterThanOrEqual:'大于等于',
+        lessThan:'小于',lessThanOrEqual:'小于等于',inRange:'范围内',
+        applyFilter:'应用',resetFilter:'重置',clearFilter:'清除',cancelFilter:'取消',
+        textFilter:'文本筛选',numberFilter:'数字筛选',empty:'空白',blank:'空白',notBlank:'非空白',notEmpty:'非空白',
+        sortAscending:'升序',sortDescending:'降序',sortUnSort:'取消排序',
+        pinColumn:'固定列',pinLeft:'固定在左侧',pinRight:'固定在右侧',noPin:'取消固定',
+        autosizeThisColumn:'自适应列宽',autosizeAllColumns:'自适应所有列宽',
+        copy:'复制',copyWithHeaders:'带表头复制',csvExport:'导出 CSV',
+        selectAll:'全选',selectAllFiltered:'全选（筛选后）',blanks:'（空白）',noMatches:'无匹配项',
+        andCondition:'且',orCondition:'或',
+    };
+
+    // ============================================================
+    // AG Grid 配置（飞书操作逻辑）
+    // ============================================================
+    const gridOptions = {
+        columnDefs: [],
+        localeText: ZH,
+        defaultColDef: {
+            sortable: true,
+            filter: true,        // ✅ 启用列头筛选菜单
+            resizable: true,
+            editable: true,      // ✅ 默认可编辑（双击即编辑）
+            minWidth: 80,
+        },
+        // ✅ Enter 确认后向下跳转
+        enterNavigatesVertically: true,
+        enterNavigatesVerticallyAfterEdit: true,
+        // ✅ 列可拖拽
+        movableColumns: true,
+        // ✅ 单元格选择（支持 Ctrl+C 复制）
+        cellSelection: true,
+        // 行选择
+        rowSelection: 'multiple',
+        suppressRowClickSelection: true,
+        // 分页
+        pagination: true,
+        paginationPageSize: 100,
+        paginationPageSizeSelector: [50, 100, 200, 500],
+        // 无限行模型
+        rowModelType: 'infinite',
+        cacheBlockSize: 100,
+        maxBlocksInCache: 10,
+        // 其他
+        animateRows: false,
+        enableCellTextSelection: true,
+        ensureDomOrder: true,
+        getRowId: function(p) {
+            var d = p.data;
+            if (d._row_id !== undefined) return String(d._row_id);
+            if (d.id !== undefined) return String(d.id);
+            var k = Object.keys(d);
+            return k.length > 0 ? String(d[k[0]]) : String(p.node.rowIndex);
+        },
+        // 事件
+        onSortChanged: function(e) {
+            if (!bridge) return;
+            var s = []; e.columns.forEach(function(c) { s.push({colId:c.getColId(),sort:c.getSort()}); });
+            bridge.handle_js_action('sortChanged', JSON.stringify(s));
+        },
+        onFilterChanged: function() {
+            if (!bridge || !gridApi) return;
+            bridge.handle_js_action('filterChanged', JSON.stringify(gridApi.getFilterModel()));
+        },
+        onCellValueChanged: function(e) {
+            if (!bridge) return;
+            bridge.handle_js_action('cellValueChanged', JSON.stringify({
+                row_id: e.data._row_id !== undefined ? e.data._row_id : e.data.id,
+                field: e.colDef.field, oldValue: e.oldValue, newValue: e.newValue
+            }));
+        },
+        onSelectionChanged: function() {
+            if (!bridge || !gridApi) return;
+            bridge.handle_js_action('selectionChanged', JSON.stringify({count: gridApi.getSelectedRows().length}));
+        },
+        onColumnMoved: function(e) {
+            if (!bridge || !gridApi || e.finished === false) return;
+            var c = []; gridApi.getColumnDefs().forEach(function(d) { c.push(d.field); });
+            bridge.handle_js_action('columnMoved', JSON.stringify({columns: c}));
+        },
+        onColumnResized: function(e) {
+            if (!bridge || !gridApi || e.finished === false) return;
+            var w = {};
+            gridApi.getColumnDefs().forEach(function(c) { var cd = gridApi.getColumnDef(c.field); if (cd) w[c.field] = cd.width || null; });
+            bridge.handle_js_action('columnResized', JSON.stringify(w));
+        },
+    };
+
+    var gridDiv = document.getElementById('bitable-grid');
+    gridApi = agGrid.createGrid(gridDiv, gridOptions);
+
+    // ============================================================
+    // DataSource
+    // ============================================================
+    function createDataSource() {
+        return {
+            getRows: function(params) {
+                _pendingGridParams = params;
+                if (bridge) {
+                    bridge.handle_js_action('getRows', JSON.stringify({
+                        startRow: params.startRow, endRow: params.endRow,
+                        sortModel: params.sortModel || [], filterModel: params.filterModel || {},
+                    }));
+                } else { params.failCallback(); }
+            }
+        };
+    }
+
+    // ============================================================
+    // Python → JS
+    // ============================================================
+    window.setGridColumns = function(j) { gridApi.setGridOption('columnDefs', JSON.parse(j)); };
+    window.setDataSource = function() {
+        gridApi.setGridOption('datasource', createDataSource());
+        gridDiv.style.display = 'block';
+        document.getElementById('add-record-bar').style.display = 'flex';
+        var h = document.getElementById('empty-hint'); if (h) h.style.display = 'none';
+    };
+    window.refreshData = function() { gridApi.purgeInfiniteCache(); gridApi.refreshInfiniteCache(); };
+    window.setEditable = function(v) {
+        var c = gridApi.getColumnDefs(); c.forEach(function(d) { d.editable = v; });
+        gridApi.setGridOption('columnDefs', c);
+    };
+    window.getSelectedRows = function() { return JSON.stringify(gridApi.getSelectedRows()); };
+    window.exportCsv = function(f) { gridApi.exportDataAsCsv({fileName: f || 'export.csv'}); };
+    window.setFilterModel = function(j) { gridApi.setFilterModel(JSON.parse(j)); };
+    window.applySortState = function(j) { gridApi.applyColumnState({state: JSON.parse(j), applyOrder: false}); };
+    window.setRowData = function(rows, total) { if (_pendingGridParams) { _pendingGridParams.successCallback(rows, total); _pendingGridParams = null; } };
+    window.setRowDataError = function(m) { if (_pendingGridParams) { _pendingGridParams.failCallback(); _pendingGridParams = null; } };
+
+    // ✅ 行高调整
+    window.setRowHeight = function(h) { gridApi.setGridOption('rowHeight', parseInt(h)); };
+
+    // ✅ 搜索
+    window.doSearch = function(keyword) {
+        if (!gridApi) return {count:0};
+        var count = 0;
+        gridApi.forEachNode(function(node) {
+            if (!node.data) return;
+            var match = false;
+            Object.values(node.data).forEach(function(v) {
+                if (v !== null && v !== undefined && String(v).toLowerCase().includes(keyword.toLowerCase())) match = true;
+            });
+            if (match) { count++; }
+        });
+        return {count: count};
+    };
+
+    // ✅ 添加记录
+    window.addRecord = function() {
+        if (bridge) bridge.handle_js_action('addRecord', '{}');
+    };
+
+    // ✅ 删除记录
+    window.deleteSelectedRows = function() {
+        if (!gridApi || !bridge) return;
+        var rows = gridApi.getSelectedRows();
+        if (rows.length === 0) return;
+        var ids = rows.map(function(r) { return r._row_id !== undefined ? r._row_id : r.id; }).filter(function(x) { return x !== undefined; });
+        bridge.handle_js_action('deleteRecords', JSON.stringify({ids: ids}));
+    };
+
+    // ============================================================
+    // 自定义右键菜单
+    // ============================================================
+    var _ctxMenu = document.getElementById('ctx-menu');
+    var _ctxTarget = null; // {type:'row'|'header', field:'', rowData:{}}
+
+    function showCtxMenu(x, y, items) {
+        _ctxMenu.innerHTML = '';
+        items.forEach(function(item) {
+            if (item === '---') {
+                _ctxMenu.innerHTML += '<div class="ctx-sep"></div>';
+            } else {
+                var cls = 'ctx-item' + (item.danger ? ' danger' : '');
+                var shortcut = item.shortcut ? '<span class="shortcut">' + item.shortcut + '</span>' : '';
+                var el = document.createElement('div');
+                el.className = cls;
+                el.innerHTML = item.label + shortcut;
+                el.onclick = function() { hideCtxMenu(); if (item.action) item.action(); };
+                _ctxMenu.appendChild(el);
+            }
+        });
+        // 定位（防止超出屏幕）
+        _ctxMenu.style.display = 'block';
+        var rect = _ctxMenu.getBoundingClientRect();
+        if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+        if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
+        _ctxMenu.style.left = x + 'px';
+        _ctxMenu.style.top = y + 'px';
+    }
+
+    function hideCtxMenu() { _ctxMenu.style.display = 'none'; }
+
+    document.addEventListener('click', hideCtxMenu);
+    document.addEventListener('contextmenu', function(e) {
+        // 只在 AG Grid 区域内处理
+        if (!gridDiv.contains(e.target)) return;
+        hideCtxMenu();
+
+        var colEl = e.target.closest('.ag-header-cell');
+        if (colEl) {
+            // 列头右键
+            e.preventDefault();
+            var colId = colEl.getAttribute('col-id') || colEl.getAttribute('aria-colindex');
+            // 从 DOM 获取字段名
+            var field = '';
+            gridApi.getColumnDefs().forEach(function(c) {
+                if (c.headerName && colEl.textContent.includes(c.headerName)) field = c.field;
+            });
+            if (!field && colId) {
+                try { field = gridApi.getColumnDefs()[parseInt(colId)-1]?.field || ''; } catch(ex) {}
+            }
+            _ctxTarget = {type:'header', field: field};
+            showCtxMenu(e.clientX, e.clientY, [
+                {label:'↑ 升序', action: function() { gridApi.applyColumnState({state:[{colId:field,sort:'asc'}], defaultState:{sort:null}}); }},
+                {label:'↓ 降序', action: function() { gridApi.applyColumnState({state:[{colId:field,sort:'desc'}], defaultState:{sort:null}}); }},
+                '---',
+                {label:'隐藏此列', action: function() { if(bridge) bridge.handle_js_action('hideColumn', JSON.stringify({field:field})); }},
+                {label:'向左插入字段', action: function() { if(bridge) bridge.handle_js_action('addField', JSON.stringify({position:'left', ref:field})); }},
+                {label:'向右插入字段', action: function() { if(bridge) bridge.handle_js_action('addField', JSON.stringify({position:'right', ref:field})); }},
+                '---',
+                {label:'删除此字段', danger:true, action: function() { if(bridge) bridge.handle_js_action('dropColumn', JSON.stringify({field:field})); }},
+            ]);
+            return;
+        }
+
+        var rowEl = e.target.closest('.ag-row');
+        if (rowEl) {
+            // 行右键
+            e.preventDefault();
+            var rowNode = gridApi.getDisplayedRowAtIndex(rowEl.getAttribute('row-index') ? parseInt(rowEl.getAttribute('row-index')) : -1);
+            var rowData = rowNode ? rowNode.data : {};
+            var rowId = rowData._row_id !== undefined ? rowData._row_id : rowData.id;
+            _ctxTarget = {type:'row', rowId: rowId, data: rowData};
+            showCtxMenu(e.clientX, e.clientY, [
+                {label:'复制此行', shortcut:'Ctrl+C', action: function() { document.execCommand('copy'); }},
+                {label:'在上方插入记录', action: function() { if(bridge) bridge.handle_js_action('insertRecord', JSON.stringify({position:'above', refId:rowId})); }},
+                {label:'在下方插入记录', action: function() { if(bridge) bridge.handle_js_action('insertRecord', JSON.stringify({position:'below', refId:rowId})); }},
+                '---',
+                {label:'删除此记录', danger:true, shortcut:'Del', action: function() { if(bridge) bridge.handle_js_action('deleteRecords', JSON.stringify({ids:[rowId]})); }},
+            ]);
+        }
+    });
+
+    // ============================================================
+    // 搜索栏
+    // ============================================================
+    document.getElementById('search-input').addEventListener('input', function(e) {
+        clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(function() {
+            var kw = e.target.value.trim();
+            if (!kw) { document.getElementById('search-info').textContent = ''; return; }
+            var r = window.doSearch(kw);
+            document.getElementById('search-info').textContent = '找到 ' + r.count + ' 条';
+        }, 300);
+    });
+    document.getElementById('search-close').addEventListener('click', function() {
+        document.getElementById('search-bar').style.display = 'none';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-info').textContent = '';
+    });
+
+    // ✅ 显示/隐藏搜索栏
+    window.toggleSearch = function() {
+        var bar = document.getElementById('search-bar');
+        if (bar.style.display === 'none' || bar.style.display === '') {
+            bar.style.display = 'flex';
+            document.getElementById('search-input').focus();
+        } else {
+            bar.style.display = 'none';
+        }
+    };
+
+    // ============================================================
+    // 视图切换 + ECharts
+    // ============================================================
+    var _chartInstance = null;
+    window.switchView = function(v) {
+        var g = document.getElementById('bitable-grid');
+        var c = document.getElementById('bitable-chart');
+        var a = document.getElementById('add-record-bar');
+        var h = document.getElementById('empty-hint');
+        if (v === 'chart') {
+            if(g) g.style.display='none'; if(a) a.style.display='none';
+            if(c) c.style.display='block'; if(h) h.style.display='none';
+            setTimeout(function(){ if(_chartInstance) _chartInstance.resize(); }, 100);
+        } else {
+            if(c) c.style.display='none';
+            if(g) g.style.display='block'; if(a) a.style.display='flex';
+            if(h) h.style.display='none';
+        }
+    };
+    window.renderChart = function(j) {
+        var el = document.getElementById('chart-container');
+        if (!el) return;
+        if (_chartInstance) { _chartInstance.dispose(); _chartInstance = null; }
+        _chartInstance = echarts.init(el);
+        _chartInstance.setOption(JSON.parse(j));
+        window.addEventListener('resize', function(){ if(_chartInstance) _chartInstance.resize(); });
+    };
+    window.disposeChart = function() { if (_chartInstance) { _chartInstance.dispose(); _chartInstance = null; } };
+    </script>
+</body>
+</html>

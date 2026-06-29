@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+import core
 from core import *
 from common import *
+from common import messagebox, frameless_input_text, frameless_message_box
 
 """
 order_to_contract.py — 订单转合同 Mixin（CRM 订单 + 商机管理）
@@ -20,7 +22,10 @@ import os
 import common  # 显式导入，用于访问模块级私有函数
 
 # QtWebEngine 必须在 QApplication 创建前导入
-import PyQt6.QtWebEngineWidgets  # noqa: F401
+try:
+    import PyQt6.QtWebEngineWidgets  # noqa: F401
+except ImportError:
+    pass  # 精简版打包时可能不包含 WebEngine
 
 from pathlib import Path  # 路径处理
 import copy
@@ -131,7 +136,9 @@ class order_to_contractMixin:
         self.crm_table.cellClicked.connect(self.on_crm_table_cell_clicked)
         self.crm_table.setAlternatingRowColors(True)
         self.crm_table.verticalHeader().setVisible(False)
-        self.crm_table_header = CheckBoxHeader(self.crm_table)
+        self.crm_table_header = CheckBoxAutoFilterHeader(self.crm_table)
+        self.crm_table_header.filter_changed.connect(self._on_crm_filter_changed)
+        self.crm_table_header._data_provider = self._get_crm_autofilter_values
         self.crm_table.setHorizontalHeader(self.crm_table_header)
         header = self.crm_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -457,21 +464,60 @@ class order_to_contractMixin:
         return '日期' in label or '时间' in label
 
 
+    def _ensure_opp_filter_panel(self):
+        """懒初始化商机 FilterPanel（仅创建一次）"""
+        if hasattr(self, "_opp_filter_panel"):
+            return
+        self._opp_filter_panel = FilterPanel(
+            self,
+            mode="inline",
+            title="设置筛选",
+            show_title=False,
+            show_add_btn=True,
+            show_apply_btn=True,
+            show_clear_btn=True,
+            show_save_btn=True,
+            row_defaults={
+                "field_options": self._get_opp_filter_headers(),
+                "value_pages": ("text", "date", "date_range"),
+                "show_expose": True,
+                "debounce_ms": 300,
+                "is_date_field_cb": self._is_opp_date_field,
+                "show_picker": False,
+            },
+        )
+        # 隐藏 pdf_watermark.py 创建的旧 QFrame（已弃用）
+        old_frame = getattr(self, 'opp_conditions_frame', None)
+        if old_frame is not None:
+            p = old_frame.parent()
+            if p is not None:
+                p.setVisible(False)
+        # 兼容层
+        self.opp_filter_panel = self._opp_filter_panel._panel_frame
+        self.opp_condition_rows = self._opp_filter_panel._legacy_rows
+        self._opp_filter_panel._panel_frame.setFixedWidth(500)
+        # 连接 FilterPanel 按钮回调
+        self._opp_filter_panel._on_save_preset = lambda panel: self._save_opp_filter_preset()
+        self._opp_filter_panel._on_apply = lambda panel: self._apply_opp_filter_and_close()
+        # "清除" 按钮直接调用 clear_all()，需要在此之后重新筛选
+        _orig_clear = self._opp_filter_panel.clear_all
+        def _clear_and_refilter():
+            _orig_clear()
+            self._apply_opp_filters()
+        self._opp_filter_panel.clear_all = _clear_and_refilter
+
     def _toggle_opportunity_filter_panel(self):
         """切换商机筛选面板（照搬CRM订单）"""
-        if not hasattr(self, 'opp_filter_panel'):
-            return
-        visible = not self.opp_filter_panel.isVisible()
-        if visible:
-            self.opp_filter_panel.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-            self.opp_filter_panel.setVisible(True)
-            self.opp_filter_panel.raise_()
-            self.opp_filter_panel.activateWindow()
-            self._refresh_opp_search_field_combo()
+        self._ensure_opp_filter_panel()
+        panel = self._opp_filter_panel._panel_frame
+        visible = panel.isVisible()
+        if not visible:
             self._adjust_opp_filter_panel_size()
+            panel.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+            panel.setVisible(True)
+            panel.raise_()
+            panel.activateWindow()
             search_frame = self.opp_search_stack.parent()
-            panel_w = self.opp_filter_panel.width()
-            panel_h = self.opp_filter_panel.height()
             if search_frame:
                 pos = search_frame.mapToGlobal(QPoint(0, search_frame.height()))
                 x, y = pos.x(), pos.y() + 4
@@ -480,18 +526,18 @@ class order_to_contractMixin:
             screen = self.screen()
             if screen:
                 geo = screen.availableGeometry()
-                x = max(geo.x() + 10, min(x, geo.right() - panel_w - 10))
-                y = max(geo.y() + 10, min(y, geo.bottom() - panel_h - 10))
-            self.opp_filter_panel.move(x, y)
-            self.opp_filter_panel.reject = lambda: self.opp_filter_panel.setVisible(False)
-            self.opp_filter_panel._outside_close_armed = False
-            pf = common._DialogOutsideCloseFilter(self.opp_filter_panel)
-            self.opp_filter_panel._outside_filter = pf
+                x = max(geo.x() + 10, min(x, geo.right() - panel.width() - 10))
+                y = max(geo.y() + 10, min(y, geo.bottom() - panel.height() - 10))
+            panel.move(x, y)
+            panel.reject = lambda: panel.setVisible(False)
+            panel._outside_close_armed = False
+            pf = common._DialogOutsideCloseFilter(panel)
+            panel._outside_filter = pf
             QApplication.instance().installEventFilter(pf)
-            QTimer.singleShot(0, lambda p=self.opp_filter_panel: setattr(p, '_outside_close_armed', True))
-            self.opp_filter_panel.destroyed.connect(lambda obj, f=pf: QApplication.instance().removeEventFilter(f))
+            QTimer.singleShot(0, lambda p=panel: setattr(p, '_outside_close_armed', True))
+            panel.destroyed.connect(lambda obj, f=pf: QApplication.instance().removeEventFilter(f))
         else:
-            self.opp_filter_panel.setVisible(False)
+            panel.setVisible(False)
         self._update_opp_filter_toggle_btn()
 
 
@@ -524,28 +570,7 @@ class order_to_contractMixin:
             self._opp_filter_panel._update_toggle_badge()
     def _add_opp_condition_row(self, condition=None):
         """Add an opportunity filter condition row (delegated to FilterPanel)."""
-        if not hasattr(self, "_opp_filter_panel"):
-            self._opp_filter_panel = FilterPanel(
-                self,
-                mode="inline",
-                title="Set Filters",
-                show_title=False,
-                show_add_btn=False,
-                show_apply_btn=False,
-                show_clear_btn=False,
-                show_save_btn=False,
-                row_defaults={
-                    "field_options": self._get_opp_filter_headers(),
-                    "value_pages": ("text", "date", "date_range"),
-                    "show_expose": True,
-                    "debounce_ms": 300,
-                    "is_date_field_cb": self._is_opp_date_field,
-                    "show_picker": False,
-                },
-            )
-            # Compatibility layer for legacy references
-            self.opp_filter_panel = self._opp_filter_panel._panel_frame
-            self.opp_condition_rows = self._opp_filter_panel._legacy_rows
+        self._ensure_opp_filter_panel()
         return self._opp_filter_panel.add_row(condition)
     def _update_opp_condition_input_mode(self, row_info):
         """No-op: input mode is automatically handled by FilterPanel."""
@@ -564,20 +589,20 @@ class order_to_contractMixin:
 
     def _adjust_opp_filter_panel_size(self):
         """动态调整商机筛选面板高度"""
-        if not hasattr(self, 'opp_filter_panel'):
+        if not hasattr(self, '_opp_filter_panel'):
             return
         row_count = len(getattr(self, 'opp_condition_rows', []))
         h = 36 + row_count * 32 + max(0, row_count - 1) * 4 + 44 + 24
         h = max(140, min(h, 500))
-        self.opp_filter_panel.setFixedHeight(h)
+        self._opp_filter_panel._panel_frame.setFixedHeight(h)
 
 
     def _apply_opp_filter_and_close(self):
         """应用商机筛选并关闭弹窗"""
         self._apply_opp_filters()
         self._refresh_opp_exposed_tags()
-        if hasattr(self, 'opp_filter_panel'):
-            self.opp_filter_panel.setVisible(False)
+        if hasattr(self, '_opp_filter_panel'):
+            self._opp_filter_panel._panel_frame.setVisible(False)
         self._update_opp_filter_toggle_btn()
 
 
@@ -703,16 +728,10 @@ class order_to_contractMixin:
                 display_val = _to_display_val(api_name, raw_val)
                 row_vals.append(display_val)
 
-            # 搜索过滤
+            # 搜索过滤（搜索字段下拉已移除，统一全字段搜索）
             if search_text:
-                if search_field:
-                    sf_idx = col_map.get(search_field, -1)
-                    if sf_idx >= 0 and sf_idx < len(row_vals):
-                        if search_text not in row_vals[sf_idx].lower():
-                            continue
-                else:
-                    if not any(search_text in str(v).lower() for v in row_vals):
-                        continue
+                if not any(search_text in str(v).lower() for v in row_vals):
+                    continue
 
             # 条件筛选
             if conditions:
@@ -866,7 +885,7 @@ class order_to_contractMixin:
         presets = self.config.get('opp_filter_presets', [])
         if not isinstance(presets, list):
             return
-        reply = QMessageBox.question(self, '确认删除', f'确定删除方案「{name}」吗？')
+        reply = frameless_message_box(self, '确认删除', f'确定删除方案「{name}」吗？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:
             return
         self.config['opp_filter_presets'] = [p for p in presets if p.get('name') != name]
@@ -879,7 +898,7 @@ class order_to_contractMixin:
     def _save_opp_filter_preset(self):
         """保存商机筛选条件为方案"""
         conditions = self._collect_opp_filter_conditions()
-        name, ok = QInputDialog.getText(self, "保存筛选方案", "请输入方案名称：")
+        name, ok = frameless_input_text(self, "保存筛选方案", "请输入方案名称：")
         if not ok or not name or not name.strip():
             return
         name = name.strip()
@@ -888,7 +907,7 @@ class order_to_contractMixin:
             presets = []
         existing = next((i for i, p in enumerate(presets) if p.get('name') == name), None)
         if existing is not None:
-            reply = QMessageBox.question(self, '确认覆盖', f'方案「{name}」已存在，是否覆盖？')
+            reply = frameless_message_box(self, '确认覆盖', f'方案「{name}」已存在，是否覆盖？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes:
                 return
             presets[existing] = {'name': name, 'conditions': conditions}
@@ -896,7 +915,7 @@ class order_to_contractMixin:
             presets.append({'name': name, 'conditions': conditions})
         self.config['opp_filter_presets'] = presets
         save_config(self.config)
-        QMessageBox.information(self, "成功", f"方案「{name}」已保存。")
+        frameless_message_box(self, "成功", f"方案「{name}」已保存。")
 
 
     def _update_opp_filter_preset(self, preset_name):
@@ -1034,8 +1053,11 @@ class order_to_contractMixin:
 
         self._force_opp_api_refresh = False
         self._opportunity_is_loading = True
-        self.opportunity_refresh_btn.setText("加载中...")
-        self.opportunity_status_label.setText("从CRM加载数据...")
+        # ✅ 安全访问：控件可能未创建（PDF水印页面已移除）
+        if hasattr(self, 'opportunity_refresh_btn'):
+            self.opportunity_refresh_btn.setText("加载中...")
+        if hasattr(self, 'opportunity_status_label'):
+            self.opportunity_status_label.setText("从CRM加载数据...")
         self.update_output.emit("[商机] 🌐 从CRM API获取数据...")
 
         import threading
@@ -1140,7 +1162,7 @@ class order_to_contractMixin:
 
     def _populate_opportunity_table(self, data=None):
         """填充商机表格。可传入筛选后的数据子集。"""
-        if not hasattr(self, 'opportunity_all_data'):
+        if not hasattr(self, 'opportunity_all_data') or not hasattr(self, 'opportunity_table'):
             return
 
         # ✅ 首次加载数据后自动应用默认筛选方案
@@ -1365,9 +1387,11 @@ class order_to_contractMixin:
 
         # 更新状态栏
         total_count = len(data)
-        self.opportunity_status_label.setText(f"共 {total_count} 条记录")
-        page_count = max(1, (total_count + 19) // 20)
-        self.opportunity_pagination_label.setText(f"1/{page_count}")
+        if hasattr(self, 'opportunity_status_label'):
+            self.opportunity_status_label.setText(f"共 {total_count} 条记录")
+        if hasattr(self, 'opportunity_pagination_label'):
+            page_count = max(1, (total_count + 19) // 20)
+            self.opportunity_pagination_label.setText(f"1/{page_count}")
 
 
     def _on_opportunity_selection_changed(self):
@@ -3214,9 +3238,13 @@ class order_to_contractMixin:
             read_kwargs = {'sheet_name': None}
             if excel_path.suffix.lower() == '.xls':
                 read_kwargs['engine'] = 'xlrd'
-                read_kwargs['engine_kwargs'] = {'ignore_workbook_corruption': True}
 
-            workbook = pd.read_excel(excel_path, **read_kwargs)
+            try:
+                workbook = pd.read_excel(excel_path, **read_kwargs)
+            except Exception:
+                # .xls 可能实际是 .xlsx 格式重命名，回退到默认引擎
+                read_kwargs.pop('engine', None)
+                workbook = pd.read_excel(excel_path, **read_kwargs)
             if isinstance(workbook, pd.DataFrame):
                 workbook = {'Sheet1': workbook}
 
@@ -3418,8 +3446,12 @@ class order_to_contractMixin:
             read_kwargs = {'sheet_name': None}
             if excel_path.suffix.lower() == '.xls':
                 read_kwargs['engine'] = 'xlrd'
-                read_kwargs['engine_kwargs'] = {'ignore_workbook_corruption': True}
-            workbook = pd.read_excel(str(excel_path), **read_kwargs)
+            try:
+                workbook = pd.read_excel(str(excel_path), **read_kwargs)
+            except Exception:
+                # .xls 可能实际是 .xlsx 格式重命名，回退到默认引擎
+                read_kwargs.pop('engine', None)
+                workbook = pd.read_excel(str(excel_path), **read_kwargs)
             if isinstance(workbook, pd.DataFrame):
                 workbook = {'Sheet1': workbook}
         except Exception as e:
@@ -4030,6 +4062,8 @@ class order_to_contractMixin:
                     r for r in self.crm_filtered_data
                     if search in self._build_crm_row_search_text(r)
                 ]
+        # 列头筛选（AutoFilter）
+        self._apply_crm_autofilter()
         # ✅ 从设置中动态获取字段映射，用于排序时标签→API键转换
         cfg = load_config()
         field_mapping_list = cfg.get('fxiaoke', {}).get('crm_field_mapping_list', [])
@@ -4958,11 +4992,17 @@ class order_to_contractMixin:
 
 
     def _build_crm_row_search_text(self, row):
-        """收集一行的所有字段值（含计算字段），用于全字段模糊搜索"""
+        """收集一行的所有字段值（含计算字段 + 选项字段显示文本），用于全字段模糊搜索"""
         parts = []
+        option_fields = getattr(self, 'CRM_OPTION_FIELDS', {})
         for key, label, is_time in getattr(self, 'CRM_ALL_FIELDS', []):
             val = self._crm_extract_field(row, key)
             parts.append(str(val) if val is not None else '')
+            # 选项字段追加显示文本，确保按中文选项值也能搜索到
+            if key in option_fields:
+                display = self._get_crm_option_text(key, row.get(key, ''))
+                if display and display != str(val or ''):
+                    parts.append(str(display))
         computed = []
         try:
             computed.append(str(self._get_crm_model_spec(row) or ''))
@@ -4971,8 +5011,6 @@ class order_to_contractMixin:
             computed.append(str(self._get_crm_discount_unit_price(row) or ''))
             computed.append(str(self._get_crm_product_remark(row) or ''))
             computed.append(str(self._convert_amount_to_rmb_upper(row.get('product_amount', '')) or ''))
-            computed.append(str(self._get_crm_option_text('record_type', row.get('record_type', '')) or ''))
-            computed.append(str(self._get_crm_option_text('life_status', row.get('life_status', '')) or ''))
         except Exception:
             pass
         parts.extend(computed)
@@ -5005,6 +5043,50 @@ class order_to_contractMixin:
             return QDate(dt.year, dt.month, dt.day)
         except Exception:
             return None
+
+
+    # ────────────── AutoFilter 列头筛选 ──────────────────────────
+
+    def _apply_crm_autofilter(self):
+        """根据列头筛选器的筛选状态过滤 CRM 数据"""
+        if not hasattr(self, 'crm_table_header') or not self.crm_table_header.is_filter_active():
+            return
+        state = self.crm_table_header.get_filter_state()
+        column_map = dict(getattr(self, 'crm_column_index_map', {}))
+        if not column_map:
+            return
+        filtered = []
+        for row in self.crm_filtered_data:
+            skip = False
+            for display_col, excluded in state.items():
+                if not excluded or display_col < 1:
+                    continue
+                api_key = column_map.get(display_col)
+                if not api_key:
+                    continue
+                val = str(row.get(api_key, '') or '')
+                if val in excluded:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append(row)
+        self.crm_filtered_data = filtered
+
+    def _on_crm_filter_changed(self):
+        """列头筛选器变化时回调"""
+        self.crm_current_page = 1
+        self._populate_crm_table()
+
+    def _get_crm_autofilter_values(self, col):
+        """data_provider：获取 CRM 表指定显示列的全部唯一值"""
+        column_map = dict(getattr(self, 'crm_column_index_map', {}))
+        api_key = column_map.get(col)
+        if not api_key:
+            return []
+        values = set()
+        for row in self.crm_filtered_data:
+            values.add(str(row.get(api_key, '') or ''))
+        return sorted(values)
 
 
     def _crm_row_matches_all_conditions(self, row, conditions):
@@ -5386,7 +5468,7 @@ class order_to_contractMixin:
             name = None
         conditions = self._collect_crm_filter_conditions()
         if name is None:
-            name, ok = QInputDialog.getText(self, "保存筛选方案", "请输入方案名称：")
+            name, ok = frameless_input_text(self, "保存筛选方案", "请输入方案名称：")
             if not ok or not name or not name.strip():
                 return
         name = name.strip()
@@ -5426,7 +5508,7 @@ class order_to_contractMixin:
         self._crm_active_preset_name = name
         self._update_crm_preset_btn_label()
         if name is None:
-            QMessageBox.information(self, '成功', f'方案「{name}」已保存。')
+            frameless_message_box(self, '成功', f'方案「{name}」已保存。')
 
 
     def _load_crm_filter_preset(self, preset_name=None):
@@ -5469,7 +5551,7 @@ class order_to_contractMixin:
         if not preset_name:
             preset_name = getattr(self, '_crm_active_preset_name', None)
         if not preset_name:
-            QMessageBox.warning(self, "提示", "请先在方案列表中选择一个方案。")
+            frameless_message_box(self, "提示", "请先在方案列表中选择一个方案。")
             return
         presets = self.config.get('fxiaoke', {}).get('crm_filter_presets', [])
         if not isinstance(presets, list):
@@ -5477,7 +5559,7 @@ class order_to_contractMixin:
         idx = next((i for i, p in enumerate(presets) if p.get('name') == preset_name), None)
         if idx is None:
             return
-        reply = QMessageBox.question(self, '确认删除', f'确定删除方案「{preset_name}」吗？')
+        reply = frameless_message_box(self, '确认删除', f'确定删除方案「{preset_name}」吗？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:
             return
         presets.pop(idx)
@@ -5592,7 +5674,7 @@ class order_to_contractMixin:
         if not preset_name:
             preset_name = getattr(self, '_crm_active_preset_name', None)
         if not preset_name:
-            QMessageBox.warning(self, "提示", "请先在方案列表中选择一个方案。")
+            frameless_message_box(self, "提示", "请先在方案列表中选择一个方案。")
             return
         presets = self.config.get('fxiaoke', {}).get('crm_filter_presets', [])
         if not isinstance(presets, list):
@@ -5627,7 +5709,7 @@ class order_to_contractMixin:
         }
         self.config.setdefault('fxiaoke', {})['crm_filter_presets'] = presets
         save_config(self.config)
-        QMessageBox.information(self, "成功", f"方案「{preset_name}」已更新。")
+        frameless_message_box(self, "成功", f"方案「{preset_name}」已更新。")
 
 
     def _set_crm_filter_default_preset(self, preset_name=None):
@@ -5635,7 +5717,7 @@ class order_to_contractMixin:
         if not preset_name:
             preset_name = getattr(self, '_crm_active_preset_name', None)
         if not preset_name:
-            QMessageBox.information(self, "提示", "请先在方案列表中选择一个方案。")
+            frameless_message_box(self, "提示", "请先在方案列表中选择一个方案。")
             return
         current_default = self.config.get('fxiaoke', {}).get('crm_filter_default_preset', '')
         if current_default == preset_name:
@@ -5645,7 +5727,7 @@ class order_to_contractMixin:
         else:
             presets = self.config.get('fxiaoke', {}).get('crm_filter_presets', [])
             if not isinstance(presets, list) or not any(p.get('name') == preset_name for p in presets):
-                QMessageBox.information(self, "提示", "请先在方案列表中选择一个方案。")
+                frameless_message_box(self, "提示", "请先在方案列表中选择一个方案。")
                 return
             self.config.setdefault('fxiaoke', {})['crm_filter_default_preset'] = preset_name
             save_config(self.config)
@@ -5657,7 +5739,7 @@ class order_to_contractMixin:
         if not preset_name:
             preset_name = getattr(self, '_crm_active_preset_name', None)
         if not preset_name:
-            QMessageBox.information(self, "提示", "请先在方案列表中选择一个方案。")
+            frameless_message_box(self, "提示", "请先在方案列表中选择一个方案。")
             return
         presets = self.config.get('fxiaoke', {}).get('crm_filter_presets', [])
         if not isinstance(presets, list):
@@ -5666,7 +5748,7 @@ class order_to_contractMixin:
         if idx is None:
             return
         old_name = presets[idx].get('name', '')
-        new_name, ok = QInputDialog.getText(self, "重命名方案", "请输入新名称：", text=old_name)
+        new_name, ok = frameless_input_text(self, "重命名方案", "请输入新名称：", old_name)
         if not ok or not new_name or not new_name.strip():
             return
         new_name = new_name.strip()
@@ -5776,6 +5858,7 @@ class order_to_contractMixin:
         self.crm_keep_format_combo.addItems(["Word+PDF", "Word", "PDF"])
         crm_fmt_map = {"word_pdf": "Word+PDF", "word": "Word", "pdf": "PDF"}
         self.crm_keep_format_combo.setCurrentText(crm_fmt_map.get(keep_crm_format, "Word+PDF"))
+        core._keep_crm_word_override = keep_crm_format  # 同步全局变量，避免延迟加载不一致
         self.crm_keep_format_combo.setFixedWidth(110)
         self.crm_keep_format_combo.setToolTip("生成后保留的文件格式")
         self.crm_keep_format_combo.currentIndexChanged.connect(self.on_crm_keep_format_changed)
@@ -6352,7 +6435,12 @@ class order_to_contractMixin:
                 base_name = f"{erp_order_no}-{customer_name}"
 
                 context = build_context_from_mapping_values(source_values, mapping, special_formats)
-                skip_pdf = (core._keep_crm_word_override == 'word')
+                # 优先使用全局变量，回退到 config（避免 import 时序导致全局变量未初始化）
+                keep_fmt = getattr(core, '_keep_crm_word_override', None)
+                if keep_fmt is None:
+                    keep_fmt = config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
+                skip_pdf = (keep_fmt == 'word')
+                print(f"[DEBUG-CRM生成] keep_crm_fmt={keep_fmt} | skip_pdf={skip_pdf}")
                 document_info = render_document_files(template, context, base_name, skip_pdf=skip_pdf)
                 document_info['target_root'] = target_root
                 document_info['template_name'] = template_name
@@ -6399,8 +6487,9 @@ class order_to_contractMixin:
             self.update_output.emit("开始整理CRM输出文件...")
             crm_keep_fmt = self.config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
             crm_keep_word = crm_keep_fmt in ('word', 'word_pdf')
-            print(f"[DEBUG-CRM合同] 格式: {crm_keep_fmt} | keep_word={crm_keep_word}")
-            target_roots = move_generated_document_files(generated_files, keep_word=crm_keep_word)
+            crm_keep_pdf = crm_keep_fmt in ('pdf', 'word_pdf')
+            print(f"[DEBUG-CRM合同] 格式: {crm_keep_fmt} | keep_word={crm_keep_word} | keep_pdf={crm_keep_pdf}")
+            target_roots = move_generated_document_files(generated_files, keep_word=crm_keep_word, keep_pdf=crm_keep_pdf)
             self.update_output.emit("CRM文件整理完成")
 
             if len(target_roots) == 1:
@@ -6597,12 +6686,16 @@ class order_to_contractMixin:
     def _on_opportunity_data_ready(self):
         """商机数据加载完成（主线程回调）"""
         self._opportunity_is_loading = False
-        self.opportunity_refresh_btn.setText("刷新")
+        if hasattr(self, 'opportunity_refresh_btn'):
+            self.opportunity_refresh_btn.setText("刷新")
         if hasattr(self, 'opportunity_all_data') and self.opportunity_all_data:
-            self._populate_opportunity_table()
-            self.opportunity_status_label.setText(f"共 {len(self.opportunity_all_data)} 条记录")
+            if hasattr(self, 'opportunity_table'):
+                self._populate_opportunity_table()
+            if hasattr(self, 'opportunity_status_label'):
+                self.opportunity_status_label.setText(f"共 {len(self.opportunity_all_data)} 条记录")
         else:
-            self.opportunity_status_label.setText("共 0 条记录")
+            if hasattr(self, 'opportunity_status_label'):
+                self.opportunity_status_label.setText("共 0 条记录")
 
 
     def _on_opp_table_cell_clicked(self, row, col):

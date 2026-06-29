@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luckysheet Spreadsheet</title>
+<link rel="stylesheet" href="dist/plugins/css/pluginsCss.css">
+<link rel="stylesheet" href="dist/plugins/plugins.css">
+<link rel="stylesheet" href="dist/css/luckysheet.css">
+<link rel="stylesheet" href="dist/assets/iconfont/iconfont.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#FFFFFF; }
+#luckysheet { width:100%; height:100%; }
+#loading {
+    display:flex; align-items:center; justify-content:center;
+    height:100%; color:#999; font-size:14px;
+    font-family:'等线','DengXian','Microsoft YaHei',sans-serif;
+}
+</style>
+<script src="qwebchannel.js"></script>
+</head>
+<body>
+<div id="luckysheet">
+    <div id="loading">⏳ 正在加载电子表格引擎...</div>
+</div>
+<script src="dist/plugins/js/plugin.js"></script>
+<script src="dist/luckysheet.umd.js"></script>
+<script>
+(function() {
+    'use strict';
+    var bridge = null;
+    var isReady = false;
+    var pendingData = null;
+
+    var defaultSheet = {
+        name: 'Sheet1',
+        celldata: [],
+        row: 100,
+        column: 20,
+        status: 1
+    };
+
+    function createLuckysheet(data) {
+        var loading = document.getElementById('loading');
+        if (loading) loading.remove();
+
+        try {
+            luckysheet.create({
+                container: 'luckysheet',
+                title: '',
+                showinfobar: false,
+                data: data || [defaultSheet],
+                allowEdit: true,
+                showtoolbar: true,
+                showstatisticBar: true,
+                enableAddRow: true,
+                enableAddBackTop: false,
+                lang: 'zh',
+                forceCalculation: false,
+                hook: {
+                    cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
+                        if (bridge && isReady) {
+                            bridge.handle_js_action('cell_changed', JSON.stringify({
+                                row: r, col: c
+                            }));
+                        }
+                    }
+                }
+            });
+            isReady = true;
+            console.log('[Luckysheet] Spreadsheet ready');
+            if (bridge) bridge.handle_js_action('page_ready', '{}');
+        } catch(e) {
+            console.error('[Luckysheet] init error:', e.message);
+            var el = document.getElementById('luckysheet');
+            if (el) el.innerHTML = '<div style="padding:40px;color:#c00;text-align:center;">' +
+                '电子表格加载失败: ' + e.message + '</div>';
+        }
+    }
+
+    // ===== Python → JS bridge functions =====
+
+    // 加载工作簿数据（Python 已转为 Luckysheet 格式）
+    window.loadWorkbookData = function(sheetData) {
+        try {
+            if (!Array.isArray(sheetData) || sheetData.length === 0) {
+                sheetData = [defaultSheet];
+            }
+            // Ensure at least one sheet has status=1
+            var hasActive = sheetData.some(function(s) { return s.status === 1; });
+            if (!hasActive && sheetData.length > 0) {
+                sheetData[0].status = 1;
+            }
+            luckysheet.destroy();
+            createLuckysheet(sheetData);
+            if (bridge) {
+                bridge.handle_js_action('data_loaded', JSON.stringify({
+                    success: true, sheets: sheetData.length
+                }));
+            }
+        } catch(e) {
+            console.error('[Luckysheet] load error:', e);
+            if (bridge) {
+                bridge.handle_js_action('data_loaded', JSON.stringify({
+                    success: false, error: e.message
+                }));
+            }
+        }
+    };
+
+    // 设置单个单元格值
+    window.setCellValue = function(row, col, value, sheetIndex) {
+        try {
+            var si = (sheetIndex != null) ? sheetIndex : 0;
+            // If value starts with '=', treat as formula
+            if (typeof value === 'string' && value.charAt(0) === '=') {
+                luckysheet.setCellValue(row, col, value, { order: si });
+            } else {
+                luckysheet.setCellValue(row, col, value, { order: si });
+            }
+        } catch(e) {
+            console.error('[Luckysheet] setCellValue error:', e);
+        }
+    };
+
+    // 获取所有单元格数据（返回 JSON 字符串）
+    window.getAllCellData = function() {
+        try {
+            var allSheets = luckysheet.getLuckysheetfile();
+            return JSON.stringify(allSheets);
+        } catch(e) {
+            console.error('[Luckysheet] getAllCellData error:', e);
+            return '[]';
+        }
+    };
+
+    // 启用/禁用编辑
+    window.setEditable = function(editable) {
+        var el = document.getElementById('luckysheet');
+        if (!el) return;
+        el.style.pointerEvents = editable ? 'auto' : 'none';
+        el.style.opacity = editable ? '1' : '0.7';
+    };
+
+    // ===== QWebChannel setup =====
+    function onBridgeReady(ch) {
+        bridge = ch.objects.bridge;
+        window.bridge = bridge;
+        if (pendingData) {
+            window.loadWorkbookData(pendingData);
+            pendingData = null;
+        } else {
+            createLuckysheet(null);
+        }
+    }
+
+    if (typeof QWebChannel !== 'undefined') {
+        new QWebChannel(qt.webChannelTransport, function(ch) {
+            onBridgeReady(ch);
+        });
+    } else {
+        // Fallback: no bridge, just create empty sheet
+        createLuckysheet(null);
+    }
+})();
+</script>
+</body>
+</html>

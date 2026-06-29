@@ -14,10 +14,16 @@ common.py — 通用 UI 组件与共享函数
 依赖：core.py / network.py / auth.py / custom_report
 被导入：全部 8 个 Mixin + 主程序
 """
+import core
 from core import *
 from network import *
 from auth import *
-import custom_report
+try:
+    import custom_report
+except ImportError:
+    custom_report = None
+from functools import lru_cache
+from io import BytesIO
 _main = None  # lazy import，避免循环依赖
 choice = None  # 全局功能选择标识，由 file_generation.py 在后台线程中设置
 
@@ -31,7 +37,7 @@ def _get_main():
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QAbstractItemView, QListWidget, QListWidgetItem, QLineEdit,
     QHeaderView, QMessageBox, QWidget, QFrame, QComboBox, QCheckBox, QTableWidget,
-    QTableView, QTreeView, QListView, QMainWindow)
+    QTableView, QTreeView, QListView, QMainWindow, QStyleFactory)
 from PyQt6.QtCore import Qt, QRect, QSize, QTimer, QEvent, pyqtSignal, QPoint, QObject
 from PyQt6.QtGui import QColor, QFont, QPalette, QGuiApplication, QIcon
 
@@ -91,7 +97,7 @@ _qt_app_instance = None
 
 
 def ensure_qapplication():
-    """确保当前进程存在QApplication实例。"""
+    """确保当前进程存在QApplication实例，并强制应用全局浅色 tooltip 主题。"""
     global _qt_app_instance
     app = QApplication.instance()
     if app is None:
@@ -100,6 +106,33 @@ def ensure_qapplication():
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
         app = QApplication(sys.argv)
+
+    # 强制使用 Fusion 主题，避免系统原生主题把 tooltip 渲染成黑色背景。
+    try:
+        fusion_style = QStyleFactory.create('Fusion')
+        if fusion_style is not None:
+            app.setStyle(fusion_style)
+    except Exception:
+        pass
+
+    # 强制全局浅色 tooltip，覆盖系统/父窗口样式。
+    from PyQt6.QtWidgets import QToolTip
+    palette = app.palette()
+    palette.setColor(QPalette.ToolTipBase, QColor('#FFF7E6'))
+    palette.setColor(QPalette.ToolTipText, QColor('#333333'))
+    app.setPalette(palette)
+    QToolTip.setPalette(palette)
+
+    existing_stylesheet = app.styleSheet() or ''
+    tooltip_stylesheet = (
+        "QToolTip { background-color: #FFF7E6; color: #333333; "
+        "border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }"
+    )
+    if 'QToolTip {' not in existing_stylesheet:
+        app.setStyleSheet(existing_stylesheet + ("\n" if existing_stylesheet else "") + tooltip_stylesheet)
+    else:
+        app.setStyleSheet(existing_stylesheet)
+
     _qt_app_instance = app
     return app
 
@@ -378,22 +411,29 @@ def build_modern_glass_stylesheet(bg_color, fg_color, btn_bg, entry_bg, entry_fg
         QStackedWidget#contentStack {{
             background-color: {_color_to_rgba(panel_color, 184)};
         }}
-        QGroupBox, QTreeWidget, QTableWidget, QTableView, QListWidget, QMenu, QTabWidget::pane {{
-            background-color: {_color_to_rgba(panel_color, 184)};
-            border: 1px solid {_color_to_rgba(border_tint, 170)};
-            border-radius: {group_radius}px;
-        }}
-        QGroupBox {{
-            margin-top: {group_margin_top}px;
-            padding-top: {button_padding_v}px;
-            font-weight: 600;
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: {group_title_left}px;
-            padding: 0 {group_title_padding}px;
-            color: {fg_color.name()};
-        }}
+   QGroupBox, QTreeWidget, QTableWidget, QTableView, QListWidget, QMenu, QTabWidget::pane {{
+       background-color: {_color_to_rgba(panel_color, 184)};
+       border: 1px solid {_color_to_rgba(border_tint, 170)};
+       border-radius: {group_radius}px;
+   }}
+    QMenu {{
+        background-color: #FFFFFF;
+        border: 1px solid #D9D9D9;
+        border-radius: 4px;
+        padding: 4px 0;
+        font-family: "Microsoft YaHei", "PingFang SC", "微软雅黑", sans-serif;
+    }}
+   QGroupBox {{
+       margin-top: {group_margin_top}px;
+       padding-top: {button_padding_v}px;
+       font-weight: 600;
+   }}
+   QGroupBox::title {{
+       subcontrol-origin: margin;
+       left: {group_title_left}px;
+       padding: 0 {group_title_padding}px;
+       color: {fg_color.name()};
+   }}
         QPushButton, QToolButton {{
             background-color: {_color_to_rgba(button_color, 198)};
             color: {fg_color.name()};
@@ -469,6 +509,13 @@ def build_modern_glass_stylesheet(bg_color, fg_color, btn_bg, entry_bg, entry_fg
         QMenu::item:selected {{
             background-color: {_color_to_rgba(accent_color, 215)};
             color: #ffffff;
+        }}
+        QToolTip {{
+            background-color: #FFF7E6;
+            color: {fg_color.name()};
+            border: 1px solid #D9D9D9;
+            border-radius: 4px;
+            padding: 4px 6px;
         }}
         QScrollBar:vertical {{
             background: transparent;
@@ -755,7 +802,7 @@ def set_dialog_opacity(dialog):
         palette.setColor(QPalette.WindowText, fg_color)
         palette.setColor(QPalette.Base, entry_bg)
         palette.setColor(QPalette.AlternateBase, bg_color)
-        palette.setColor(QPalette.ToolTipBase, fg_color)
+        palette.setColor(QPalette.ToolTipBase, QColor('#FFF7E6'))
         palette.setColor(QPalette.ToolTipText, fg_color)
         palette.setColor(QPalette.Text, entry_fg)
         palette.setColor(QPalette.Button, btn_bg)
@@ -909,37 +956,6 @@ def position_dialog_below_widget(dialog, anchor_widget, margin=6):
 
 
 # === Table utilities ===
-class TableCellEditMenu(QObject):
-    """为 QTableWidget 单元格添加右键编辑菜单"""
-
-    def __init__(self, table, parent=None):
-        super().__init__(parent)
-        self._table = table
-        table.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.ContextMenu:
-            # ✅ 转换坐标：event.pos() 是 table 坐标，itemAt 需要 viewport 坐标
-            viewport = self._table.viewport()
-            pos = viewport.mapFrom(obj, event.pos())
-            item = self._table.itemAt(pos)
-            if item is not None:
-                if not (item.flags() & Qt.ItemFlag.ItemIsEditable):
-                    return False
-                row, col = item.row(), item.column()
-                # ✅ 先选中当前单元格，避免编辑跨行
-                self._table.setCurrentCell(row, col)
-                self._table.clearSelection()
-                self._table.selectRow(row)
-                menu = QMenu(self._table)
-                edit_action = menu.addAction("✏️ 编辑")
-                action = menu.exec(event.globalPos())
-                if action == edit_action:
-                    self._table.editItem(item)
-                    return True
-        return False
-
-
 def _copy_selected_cells(table):
     """复制 QTableWidget 中选中的单元格内容到剪贴板，Tab 分隔列，换行分隔行。"""
     from PyQt6.QtWidgets import QApplication, QComboBox
@@ -1058,6 +1074,12 @@ class _DialogOutsideCloseFilter(QObject):
         if watched_widget is dialog or (watched_widget is not None and dialog.isAncestorOf(watched_widget)):
             return False
 
+        # ✅ 如果对话框内部的子控件仍持有焦点（如 QComboBox 下拉选择后），
+        # 说明用户操作仍在对话框内部，不应关闭。
+        focused = QApplication.focusWidget()
+        if focused is not None and (focused is dialog or dialog.isAncestorOf(focused)):
+            return False
+
         global_pos = None
         if hasattr(event, 'globalPosition'):
             global_pos = event.globalPosition().toPoint()
@@ -1154,6 +1176,9 @@ class CenteredPopupDialog(QDialog):
         # 结果：导致 dialog.exec() 返回错误状态，字段设置代码不执行
         self._dialog_closed = False
 
+        # 无边框：去掉系统标题栏
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+
         # 浅色背景（防止默认黑色背景）
         self.setStyleSheet("QDialog { background-color: #FAFAFA; }")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -1243,6 +1268,12 @@ class CenteredPopupDialog(QDialog):
             if active_modal is not None and active_modal is not self:
                 return super().event(event)
             if active_popup is not None and active_popup is not self:
+                return super().event(event)
+
+            # ✅ 如果对话框内部的子控件仍持有焦点（如 QComboBox 下拉/Completer
+            # 弹出导致的 WindowDeactivate），说明用户操作仍在对话框内，不应关闭。
+            focused = QApplication.focusWidget()
+            if focused is not None and (focused is self or self.isAncestorOf(focused)):
                 return super().event(event)
 
             # ✅【关键操作】标记为已关闭，然后调用 reject()
@@ -1856,6 +1887,49 @@ def ask_yes_no(title, message, parent=None, **kwargs):
     return dlg.result
 
 
+# ---------- 无边框原生 Qt 对话框辅助函数 ----------
+
+def frameless_input_text(parent, title, label, default_text=''):
+    """QInputDialog.getText 的无边框替代，返回 (text, ok)。"""
+    dlg = QInputDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setLabelText(label)
+    dlg.setTextValue(default_text)
+    dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
+    ok = dlg.exec()
+    return dlg.textValue(), ok == QInputDialog.DialogCode.Accepted
+
+
+def frameless_input_getitem(parent, title, label, items, current=0, editable=False):
+    """QInputDialog.getItem 的无边框替代，返回 (item, ok)。"""
+    dlg = QInputDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setLabelText(label)
+    dlg.setComboBoxItems(items)
+    dlg.setComboBoxEditable(editable)
+    dlg.setOption(QInputDialog.InputDialogOption.UseListViewForComboBoxItems, False)
+    dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
+    # 设置当前选项
+    combo = dlg.findChild(QComboBox)
+    if combo and 0 <= current < len(items):
+        combo.setCurrentIndex(current)
+    ok = dlg.exec()
+    return dlg.textValue(), ok == QInputDialog.DialogCode.Accepted
+
+
+def frameless_message_box(parent, title, text, buttons=QMessageBox.StandardButton.Ok,
+                          default_button=QMessageBox.StandardButton.NoButton):
+    """QMessageBox 的无边框替代，返回 StandardButton。"""
+    box = QMessageBox(parent)
+    box.setWindowTitle(title)
+    box.setText(text)
+    box.setStandardButtons(buttons)
+    box.setDefaultButton(default_button)
+    box.setWindowFlags(box.windowFlags() | Qt.WindowType.FramelessWindowHint)
+    box.setStyleSheet("QMessageBox { background-color: white; }")
+    return box.exec()
+
+
 # 设置QMessageBox的方法
 class MessageBox:
     """消息框调用适配器。"""
@@ -1883,29 +1957,16 @@ class MessageBox:
 # 创建messagebox实例
 messagebox = MessageBox()
 
-
-
-
-
-    # ✅【2026-05-11 删除】已移除年度密码和首次登录密码验证功能
-    # 删除的函数列表：
-    # - get_custom_field() (3427-3442)
-    # - get_correct_password_for_year() (3445-3451)
-    # - get_correct_password() (3454-3475)
-    # - load_password_config() (3478-3490)
-    # - password_verification() (3493-3724)
-    #
-    # 密码验证功能已完全禁用，所有调用处直接返回 True
-
-def show_login_register_dialog():
+def show_login_register_dialog(skip_cache=False):
     """显示登录或注册界面"""
     # 先检查用户缓存，有缓存则跳过登录界面（此时 __main__ 已完全加载，load_config 可用）
-    try:
-        cached_user, cached_user_type = load_user_cache()
-        if cached_user:
-            return cached_user, cached_user_type
-    except Exception as _e:
-        pass
+    if not skip_cache:
+        try:
+            cached_user, cached_user_type = load_user_cache()
+            if cached_user:
+                return cached_user, cached_user_type
+        except Exception as _e:
+            pass
     # 创建QApplication实例（如果还没有）
     app = ensure_qapplication()
     
@@ -1968,12 +2029,16 @@ def show_login_register_dialog():
             
             login_btn = QPushButton("登录")
             login_btn.setFixedWidth(100)
+            login_btn.setAutoDefault(False)
+            login_btn.setDefault(False)
             login_btn.clicked.connect(self.on_login)
             btn_layout.addWidget(login_btn)
             btn_layout.addSpacing(40)
-            
+
             register_btn = QPushButton("注册")
             register_btn.setFixedWidth(100)
+            register_btn.setAutoDefault(False)
+            register_btn.setDefault(False)
             register_btn.clicked.connect(self.on_register)
             btn_layout.addWidget(register_btn)
             
@@ -2077,7 +2142,7 @@ def show_login_register_dialog():
                 "username": username,
                 "password": password,
                 "user_id": generate_user_id(users),
-                "created_at": get_current_time().strftime(date_formats.get('datetime', '%Y-%m-%d %H:%M:%S')),
+                "created_at": datetime.now().strftime(date_formats.get('datetime', '%Y-%m-%d %H:%M:%S')),
                 "role": "member",
                 "permissions": {
                     "path": True,
@@ -2385,6 +2450,27 @@ def validate_row(row_data):
     )
 
 
+@lru_cache(maxsize=64)
+def _read_template_bytes(template_path_str, modified_time_ns, file_size):
+    """读取模板文件的字节内容。"""
+    del modified_time_ns, file_size
+    return Path(template_path_str).read_bytes()
+
+
+def load_docx_template(template_path):
+    """按文件状态缓存模板字节，每次返回新的模板实例。"""
+    from docxtpl import DocxTemplate
+
+    resolved_path = Path(template_path).resolve()
+    stat_result = resolved_path.stat()
+    template_bytes = _read_template_bytes(
+        str(resolved_path),
+        stat_result.st_mtime_ns,
+        stat_result.st_size,
+    )
+    return DocxTemplate(BytesIO(template_bytes))
+
+
 def select_template(software_version):
     """根据软件版本选择合适的Word模板"""
     config = AppConfig()  # 创建配置实例
@@ -2677,7 +2763,7 @@ def render_document_files(template, context, base_name, output_dir=None, skip_pd
                 pdf_success = True
                 print(f"✓ PDF文档已成功生成: {pdf_path}")
             except Exception as pdf_error:
-                print(f"✗ PDF转换失败: {str(pdf_error)}")
+                print(f"✗ PDF转换失败（Word文档仍可用）: {str(pdf_error)}")
                 logging.error(f"PDF转换失败: {str(pdf_error)}")
                 if "comtypes" in str(pdf_error).lower() or "word" in str(pdf_error).lower():
                     print("提示：请确保已安装Microsoft Word或LibreOffice，并安装了comtypes库（pip install comtypes）")
@@ -2890,27 +2976,22 @@ def organize_output_files():
                 print(f"删除Word文件失败: {str(e)}")
 
 
-def move_generated_document_files(generated_files, keep_word=None):
+def move_generated_document_files(generated_files, keep_word=None, keep_pdf=None):
     """将指定的生成文件移动到各自目标目录（CRM订单专用）"""
     # ✅ CRM订单使用 keep_crm_output_format 配置
 
-    if keep_word is None:
+    if keep_word is None or keep_pdf is None:
         if core._keep_crm_word_override is not None:
             keep_fmt = core._keep_crm_word_override
         else:
             app_config = load_config()
             keep_fmt = app_config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
-        keep_word = keep_fmt in ('word', 'word_pdf')
-        keep_pdf = keep_fmt in ('pdf', 'word_pdf')
+        if keep_word is None:
+            keep_word = keep_fmt in ('word', 'word_pdf')
+        if keep_pdf is None:
+            keep_pdf = keep_fmt in ('pdf', 'word_pdf')
         print(f"[DEBUG-CRM文件整理] 格式: {keep_fmt} | 保留Word: {keep_word} | 保留PDF: {keep_pdf}")
     else:
-        # 显式传入 keep_word 时，也需要从配置/全局变量确定 keep_pdf
-        if core._keep_crm_word_override is not None:
-            keep_fmt = core._keep_crm_word_override
-        else:
-            app_config = load_config()
-            keep_fmt = app_config.get('app_settings', {}).get('keep_crm_output_format', 'word_pdf')
-        keep_pdf = keep_fmt in ('pdf', 'word_pdf')
         print(f"[DEBUG-CRM文件整理] ✓ 使用参数传入 | keep_word={keep_word} | keep_pdf={keep_pdf}")
 
     moved_roots = []
@@ -3038,7 +3119,7 @@ def main():
 # 延迟导入PyQt6模块
 from PyQt6.QtWidgets import QMainWindow, QFrame, QLabel, QPushButton, QRadioButton, QComboBox, QSlider, QLineEdit, QTextEdit, QTreeView, QTableView, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QScrollArea, QGroupBox, QMessageBox, QFileDialog, QInputDialog, QHeaderView, QMenu, QCheckBox, QStackedWidget, QToolButton, QWidget, QSpinBox, QCalendarWidget, QStyleOptionButton, QStyle, QAbstractSpinBox, QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QSystemTrayIcon, QDateEdit, QCompleter, QSizePolicy
 from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, pyqtSignal, QRect, QDate, QPoint
-from PyQt6.QtGui import QFont, QColor, QPalette, QIntValidator, QAction, QIcon, QPainter, QTextCharFormat
+from PyQt6.QtGui import QFont, QColor, QPalette, QIntValidator, QAction, QIcon, QPainter, QTextCharFormat, QPainterPath
 
 class CheckBoxHeader(QHeaderView):
     """首列表头复选框"""
@@ -3130,6 +3211,440 @@ class CheckBoxHeader(QHeaderView):
         super().mouseReleaseEvent(event)
 
 
+# ──────────────────── Excel 风格列筛选器 ────────────────────
+
+class AutoFilterPopup(QFrame):
+    """列筛选弹出框 —— 带搜索框的多选下拉"""
+
+    confirmed = pyqtSignal()   # 点击"确定"后发射
+
+    def __init__(self, parent=None):
+        # Windows 上 Popup 焦点不稳定导致搜索框无法输入；
+        # 改用 ToolTip 窗口 + 手动关闭逻辑，确保键盘可用
+        super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # 安装全局事件过滤器：点击弹窗外时自动关闭
+        QApplication.instance().installEventFilter(self)
+        self._all_values = []
+        self._committed = set()
+        self._checkboxes = []
+
+        self.setObjectName("autoFilterPopup")
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setLineWidth(1)
+        self.setMinimumWidth(200)
+        self.setMaximumHeight(380)
+        self.setStyleSheet("""
+            QFrame#autoFilterPopup {
+                background-color: #fff;
+                border: 1px solid #c1c8e0;
+                border-radius: 6px;
+            }
+            QFrame#autoFilterPopup QCheckBox {
+                padding: 2px 4px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QFrame#autoFilterPopup QCheckBox:hover {
+                background-color: rgba(91, 141, 239, 0.08);
+            }
+            QFrame#autoFilterPopup QPushButton {
+                padding: 3px 10px;
+                border-radius: 4px;
+                border: 1px solid #c1c8e0;
+                background: #f5f7fa;
+                font-size: 12px;
+            }
+            QFrame#autoFilterPopup QPushButton:hover {
+                background: #e8edf5;
+            }
+            QFrame#autoFilterPopup QPushButton#okBtn {
+                background: #4a7cf7;
+                color: white;
+                border: none;
+            }
+            QFrame#autoFilterPopup QPushButton#okBtn:hover {
+                background: #3a6ce7;
+            }
+        """)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(4)
+
+        # 搜索框
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("搜索...")
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._filter_list)
+        root.addWidget(self._search)
+
+        # 全选 / 取消全选
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        sel_all = QPushButton("全选")
+        sel_all.clicked.connect(self._select_all)
+        unsel_all = QPushButton("取消全选")
+        unsel_all.clicked.connect(self._unselect_all)
+        btn_row.addWidget(sel_all)
+        btn_row.addWidget(unsel_all)
+        btn_row.addStretch()
+        root.addLayout(btn_row)
+
+        # 可滚动的复选框列表
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_widget = QWidget()
+        self._list_layout = QVBoxLayout(self._list_widget)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(0)
+        self._list_layout.addStretch()
+        self._scroll.setWidget(self._list_widget)
+        root.addWidget(self._scroll, 1)
+
+        # 确定 / 取消
+        ok_row = QHBoxLayout()
+        ok_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self._on_cancel)
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("okBtn")
+        ok_btn.clicked.connect(self._on_ok)
+        ok_row.addWidget(cancel_btn)
+        ok_row.addWidget(ok_btn)
+        root.addLayout(ok_row)
+
+    def eventFilter(self, obj, event):
+        """全局事件过滤器：点击弹窗外时自动关闭"""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if hasattr(event, 'globalPosition'):
+                gp = event.globalPosition().toPoint()
+            elif hasattr(event, 'globalPos'):
+                gp = event.globalPos()
+            else:
+                return super().eventFilter(obj, event)
+            if not self.rect().contains(self.mapFromGlobal(gp)):
+                self.close()
+                return False
+        return super().eventFilter(obj, event)
+
+    # ── 公共 API ──────────────────────────────────────────────
+
+    def populate(self, values, selected_values):
+        self._all_values = list(values)
+        self._committed = set(selected_values) if selected_values else set(values)
+        self._rebuild_checkboxes()
+        self._search.clear()
+
+    def get_excluded(self):
+        selected = {cb.text() for cb in self._checkboxes if cb.isChecked()}
+        return set(self._all_values) - selected
+
+    # ── 内部方法 ──────────────────────────────────────────────
+
+    def _rebuild_checkboxes(self):
+        for cb in self._checkboxes:
+            self._list_layout.removeWidget(cb)
+            cb.deleteLater()
+        self._checkboxes.clear()
+
+        filter_text = self._search.text().strip().lower()
+        for val in self._all_values:
+            cb = QCheckBox(val)
+            cb.setChecked(val in self._committed)
+            if filter_text and filter_text not in val.lower():
+                cb.setVisible(False)
+            self._list_layout.insertWidget(self._list_layout.count() - 1, cb)
+            self._checkboxes.append(cb)
+
+    def _filter_list(self, text):
+        text = text.strip().lower()
+        for cb in self._checkboxes:
+            cb.setVisible(not text or text in cb.text().lower())
+
+    def _select_all(self):
+        for cb in self._checkboxes:
+            if cb.isVisible():
+                cb.setChecked(True)
+
+    def _unselect_all(self):
+        for cb in self._checkboxes:
+            if cb.isVisible():
+                cb.setChecked(False)
+
+    def _on_ok(self):
+        self._committed = {cb.text() for cb in self._checkboxes if cb.isChecked()}
+        self.confirmed.emit()
+        self.close()
+
+    def _on_cancel(self):
+        self.close()
+
+    def closeEvent(self, event):
+        # 移除全局事件过滤器，防止内存泄漏
+        QApplication.instance().removeEventFilter(self)
+        super().closeEvent(event)
+
+
+class AutoFilterMixin:
+    """列筛选功能的 mixin，需与 QHeaderView 或其子类组合使用"""
+
+    filter_changed = pyqtSignal()
+
+    # ── 常量（图标尺寸与间距） ────────────────────────────────
+    _ICON_W = 10          # 图标宽度
+    _ICON_H = 8           # 图标高度
+    _ICON_RIGHT_PAD = 6   # 图标距右边距
+    _ICON_SPACE = 16      # 为图标预留的总空间（影响文字裁剪）
+
+    def _af_init(self):
+        if not hasattr(self, '_af_filter_state'):
+            self._af_filter_state = {}
+            self._af_popup = None
+            self._af_active_col = -1
+            self._data_provider = None
+            self._value_formatter = None   # 可选：(col, raw_value) -> display_str
+
+    # ── 查询 API ──────────────────────────────────────────────
+
+    def get_filter_state(self):
+        return dict(self._af_filter_state)
+
+    def set_filter_state(self, state):
+        self._af_filter_state = {int(k): set(v) for k, v in state.items() if v}
+
+    def is_filter_active(self, col=None):
+        if col is not None:
+            return bool(self._af_filter_state.get(col))
+        return any(self._af_filter_state.values())
+
+    def clear_filter(self, col=None):
+        if col is not None:
+            self._af_filter_state.pop(col, None)
+        else:
+            self._af_filter_state.clear()
+
+    # ── 绘制 ──────────────────────────────────────────────────
+
+    def paintSection(self, painter, rect, logical_index):
+        # ① 先调用父类绘制背景 + 文字（CheckBoxAutoFilterHeader 还会画复选框）
+        super().paintSection(painter, rect, logical_index)
+
+        # ② 画筛选下拉箭头（小三角 ▾）
+        icon_rect = self._filter_icon_rect(rect, logical_index)
+        active = bool(self._af_filter_state.get(logical_index))
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        if active:
+            painter.setPen(QColor(0x1a, 0x6b, 0xe0))
+            painter.setBrush(QColor(0x1a, 0x6b, 0xe0))
+        else:
+            painter.setPen(QColor(0x99, 0x99, 0x99))
+            painter.setBrush(QColor(0x99, 0x99, 0x99))
+
+        # 小三角 ▾
+        tri = QPainterPath()
+        cx = icon_rect.center().x()
+        top_y = icon_rect.top() + 2
+        tri.moveTo(cx - 4, top_y)
+        tri.lineTo(cx + 4, top_y)
+        tri.lineTo(cx, top_y + 5)
+        tri.closeSubpath()
+        painter.drawPath(tri)
+
+        # 激活时画小圆点提示
+        if active:
+            painter.setBrush(QColor(0x1a, 0x6b, 0xe0))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(cx, top_y - 3, 3, 3)
+
+        painter.restore()
+
+    def _filter_icon_rect(self, rect, logical_index):
+        w = self._ICON_W
+        h = self._ICON_H
+        pad = self._ICON_RIGHT_PAD
+        return QRect(
+            rect.right() - w - pad,
+            rect.top() + (rect.height() - h) // 2,
+            w, h
+        )
+
+    # ── 鼠标事件 ──────────────────────────────────────────────
+
+    def mousePressEvent(self, event):
+        pt = self._event_point(event)
+        idx = self.logicalIndexAt(pt)
+        if idx >= 0:
+            section_x = self.sectionViewportPosition(idx)
+            section_rect = QRect(section_x, 0, self.sectionSize(idx), self.height())
+            icon_rect = self._filter_icon_rect(section_rect, idx)
+            # 扩大点击区域，方便点击
+            hit_rect = icon_rect.adjusted(-4, -4, 4, 4)
+            if hit_rect.contains(pt):
+                self._open_filter_popup(idx)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+
+    def _event_point(self, event):
+        if hasattr(event, 'position'):
+            return event.position().toPoint()
+        return event.pos()
+
+    # ── 弹框逻辑 ──────────────────────────────────────────────
+
+    def _open_filter_popup(self, col):
+        if self._af_popup:
+            self._af_popup.close()
+            self._af_popup = None
+
+        values = self._collect_column_values(col)
+        if not values:
+            return
+
+        excluded = self._af_filter_state.get(col, set())
+        if excluded:
+            selected = set(values) - excluded
+        else:
+            selected = set(values)
+
+        popup = AutoFilterPopup(self.window())
+        popup.populate(values, selected)
+        self._af_popup = popup
+        self._af_active_col = col
+
+        # 定位到表头下方
+        section_x = self.sectionViewportPosition(col)
+        section_w = self.sectionSize(col)
+        global_pt = self.mapToGlobal(QPoint(section_x, self.height()))
+        popup.adjustSize()
+        px = global_pt.x() + (section_w - popup.width()) // 2
+        py = global_pt.y()
+        screen = self.screen()
+        if screen:
+            geo = screen.availableGeometry()
+            if px + popup.width() > geo.right():
+                px = geo.right() - popup.width()
+            if px < geo.left():
+                px = geo.left()
+            if py + popup.height() > geo.bottom():
+                py = global_pt.y() - self.height() - popup.height()
+        popup.move(px, py)
+
+        # ✅ 关键修复：直接用 lambda 闭包引用 self，避免 parentWidget 链断裂
+        _header_ref = self
+        _col = col
+        popup.confirmed.connect(lambda: _header_ref._on_popup_confirmed(_col, popup))
+        popup.show()
+        # 确保搜索框获得焦点（ToolTip 窗口不会自动获取焦点）
+        popup._search.setFocus()
+        popup.activateWindow()
+
+    def _on_popup_confirmed(self, col, popup):
+        excluded = popup.get_excluded()
+        if excluded:
+            self._af_filter_state[col] = excluded
+        else:
+            self._af_filter_state.pop(col, None)
+        self._af_popup = None
+        self._af_active_col = -1
+        self.viewport().update()
+        self.filter_changed.emit()
+
+    # ── 数据采集 ──────────────────────────────────────────────
+
+    def _collect_column_values(self, col):
+        if self._data_provider:
+            try:
+                raw = self._data_provider(col)
+                # 如果有格式化函数，对值进行格式化
+                if self._value_formatter:
+                    return sorted(set(self._value_formatter(col, v) for v in raw))
+                return sorted(set(str(v) for v in raw))
+            except Exception:
+                pass
+        # 默认：从表格单元格读取（已是显示文本，无需格式化）
+        table = self.parentWidget()
+        if not table or not hasattr(table, 'rowCount'):
+            return []
+        values = set()
+        for row in range(table.rowCount()):
+            item = table.item(row, col)
+            if item:
+                values.add(item.text())
+        return sorted(values)
+
+
+class AutoFilterHeader(AutoFilterMixin, QHeaderView):
+    """带列筛选图标的水平表头（无复选框）"""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setSectionsClickable(True)
+        self._af_init()
+
+
+class CheckBoxAutoFilterHeader(AutoFilterMixin, CheckBoxHeader):
+    """带列首复选框 + 全列筛选图标的水平表头"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._af_init()
+
+
+def apply_autofilter_to_table(table, header):
+    """根据 header 的筛选状态隐藏/显示表格行（用于无分页的小表格）
+
+    A row is hidden if ANY of its active-column values is in that column's excluded set.
+    """
+    state = header.get_filter_state()
+    if not state:
+        for row in range(table.rowCount()):
+            table.setRowHidden(row, False)
+        return
+
+    for row in range(table.rowCount()):
+        hide = False
+        for col, excluded in state.items():
+            if not excluded:
+                continue
+            item = table.item(row, col)
+            value = item.text() if item else ""
+            if value in excluded:
+                hide = True
+                break
+        table.setRowHidden(row, hide)
+
+
+def install_autofilter_header(table, use_checkbox=False, data_provider=None):
+    """便捷函数：为 QTableWidget 安装列头筛选功能。
+
+    Args:
+        table: 目标 QTableWidget
+        use_checkbox: True 时使用 CheckBoxAutoFilterHeader（首列带全选复选框）
+        data_provider: 可选回调 ``(col_index) -> list[str]``，用于分页表获取全量数据的唯一值
+
+    Returns:
+        安装好的 header 实例
+    """
+    if use_checkbox:
+        header = CheckBoxAutoFilterHeader(table)
+    else:
+        header = AutoFilterHeader(table)
+    if data_provider:
+        header._data_provider = data_provider
+    table.setHorizontalHeader(header)
+    header.filter_changed.connect(lambda: apply_autofilter_to_table(table, header))
+    return header
+
+
 class TableRowCheckBox(QCheckBox):
     """用于表格首列的小尺寸复选框"""
 
@@ -3167,192 +3682,6 @@ class BrowseLineEdit(QLineEdit):
         """处理鼠标双击事件。"""
         self.doubleClicked.emit()
         super().mouseDoubleClickEvent(event)
-
-
-class CheckableOptionPopup(QFrame):
-    """支持连续勾选的多选弹层"""
-
-    selection_changed = pyqtSignal()
-
-    def __init__(self, parent=None):
-        """初始化多选弹层。"""
-        super().__init__(parent, Qt.WindowType.Popup)
-        self._updating = False
-        self.option_checkboxes = []
-
-        self.setObjectName("checkableOptionPopup")
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setLineWidth(1)
-        self.setMinimumWidth(280)
-        self.setStyleSheet("""
-            QFrame#checkableOptionPopup {
-                background-color: rgba(255, 255, 255, 232);
-                border: 1px solid rgba(193, 208, 224, 220);
-                border-radius: 10px;
-            }
-            QCheckBox {
-                padding: 4px 6px;
-                border-radius: 6px;
-            }
-            QCheckBox:hover {
-                background-color: rgba(91, 141, 239, 0.10);
-            }
-        """)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 0, 0, 0)
-        toolbar.setSpacing(8)
-
-        self.select_all_checkbox = QCheckBox("全选")
-        self.select_all_checkbox.setTristate(True)
-        self.select_all_checkbox.stateChanged.connect(self._on_select_all_state_changed)
-        toolbar.addWidget(self.select_all_checkbox)
-
-        self.clear_btn = QPushButton("清空")
-        self.clear_btn.setFixedWidth(56)
-        self.clear_btn.clicked.connect(self.clear_selection)
-        toolbar.addWidget(self.clear_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
-
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        layout.addWidget(self.scroll_area)
-
-        self.options_container = QWidget()
-        self.options_layout = QVBoxLayout(self.options_container)
-        self.options_layout.setContentsMargins(0, 0, 0, 0)
-        self.options_layout.setSpacing(4)
-        self.scroll_area.setWidget(self.options_container)
-
-    def _clear_option_widgets(self):
-        """内部方法：清空选项widgets。"""
-        while self.options_layout.count():
-            item = self.options_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-
-    def set_options(self, options, selected_options=None, select_all_when_empty=False):
-        """设置选项。"""
-        normalized_options = []
-        seen = set()
-        for option in options or []:
-            text = str(option).strip()
-            if text and text not in seen:
-                seen.add(text)
-                normalized_options.append(text)
-
-        selected_set = {
-            str(option).strip()
-            for option in (selected_options or [])
-            if str(option).strip()
-        }
-        if select_all_when_empty and normalized_options and not selected_set:
-            selected_set = set(normalized_options)
-
-        self._updating = True
-        self.option_checkboxes = []
-        self._clear_option_widgets()
-
-        if normalized_options:
-            for option in normalized_options:
-                checkbox = QCheckBox(option)
-                checkbox.setChecked(option in selected_set)
-                checkbox.toggled.connect(self._on_option_toggled)
-                self.options_layout.addWidget(checkbox)
-                self.option_checkboxes.append(checkbox)
-        else:
-            empty_label = QLabel("暂无可选业务类型")
-            empty_label.setStyleSheet("color: #888; padding: 4px 2px;")
-            self.options_layout.addWidget(empty_label)
-
-        self.options_layout.addStretch()
-        self._updating = False
-        self._update_select_all_state()
-
-    def get_available_options(self):
-        """获取可用选项。"""
-        return [checkbox.text().strip() for checkbox in self.option_checkboxes if checkbox.text().strip()]
-
-    def get_selected_options(self):
-        """获取选中选项。"""
-        return [
-            checkbox.text().strip()
-            for checkbox in self.option_checkboxes
-            if checkbox.isChecked() and checkbox.text().strip()
-        ]
-
-    def _set_all_checked(self, checked):
-        """内部方法：设置allchecked。"""
-        if not self.option_checkboxes:
-            self._update_select_all_state()
-            return
-
-        self._updating = True
-        for checkbox in self.option_checkboxes:
-            checkbox.setChecked(bool(checked))
-        self._updating = False
-        self._update_select_all_state()
-        self.selection_changed.emit()
-
-    def clear_selection(self):
-        """清空选择。"""
-        self._set_all_checked(False)
-
-    def _update_select_all_state(self):
-        """内部方法：更新选择all状态。"""
-        checked_count = sum(1 for checkbox in self.option_checkboxes if checkbox.isChecked())
-        total_count = len(self.option_checkboxes)
-
-        self._updating = True
-        if total_count and checked_count == total_count:
-            self.select_all_checkbox.setCheckState(Qt.CheckState.Checked)
-        elif checked_count == 0:
-            self.select_all_checkbox.setCheckState(Qt.CheckState.Unchecked)
-        else:
-            self.select_all_checkbox.setCheckState(Qt.CheckState.PartiallyChecked)
-        self.select_all_checkbox.setEnabled(bool(total_count))
-        self.clear_btn.setEnabled(bool(checked_count))
-        self._updating = False
-
-    def _on_select_all_state_changed(self, state):
-        """内部方法：响应选择all状态changed相关操作。"""
-        if self._updating:
-            return
-
-        state_value = state.value if hasattr(state, 'value') else state
-        if state_value == Qt.CheckState.Checked.value:
-            self._set_all_checked(True)
-        elif state_value == Qt.CheckState.Unchecked.value:
-            self._set_all_checked(False)
-
-    def _on_option_toggled(self, checked):
-        """内部方法：响应选项toggled相关操作。"""
-        if self._updating:
-            return
-
-        self._update_select_all_state()
-        self.selection_changed.emit()
-
-    def show_below(self, anchor_widget):
-        """显示below。"""
-        if anchor_widget is None:
-            return
-
-        option_count = max(1, len(self.option_checkboxes))
-        popup_width = max(anchor_widget.width() + 140, 280)
-        popup_height = min(320, 56 + min(option_count, 8) * 30)
-        self.resize(popup_width, popup_height)
-        self.move(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
-        self.show()
-        self.raise_()
 
 
 class CheckableOptionPopup(QFrame):
@@ -3554,6 +3883,13 @@ class CRMInlineComboDelegate(QStyledItemDelegate):
                 editor_options = self.main_window.get_crm_inline_editor_options(index.row(), self.column_type)
             for option_text in editor_options:
                 editor.addItem(option_text, option_text)
+            # 安装模糊搜索补全器（支持输入中间文字匹配）
+            if editor_options:
+                completer = QCompleter(editor_options, editor)
+                completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+                completer.setFilterMode(Qt.MatchFlag.MatchContains)
+                completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+                editor.setCompleter(completer)
             line_edit = editor.lineEdit()
             if line_edit:
                 line_edit.setPlaceholderText('留空恢复默认')
@@ -3988,9 +4324,9 @@ class QuickDatePickerDialog(CenteredPopupDialog):
         # 间隔选择
         self.shift_interval_combo = QComboBox()
         self.shift_interval_combo.setFixedWidth(72)
-        self.shift_interval_combo.addItem("月", 1)
-        self.shift_interval_combo.addItem("季", 3)
         self.shift_interval_combo.addItem("年", 12)
+        self.shift_interval_combo.addItem("季度", 3)
+        self.shift_interval_combo.addItem("月", 1)
         self.shift_interval_combo.setCurrentIndex(0)
         self.shift_interval_combo.setStyleSheet("QComboBox { font-size: 11px; border: 1px solid #dbe5f0; border-radius: 4px; padding: 1px 3px; background: #fbfdff; color: #23405e; }")
         action_layout.addWidget(self.shift_interval_combo)
@@ -4428,8 +4764,17 @@ class DatePartPickerDialog(CenteredPopupDialog):
             QComboBox:hover { border-color: #FF8C00; }
             QComboBox QAbstractItemView { font-size: 13px; }
         """)
+        _source_labels = []
         for display_name, field_name in self.available_fields:
-            self.source_combo.addItem(f"{display_name} ({field_name})", field_name)
+            label = f"{display_name} ({field_name})"
+            self.source_combo.addItem(label, field_name)
+            _source_labels.append(label)
+        # 安装模糊搜索补全器（支持输入中间文字匹配）
+        _source_completer = QCompleter(_source_labels, self.source_combo)
+        _source_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _source_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        _source_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.source_combo.setCompleter(_source_completer)
         main_layout.addWidget(self.source_combo)
 
         # ---- 显示名称前缀 ----
@@ -5069,7 +5414,7 @@ class ExcelFieldSettingsDialog(CenteredPopupDialog):
 
         # 验证：至少保留一个显示字段
         if not visible_headers:
-            QMessageBox.warning(self, "提示", "请至少保留一个显示字段。")
+            frameless_message_box(self, "提示", "请至少保留一个显示字段。")
             return  # 直接返回，不关闭对话框（让用户重新选择）
 
         # ✅【关键修复】在调用 super.accept() 之前设置标志位
@@ -5449,6 +5794,7 @@ class FilterConditionRow(QFrame):
         """填充字段下拉列表。"""
         self._field_combo.blockSignals(True)
         self._field_combo.clear()
+        labels = []
         for item in self._field_options:
             if isinstance(item, (tuple, list)):
                 label = str(item[0])
@@ -5457,7 +5803,14 @@ class FilterConditionRow(QFrame):
                 label = str(item)
                 data = label
             self._field_combo.addItem(label, data)
+            labels.append(label)
         self._field_combo.blockSignals(False)
+        # 安装模糊搜索补全器（支持输入中间文字匹配）
+        completer = QCompleter(labels, self._field_combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._field_combo.setCompleter(completer)
 
     def _populate_op_combo(self, use_text_ops: bool = True):
         """填充操作符下拉列表。"""
@@ -5659,8 +6012,10 @@ class FilterConditionRow(QFrame):
     def set_condition(self, condition: dict):
         """从条件字典恢复 UI 状态。"""
         c = condition or {}
+
+        # ✅ 阻塞字段下拉信号，避免 set_field → currentIndexChanged → update_input_mode 级联
+        self._field_combo.blockSignals(True)
         self.set_field(c.get('field', ''))
-        self.set_operator(c.get('operator', self._default_operator))
 
         # 根据字段类型调整操作符列表
         if self._is_date_field_cb and c.get('field'):
@@ -5668,13 +6023,11 @@ class FilterConditionRow(QFrame):
         else:
             is_date = c.get('is_date', False)
         self._current_field_is_date = is_date
-        if is_date:
-            self._populate_op_combo(use_text_ops=False)
-        else:
-            self._populate_op_combo(use_text_ops=True)
+        self._populate_op_combo(use_text_ops=not is_date)
 
         # 恢复操作符
         self.set_operator(c.get('operator', self._default_operator))
+        self._field_combo.blockSignals(False)
 
         # 恢复值
         val = c.get('value', '')
@@ -5709,34 +6062,40 @@ class FilterConditionRow(QFrame):
             return
 
         if self._is_date_field_cb:
-            self._current_field_is_date = self._is_date_field_cb(field_text)
+            is_date = self._is_date_field_cb(field_text)
         else:
-            self._current_field_is_date = self._is_date_by_keyword(field_text)
+            is_date = self._is_date_by_keyword(field_text)
 
-        current_op = self._op_combo.currentData()
-        current_op_str = str(current_op) if current_op else ''
+        # ✅ 仅在字段类型（日期/文本）发生变化时才重新填充操作符下拉框
+        # 避免每次字段切换都 clear + addItem 的开销
+        type_changed = (is_date != self._current_field_is_date)
+        self._current_field_is_date = is_date
 
-        self._op_combo.blockSignals(True)
-        self._op_combo.clear()
+        if type_changed:
+            current_op = self._op_combo.currentData()
+            current_op_str = str(current_op) if current_op else ''
 
-        if self._current_field_is_date:
-            for label, key in self._date_operators:
-                self._op_combo.addItem(label, key)
-            if current_op_str:
-                idx = self._op_combo.findData(current_op_str)
+            self._op_combo.blockSignals(True)
+            self._op_combo.clear()
+
+            if is_date:
+                for label, key in self._date_operators:
+                    self._op_combo.addItem(label, key)
+                if current_op_str:
+                    idx = self._op_combo.findData(current_op_str)
+                else:
+                    idx = self._op_combo.findData('date_range')
             else:
-                idx = self._op_combo.findData('date_range')
-        else:
-            for label, key in self._text_operators:
-                self._op_combo.addItem(label, key)
-            if current_op_str:
-                idx = self._op_combo.findData(current_op_str)
-            else:
-                idx = self._op_combo.findData(self._default_operator)
+                for label, key in self._text_operators:
+                    self._op_combo.addItem(label, key)
+                if current_op_str:
+                    idx = self._op_combo.findData(current_op_str)
+                else:
+                    idx = self._op_combo.findData(self._default_operator)
 
-        if idx >= 0:
-            self._op_combo.setCurrentIndex(idx)
-        self._op_combo.blockSignals(False)
+            if idx >= 0:
+                self._op_combo.setCurrentIndex(idx)
+            self._op_combo.blockSignals(False)
 
         # 多选按钮可见性
         new_op = self._op_combo.currentData()
@@ -6635,7 +6994,7 @@ class CustomReportFilterDialog(CenteredPopupDialog):
                 'show_expose': False,
                 'show_picker': True,
                 'show_remove': True,
-                'debounce_ms': 0,
+                'debounce_ms': 150,
                 'is_date_field_cb': self._is_date_field,
                 'picker_cb': self._on_picker_clicked,
             },
@@ -6814,8 +7173,11 @@ class PasswordEntry(QFrame):
 
 from file_mover import *
 from file_generation import *
-from pdf_watermark import *
 # Mixin imports are handled by the main file
-from bi_dashboard import *
-from department import *
+try: from pdf_watermark import *
+except ImportError: pass
+try: from bi_dashboard import *
+except ImportError: pass
+try: from department import *
+except ImportError: pass
 

@@ -18,7 +18,10 @@ file_mover.py — 文件整理移动 Mixin
 import os
 
 # QtWebEngine 必须在 QApplication 创建前导入
-import PyQt6.QtWebEngineWidgets  # noqa: F401
+try:
+    import PyQt6.QtWebEngineWidgets  # noqa: F401
+except ImportError:
+    pass  # 精简版打包时可能不包含 WebEngine
 
 from pathlib import Path  # 路径处理
 import copy
@@ -171,7 +174,7 @@ class file_moverMixin:
 
         self.organize_file_table = QTableWidget()
         install_table_edit_context_menu(self.organize_file_table)
-        self.organize_table_header = CheckBoxHeader(self.organize_file_table)
+        self.organize_table_header = CheckBoxAutoFilterHeader(self.organize_file_table)
         self.organize_table_header.toggled.connect(self.on_organize_table_select_all_toggled)
         self.organize_file_table.setHorizontalHeader(self.organize_table_header)
         self.organize_file_table.setColumnCount(6)

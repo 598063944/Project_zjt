@@ -1,8 +1,9 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from core import *
 from network import *
+from common import install_autofilter_header, apply_autofilter_to_table, AutoFilterHeader, CheckBoxAutoFilterHeader
 
 # -- custom_report/__init__.py --
 """
@@ -25,6 +26,10 @@ import logging
 import sys
 
 
+from enum import Enum
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+import uuid
 class UILogHandler(logging.Handler):
     """将日志同时输出到主程序运行时窗口"""
 
@@ -48,6 +53,18 @@ def setup_ui_logging():
     ui_handler = UILogHandler()
     ui_handler.setLevel(logging.INFO)
     ui_handler.setFormatter(logging.Formatter('[%(name)s] %(levelname)s - %(message)s'))
+
+    # 过滤 [DEBUG-...] 调试噪音，只保留关键操作和异常
+    class _OperationFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if record.levelno >= logging.WARNING:
+                return True
+            msg = record.getMessage()
+            if '[DEBUG-' in msg or msg.strip().startswith('[DEBUG'):
+                return False
+            return True
+
+    ui_handler.addFilter(_OperationFilter())
 
     # 避免重复添加
     existing = [h for h in logging.root.handlers if isinstance(h, UILogHandler)]
@@ -268,7 +285,7 @@ class AddressExtractor:
 
         Args:
             text: 待匹配的原始文本（如 "广东省广州市天河区某路123号"）
-            level: "province" | "province_short" | "city" | "area"
+            level: "province" | "province_short" | "city_full" | "city_short"
 
         Returns:
             匹配到的名称，未匹配返回 None
@@ -345,6 +362,28 @@ class AddressExtractor:
                     city = self._area_to_city.get(area_name)
                     if city:
                         return city
+        elif level == "city_full":
+            c = _find_city(text)
+            if c:
+                return c
+            for area_name in self._area_names:
+                if area_name in text:
+                    city = self._area_to_city.get(area_name)
+                    if city:
+                        return city
+        elif level == "city_short":
+            # 优先匹配完整市名，再返回简称
+            for name in self._city_names:
+                if name in text:
+                    return name[:-1] if name.endswith('市') and len(name) > 1 else name
+            for short_name in self._city_short_names:
+                if short_name in text:
+                    return short_name
+            for area_name in self._area_names:
+                if area_name in text:
+                    city = self._area_to_city.get(area_name)
+                    if city:
+                        return city[:-1] if city.endswith('市') and len(city) > 1 else city
         elif level == "area":
             for name in self._area_names:
                 if name in text:
@@ -532,6 +571,53 @@ def get_mysql_type_for_field(ftype: str) -> str:
     return 'LONGTEXT'
 
 
+def _clean_crm_value(val) -> str:
+    """清洗 CRM 字段值：从嵌套 dict/list 中提取可读的显示文本。
+
+    CRM API 的 __r 引用字段（如 created_by__r、owner__r）返回嵌套对象:
+      {'name': '张三', 'id': 'xxx'}  或  [{'name': '张三', ...}]
+    直接 str() 会存储 Python repr，需要提取 name 等可读字段。
+
+    Returns:
+        清洗后的字符串
+    """
+    if val is None or val == '':
+        return ''
+    # dict: 提取 name → nickname → 第一个非空字符串值
+    if isinstance(val, dict):
+        for key in ('name', 'nickname', 'label', 'text', 'value'):
+            v = val.get(key)
+            if v is not None and str(v).strip() and str(v).strip().lower() not in ('none', 'null'):
+                return str(v).strip()
+        # 回退: 取第一个非空值
+        for v in val.values():
+            if v is not None and str(v).strip() and str(v).strip().lower() not in ('none', 'null'):
+                return str(v).strip()
+        return ''
+    # list: 对每个元素提取后逗号拼接
+    if isinstance(val, list):
+        parts = []
+        for item in val:
+            s = _clean_crm_value(item)
+            if s:
+                parts.append(s)
+        return ', '.join(parts)
+    # str: 可能是 JSON 格式的 dict/list
+    if isinstance(val, str):
+        s = val.strip()
+        if (s.startswith('{') and s.endswith('}')) or (s.startswith('[') and s.endswith(']')):
+            try:
+                import json as _json
+                parsed = _json.loads(s)
+                cleaned = _clean_crm_value(parsed)
+                if cleaned:
+                    return cleaned
+            except Exception:
+                pass
+        return s
+    return str(val) if val is not None else ''
+
+
 def safe_numeric_value(val, ftype: str = ''):
     """将值安全转为数值类型用于写入 MySQL。非数值类型或无法转换时返回原值。
 
@@ -541,6 +627,11 @@ def safe_numeric_value(val, ftype: str = ''):
     if val is None or val == '':
         return None
     if not is_numeric_field_type(ftype):
+        if val is None:
+            return ''
+        # 嵌套 dict/list（如 __r 引用字段）提取可读文本
+        if isinstance(val, (dict, list)):
+            return _clean_crm_value(val)
         return str(val) if val is not None else ''
     try:
         if isinstance(val, (int, float)):
@@ -562,7 +653,7 @@ def safe_numeric_value(val, ftype: str = ''):
 from PyQt6.QtCore import Qt, QEvent, QTimer, QObject
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QDialog, QApplication
-
+from PyQt6.QtWidgets import QDialog, QApplication, QProgressBar
 
 # ---- 辅助函数 ----
 
@@ -699,6 +790,8 @@ class CenteredPopupDialog(QDialog):
         self._outside_close_filter = _DialogOutsideCloseFilter(self) if close_on_outside else None
         self._outside_close_filter_installed = False
         self._dialog_closed = False
+        # 无边框：去掉系统标题栏
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
 
         # 强制浅色背景：同时设置调色板和样式表，防止被父窗口/系统主题覆盖
         light_palette = self.palette()
@@ -709,7 +802,7 @@ class CenteredPopupDialog(QDialog):
         light_palette.setColor(light_palette.Text, QColor('#333333'))
         light_palette.setColor(light_palette.Button, QColor('#FFFFFF'))
         light_palette.setColor(light_palette.ButtonText, QColor('#333333'))
-        light_palette.setColor(light_palette.ToolTipBase, QColor('#FFFFFF'))
+        light_palette.setColor(light_palette.ToolTipBase, QColor('#FFF7E6'))
         light_palette.setColor(light_palette.ToolTipText, QColor('#333333'))
         self.setPalette(light_palette)
 
@@ -717,7 +810,7 @@ class CenteredPopupDialog(QDialog):
         self.setObjectName("centeredPopupDialog")
         self.setStyleSheet("""
             QDialog#centeredPopupDialog {
-                background-color: #FAFAFA;
+                background-color: #FFFFFF;
                 color: #333333;
             }
         """)
@@ -768,9 +861,12 @@ class CenteredPopupDialog(QDialog):
 
     def accept(self):
         self._dialog_closed = True
+        self._accepted = True
         super().accept()
 
     def reject(self):
+        if getattr(self, '_accepted', False):
+            return
         self._dialog_closed = True
         super().reject()
 
@@ -829,7 +925,7 @@ class DataFetcher:
             config: 应用配置 dict（用于获取 CRM 凭证）
         """
         self._crm = crm_client
-        self._config = config or {}
+        self._app_config = config or {}
 
     def _get_crm(self):
         """懒加载 CRM 客户端（优先复用已有实例，避免重复创建）。"""
@@ -848,9 +944,9 @@ class DataFetcher:
             if main_mod and hasattr(main_mod, 'load_config'):
                 cfg = main_mod.load_config()
             else:
-                cfg = self._config or {}
+                cfg = self._app_config or {}
         except Exception:
-            cfg = self._config or {}
+            cfg = self._app_config or {}
         fx_cfg = cfg.get('fxiaoke', {})
         self._crm = FXiaokeCRM(
             app_id=fx_cfg.get('app_id', 'FSAID_1323c1a'),
@@ -889,16 +985,16 @@ class DataFetcher:
         crm = self._get_crm()
         try:
             if max_records is None:
-                raw_load = self._config.get('fxiaoke', {}).get('load_count', 10000)
+                raw_load = self._app_config.get('fxiaoke', {}).get('load_count', 10000)
             else:
                 raw_load = max_records
             try:
                 max_records = int(raw_load)
             except (TypeError, ValueError):
                 max_records = 10000
-            max_records = max(1, min(max_records, 10000))
+            max_records = max(1, max_records)
 
-            return crm.fetch_all_data_object(
+            rows, total, err = crm.fetch_all_data_object(
                 data_object_api_name=object_api_name,
                 max_records=max_records,
                 batch_size=batch_size,
@@ -907,6 +1003,12 @@ class DataFetcher:
                 callback=progress_callback,
                 is_custom=is_custom,
             )
+            if total > 0 and rows and len(rows) < total:
+                logger.warning(
+                    f"[DataFetcher] {object_api_name}: "
+                    f"CRM 报告 {total} 条，实际获取 {len(rows)} 条（数据可能不完整）"
+                )
+            return rows, total, err
         except Exception as e:
             logger.error(f"[DataFetcher] 获取 {object_api_name} 失败: {e}")
             return [], 0, str(e)
@@ -966,13 +1068,42 @@ class DataFetcher:
 - 计算汇总行（SUM/AVG/COUNT/MAX/MIN）
 """
 
-import pandas as pd
-import numpy as np
 import re
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# pandas/numpy 延迟导入（避免 C 扩展初始化死锁导致启动卡住）
+_pd = None
+_np = None
+
+def _ensure_pandas():
+    global _pd, _np
+    if _pd is None:
+        import pandas as pd
+        _pd = pd
+    if _np is None:
+        import numpy as np
+        _np = np
+    return _pd
+
+class _LazyPd:
+    """pandas 代理对象，首次访问时才真正导入 pandas"""
+    def __getattr__(self, name):
+        return getattr(_ensure_pandas(), name)
+
+class _LazyNp:
+    """numpy 代理对象，首次访问时才真正导入 numpy"""
+    def __getattr__(self, name):
+        _ensure_pandas()  # pandas 导入会连带导入 numpy
+        if _np is None:
+            import numpy as np
+            globals()['_np'] = np
+        return getattr(_np, name)
+
+pd = _LazyPd()
+np = _LazyNp()
 
 # ==================== 中文标点规范化 ====================
 
@@ -990,6 +1121,44 @@ def _normalize_expr(expr: str) -> str:
     if expr.startswith("="):
         expr = expr[1:]
     return expr.translate(_CJK_PUNCT_MAP)
+
+
+def _normalize_expr_with_cols(expr: str, column_names: list[str]) -> str:
+    """标准化公式，同时保护含中文标点的列名不被误转换。
+
+    列名中的全角括号（如 '安装时间（设备）'）会被 _CJK_PUNCT_MAP
+    转成半角，导致分词器将其拆散。此函数在标准化前用占位符保护列名。
+    """
+    placeholders = {}
+    protected = expr.strip()
+    if protected.startswith("="):
+        protected = protected[1:]
+
+    # 剥掉公式显示包装：公式(=...) 或 公式(...) → 内部表达式
+    if protected.startswith("公式(") and protected.endswith(")"):
+        inner = protected[3:-1].strip()
+        if inner.startswith("="):
+            inner = inner[1:]
+        protected = inner
+
+    # 去除 Excel 结构化引用的方括号 [列名] → 列名
+    protected = protected.replace('[', '').replace(']', '')
+
+    for col in column_names:
+        col = str(col)  # 确保列名是字符串（MySQL 可能返回整数列名）
+        if col in protected:
+            # 检查列名是否含有会被 _CJK_PUNCT_MAP 转换的字符
+            if any(ch in col for ch in '（），：""''＋－×÷＝＞＜'):
+                ph = f"__COL{len(placeholders)}__"
+                placeholders[ph] = col
+                protected = protected.replace(col, ph)
+
+    normalized = protected.translate(_CJK_PUNCT_MAP)
+
+    for ph, col in placeholders.items():
+        normalized = normalized.replace(ph, col)
+
+    return normalized
 
 
 # ==================== 列名安全映射 ====================
@@ -1086,6 +1255,35 @@ def _text_join(sep, *args):
     return result
 
 
+def _count_numeric(*args):
+    """COUNT 函数实现：统计参数中数值的个数。
+
+    行为与 Excel COUNT 一致：
+    - 标量：是数字则计 1，否则 0
+    - Series：每行统计非 NaN 且为数值的个数（用于 COUNT(FIND(...)) 等场景）
+    - 多个参数：逐行累加
+    """
+    has_series = any(isinstance(a, pd.Series) for a in args)
+    if not has_series:
+        return sum(1 for a in args if isinstance(a, (int, float, np.integer, np.floating))
+                   and not isinstance(a, bool) and pd.notna(a))
+    # 找到公共索引
+    idx = None
+    for a in args:
+        if isinstance(a, pd.Series):
+            idx = a.index if idx is None else idx
+            break
+    total = pd.Series(0, index=idx)
+    for a in args:
+        if isinstance(a, pd.Series):
+            total += a.notna() & a.apply(lambda x: isinstance(x, (int, float, np.integer, np.floating))
+                                          and not isinstance(x, bool))
+        else:
+            if isinstance(a, (int, float, np.integer, np.floating)) and not isinstance(a, bool) and pd.notna(a):
+                total += 1
+    return total
+
+
 def _ifs(*args):
     """IFS 函数实现: IFS(cond1, val1, cond2, val2, ...)"""
     if len(args) < 2 or len(args) % 2 != 0:
@@ -1130,9 +1328,12 @@ def _substitute(s, old, new, instance=None):
 
 
 def _find(substr, s, start=0):
-    """FIND → 返回子串位置（从 1 开始），未找到返回 -1。"""
-    result = s.astype(str).str.find(substr, start)
-    return result.where(result < 0, result + 1)
+    """FIND → 返回子串位置（从 1 开始），未找到返回 NaN（与 Excel 错误行为一致）。"""
+    s_str = s.astype(str)
+    result = s_str.str.find(substr, start)
+    # str.find 返回 -1 表示未找到 → 转为 NaN（模拟 Excel 的 #VALUE! 错误）
+    result = result.where(result >= 0, other=np.nan)
+    return result.where(result.isna(), result + 1)
 
 
 def _proper(s):
@@ -1141,10 +1342,11 @@ def _proper(s):
 
 
 def _search(find_text, within, start=1):
-    """SEARCH → 不区分大小写查找子串位置（从 1 开始），未找到返回 -1。"""
+    """SEARCH → 不区分大小写查找子串位置（从 1 开始），未找到返回 NaN。"""
     start = int(start) - 1 if start else 0
     result = within.astype(str).str.lower().str.find(str(find_text).lower(), start)
-    return result.where(result < 0, result + 1)
+    result = result.where(result >= 0, other=np.nan)
+    return result.where(result.isna(), result + 1)
 
 
 def _exact(v1, v2):
@@ -1159,15 +1361,55 @@ def _rept(s, n):
 
 
 def _text(value, fmt):
-    """TEXT → 用 Python 格式说明符（如 .2f、,.0f）或 strftime 模式格式化数值/日期。"""
+    """TEXT → 用 Python 格式说明符（如 .2f、,.0f）或 strftime 模式格式化数值/日期。
+
+    Excel 的日期格式代码（mm/dd/yyyy 等）需先转换为 Python strftime 指令
+    （%m/%d/%Y 等），否则 strftime 会将它们当作文本字面量直接输出。
+    """
     fmt = str(fmt)
+    # 判断是否为日期格式字符串——包含 y/M/d/H/h/s 等日期指示符
+    is_date_fmt = any(c in fmt for c in ('y', 'Y', 'M', 'd', 'D', 'H', 'h', 's', 'S'))
+    if is_date_fmt:
+        fmt = _excel_date_format_to_strftime(fmt)
+
+    def _to_datetime(x):
+        """尝试将标量值转为 datetime / Timestamp，失败则返回原值。"""
+        if isinstance(x, float) and pd.isna(x):
+            return x
+        if x is None:
+            return x
+        if isinstance(x, (pd.Timestamp, datetime)):
+            return x
+        if isinstance(x, str):
+            x_stripped = x.strip()
+            if not x_stripped:
+                return None
+            # 尝试常见日期格式
+            for dfmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S',
+                         '%Y/%m/%d %H:%M:%S', '%Y/%m/%d', '%Y年%m月%d日',
+                         '%Y-%m-%d %H:%M', '%Y/%m/%d %H:%M'):
+                try:
+                    return datetime.strptime(x_stripped, dfmt)
+                except (ValueError, TypeError):
+                    continue
+        # 尝试 pandas 自动解析（仅当值为字符串或数值时）
+        try:
+            return pd.Timestamp(x)
+        except Exception:
+            pass
+        return x
+
     if isinstance(value, pd.Series):
         def _fmt_one(x):
-            if pd.isna(x):
+            if isinstance(x, float) and pd.isna(x):
                 return ''
             try:
-                if isinstance(x, (pd.Timestamp, datetime)):
-                    return x.strftime(fmt)
+                dt = _to_datetime(x)
+                if isinstance(dt, (pd.Timestamp, datetime)):
+                    return dt.strftime(fmt) if is_date_fmt else str(dt)
+                # 非日期值：数值格式用 format，文本格式原样
+                if is_date_fmt:
+                    return str(x) if x is not None else ''  # 不是日期，无法用日期格式，原样返回
                 return format(x, fmt)
             except Exception:
                 return str(x)
@@ -1175,9 +1417,15 @@ def _text(value, fmt):
     else:
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return ''
-        if isinstance(value, (pd.Timestamp, datetime)):
-            return value.strftime(fmt)
-        return format(value, fmt)
+        try:
+            dt = _to_datetime(value)
+            if isinstance(dt, (pd.Timestamp, datetime)):
+                return dt.strftime(fmt) if is_date_fmt else str(dt)
+            if is_date_fmt:
+                return str(value)
+            return format(value, fmt)
+        except Exception:
+            return str(value)
 
 
 def _ceiling(num, significance=1):
@@ -1542,6 +1790,781 @@ def _mode(*args):
     return unique[np.argmax(counts)]
 
 
+# ==================== 条件行间引用（NEXT_IF / PREV_IF）====================
+
+def _next_if(return_series, match_series, *extra_match_series):
+    """NEXT_IF(return_col, match_col1, [match_col2, ...])
+
+    找到下一行中第一个所有 match_col 都等于当前行对应值的行，
+    返回该行的 return_col 值。找不到则返回 NaN。
+
+    空值规则：空值与空值视为相等，空值与非空值不匹配。
+    搜索范围限制为后续 5000 行，防止大数据集 O(N²) 崩溃。
+    """
+    _MAX_SEARCH = 5000
+    result = pd.Series([None] * len(return_series), index=return_series.index, dtype=object)
+    all_match = [match_series] + list(extra_match_series)
+    n = len(return_series)
+    for i in range(n):
+        cur_vals = [s.iloc[i] for s in all_match]
+        limit = min(n, i + 1 + _MAX_SEARCH)
+        for j in range(i + 1, limit):
+            if all(_values_equal(s.iloc[j], cv) for s, cv in zip(all_match, cur_vals)):
+                result.iloc[i] = return_series.iloc[j]
+                break
+    return result
+
+
+def _prev_if(return_series, match_series, *extra_match_series):
+    """PREV_IF(return_col, match_col1, [match_col2, ...])
+
+    找到前面所有行中最后一个所有 match_col 都等于当前行对应值的行，
+    返回该行的 return_col 值。找不到则返回 NaN。
+
+    空值规则：空值与空值视为相等，空值与非空值不匹配。
+    搜索范围限制为前序 5000 行，防止大数据集 O(N²) 崩溃。
+    """
+    _MAX_SEARCH = 5000
+    result = pd.Series([None] * len(return_series), index=return_series.index, dtype=object)
+    all_match = [match_series] + list(extra_match_series)
+    for i in range(len(return_series)):
+        cur_vals = [s.iloc[i] for s in all_match]
+        limit = max(-1, i - 1 - _MAX_SEARCH)
+        for j in range(i - 1, limit, -1):
+            if all(_values_equal(s.iloc[j], cv) for s, cv in zip(all_match, cur_vals)):
+                result.iloc[i] = return_series.iloc[j]
+                break
+    return result
+
+
+def _values_equal(a, b) -> bool:
+    """安全比较两个值。
+
+    规则：空值与空值视为相等，空值与非空值不等。
+    """
+    a_empty = _is_empty_val(a)
+    b_empty = _is_empty_val(b)
+    if a_empty and b_empty:
+        return True
+    if a_empty or b_empty:
+        return False
+    return str(a) == str(b)
+
+
+def _next_if_any(return_series, match_series, *extra_match_series):
+    """NEXT_IF_ANY(return_col, match_col1, [match_col2, ...])
+
+    与 NEXT_IF 相同，但空值规则不同：当前行某列为空 → 跳过该列，只用有值的列匹配。
+    候选行某列为空、当前行非空 → 不匹配。
+    搜索范围限制为后续 5000 行，防止大数据集 O(N²) 崩溃。
+    """
+    _MAX_SEARCH = 5000
+    result = pd.Series([None] * len(return_series), index=return_series.index, dtype=object)
+    all_match = [match_series] + list(extra_match_series)
+    n = len(return_series)
+    for i in range(n):
+        cur_vals = [s.iloc[i] for s in all_match]
+        limit = min(n, i + 1 + _MAX_SEARCH)
+        for j in range(i + 1, limit):
+            if all(_values_equal_any(s.iloc[j], cv) for s, cv in zip(all_match, cur_vals)):
+                result.iloc[i] = return_series.iloc[j]
+                break
+    return result
+
+
+def _prev_if_any(return_series, match_series, *extra_match_series):
+    """PREV_IF_ANY(return_col, match_col1, [match_col2, ...])
+
+    与 PREV_IF 相同，但空值规则不同：当前行某列为空 → 跳过该列，只用有值的列匹配。
+    候选行某列为空、当前行非空 → 不匹配。
+    搜索范围限制为前序 5000 行，防止大数据集 O(N²) 崩溃。
+    """
+    _MAX_SEARCH = 5000
+    result = pd.Series([None] * len(return_series), index=return_series.index, dtype=object)
+    all_match = [match_series] + list(extra_match_series)
+    for i in range(len(return_series)):
+        cur_vals = [s.iloc[i] for s in all_match]
+        limit = max(-1, i - 1 - _MAX_SEARCH)
+        for j in range(i - 1, limit, -1):
+            if all(_values_equal_any(s.iloc[j], cv) for s, cv in zip(all_match, cur_vals)):
+                result.iloc[i] = return_series.iloc[j]
+                break
+    return result
+
+
+def _values_equal_any(a, b) -> bool:
+    """NEXT_IF_ANY / PREV_IF_ANY 专用比较：当前行为空 → 跳过（True）；候选行为空 → 不匹配（False）"""
+    a_empty = _is_empty_val(a)
+    b_empty = _is_empty_val(b)
+    if a_empty:
+        return True       # 当前行无值，跳过该列
+    if b_empty:
+        return False      # 候选行无值，不匹配
+    return str(a) == str(b)
+
+
+def _is_empty_val(v) -> bool:
+    """判断值是否为空（None / NaN / 空字符串）"""
+    if v is None:
+        return True
+    if isinstance(v, str) and v.strip() == '':
+        return True
+    try:
+        if pd.isna(v):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+def _vlookup2(field_a, field_b, result_col, mode='next'):
+    """VLOOKUP2(field_a, field_b, result_col, [mode])
+
+    多条件匹配查找。
+
+    mode='next': 比较当前行与下一行，
+    如果两个条件字段都匹配则返回下一行的结果值，否则返回空字符串。
+    """
+    if isinstance(mode, pd.Series):
+        mode = str(mode.iloc[0]) if len(mode) > 0 else 'next'
+    mode = str(mode).strip('"\'').strip().lower()
+
+    if mode == 'next':
+        if not isinstance(field_a, pd.Series):
+            return result_col
+        a_shifted = field_a.shift(-1)
+        b_shifted = field_b.shift(-1)
+        result_shifted = result_col.shift(-1)
+        a_eq = (field_a == a_shifted) | (field_a.isna() & a_shifted.isna())
+        b_eq = (field_b == b_shifted) | (field_b.isna() & b_shifted.isna())
+        condition = a_eq & b_eq
+        condition = condition.fillna(False)
+        return result_shifted.where(condition, other='').fillna('')
+    return pd.Series([''] * len(field_a)) if isinstance(field_a, pd.Series) else ''
+
+
+
+# ==================== 新增 Excel/WPS 函数实现 ====================
+
+def _sumsq(*args):
+    """SUMSQ → 返回所有参数的平方和。"""
+    total = 0
+    for a in args:
+        v = pd.to_numeric(a, errors='coerce').fillna(0) if isinstance(a, pd.Series) else (float(a) if a else 0)
+        total = total + v ** 2
+    return total
+
+
+def _gcd(*args):
+    """GCD → 最大公约数。"""
+    import math
+    vals = []
+    for a in args:
+        if isinstance(a, pd.Series):
+            vals.append(a.astype(float).fillna(0).astype(int).values)
+        else:
+            vals.append(int(float(a)))
+    if any(isinstance(v, np.ndarray) for v in vals):
+        arrs = [v if isinstance(v, np.ndarray) else np.full(len(vals[0]), v) for v in vals]
+        result = arrs[0]
+        for v in arrs[1:]:
+            result = np.vectorize(math.gcd)(result, v)
+        return result
+    return math.gcd(*vals)
+
+
+def _lcm(*args):
+    """LCM → 最小公倍数。"""
+    import math
+    vals = []
+    for a in args:
+        if isinstance(a, pd.Series):
+            vals.append(a.astype(float).fillna(0).astype(int).values)
+        else:
+            vals.append(int(float(a)))
+    if any(isinstance(v, np.ndarray) for v in vals):
+        arrs = [v if isinstance(v, np.ndarray) else np.full(len(vals[0]), v) for v in vals]
+        result = arrs[0]
+        for v in arrs[1:]:
+            result = np.vectorize(math.lcm)(result, v)
+        return result
+    return math.lcm(*vals)
+
+
+def _combin(n, k):
+    """COMBIN → 组合数 C(n,k)。"""
+    import math
+    n = pd.to_numeric(n, errors='coerce')
+    k = pd.to_numeric(k, errors='coerce')
+    if isinstance(n, pd.Series):
+        return n.combine(k, lambda a, b: math.comb(int(a), int(b)) if pd.notna(a) and pd.notna(b) else np.nan)
+    return math.comb(int(n), int(k)) if pd.notna(n) and pd.notna(k) else np.nan
+
+
+def _permut(n, k):
+    """PERMUT → 排列数 P(n,k)。"""
+    import math
+    n = pd.to_numeric(n, errors='coerce')
+    k = pd.to_numeric(k, errors='coerce')
+    if isinstance(n, pd.Series):
+        return n.combine(k, lambda a, b: math.perm(int(a), int(b)) if pd.notna(a) and pd.notna(b) else np.nan)
+    return math.perm(int(n), int(k)) if pd.notna(n) and pd.notna(k) else np.nan
+
+
+def _rand():
+    """RAND → 0~1 随机数。"""
+    return np.random.random()
+
+
+def _randbetween(low, high):
+    """RANDBETWEEN → 指定范围随机整数。"""
+    low = pd.to_numeric(low, errors='coerce')
+    high = pd.to_numeric(high, errors='coerce')
+    if isinstance(low, pd.Series):
+        return low.combine(high, lambda a, b: np.random.randint(int(a), int(b) + 1) if pd.notna(a) and pd.notna(b) else np.nan)
+    return np.random.randint(int(low), int(high) + 1) if pd.notna(low) and pd.notna(high) else np.nan
+
+
+def _subtotal(func_num, *args):
+    """SUBTOTAL → 按编号汇总（1=AVERAGE,2=COUNT,3=COUNTA,4=MAX,5=MIN,6=PRODUCT,7=STDEV,8=STDEVP,9=SUM）。"""
+    fn = int(func_num) if not isinstance(func_num, pd.Series) else int(func_num.iloc[0])
+    vals = []
+    for a in args:
+        if isinstance(a, pd.Series):
+            vals.append(pd.to_numeric(a, errors='coerce'))
+        else:
+            vals.append(a)
+    combined = pd.concat(vals, ignore_index=True) if all(isinstance(v, pd.Series) for v in vals) else vals
+    if fn == 9:
+        return sum(pd.to_numeric(a, errors='coerce').sum() if isinstance(a, pd.Series) else float(a) for a in args)
+    elif fn == 1:
+        return pd.concat([pd.to_numeric(a, errors='coerce') for a in args if isinstance(a, pd.Series)], ignore_index=True).mean()
+    elif fn == 2:
+        return sum(pd.to_numeric(a, errors='coerce').count() for a in args if isinstance(a, pd.Series))
+    elif fn == 3:
+        return sum(a.count() for a in args if isinstance(a, pd.Series))
+    elif fn == 4:
+        return max(pd.to_numeric(a, errors='coerce').max() for a in args if isinstance(a, pd.Series))
+    elif fn == 5:
+        return min(pd.to_numeric(a, errors='coerce').min() for a in args if isinstance(a, pd.Series))
+    elif fn == 6:
+        r = 1
+        for a in args:
+            if isinstance(a, pd.Series):
+                r *= pd.to_numeric(a, errors='coerce').prod()
+        return r
+    elif fn == 7:
+        return pd.concat([pd.to_numeric(a, errors='coerce') for a in args if isinstance(a, pd.Series)], ignore_index=True).std()
+    elif fn == 8:
+        return pd.concat([pd.to_numeric(a, errors='coerce') for a in args if isinstance(a, pd.Series)], ignore_index=True).std(ddof=0)
+    return 0
+
+
+def _roman(num, form=0):
+    """ROMAN → 数字转罗马数字。"""
+    num = int(pd.to_numeric(num, errors='coerce'))
+    if not (0 < num < 4000):
+        return ''
+    vals = [(1000,'M'),(900,'CM'),(500,'D'),(400,'CD'),(100,'C'),(90,'XC'),
+            (50,'L'),(40,'XL'),(10,'X'),(9,'IX'),(5,'V'),(4,'IV'),(1,'I')]
+    result = ''
+    for v, s in vals:
+        while num >= v:
+            result += s
+            num -= v
+    return result
+
+
+def _arabic(text):
+    """ARABIC → 罗马数字转数字。"""
+    rom = str(text).upper().strip()
+    m = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000}
+    result, prev = 0, 0
+    for ch in reversed(rom):
+        cur = m.get(ch, 0)
+        result += cur if cur >= prev else -cur
+        prev = cur
+    return result
+
+
+def _base(num, radix, min_length=0):
+    """BASE → 数字转指定进制文本。"""
+    num, radix, ml = int(num), int(radix), int(min_length)
+    if num == 0:
+        return '0' * max(ml, 1)
+    digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    result = ''
+    n = abs(num)
+    while n > 0:
+        result = digits[n % radix] + result
+        n //= radix
+    if num < 0:
+        result = '-' + result
+    return result.zfill(ml + (1 if num < 0 else 0))
+
+
+def _decimal(text, radix):
+    """DECIMAL → 指定进制文本转数字。"""
+    return int(str(text).strip(), int(radix))
+
+
+def _t_func(val):
+    """T → 如果是文本返回文本，否则返回空。"""
+    if isinstance(val, pd.Series):
+        return val.where(val.astype(str).str.len() > 0, '')
+    return str(val) if isinstance(val, str) else ''
+
+
+def _numbervalue(text, decimal_sep='.', group_sep=','):
+    """NUMBERVALUE → 按指定分隔符将文本转为数字。"""
+    s = text.astype(str)
+    if isinstance(s, pd.Series):
+        return s.apply(lambda x: pd.to_numeric(
+            x.replace(str(group_sep), '').replace(str(decimal_sep), '.'), errors='coerce'))
+    return pd.to_numeric(
+        s.replace(str(group_sep), '').replace(str(decimal_sep), '.'), errors='coerce')
+
+
+def _dollar(num, decimals=2):
+    """DOLLAR → 格式化为货币文本。"""
+    num = pd.to_numeric(num, errors='coerce')
+    d = int(decimals)
+    fmt = f"${{:, .{d}f}}"
+    if isinstance(num, pd.Series):
+        return num.apply(lambda x: fmt.format(x) if pd.notna(x) else '')
+    return fmt.format(num) if pd.notna(num) else ''
+
+
+def _rmbtext(num):
+    """RMBTEXT → 数字转中文大写金额（WPS）。"""
+    digits = '零壹贰叁肆伍陆柒捌玖'
+    units = ['', '拾', '佰', '仟']
+    big_units = ['', '万', '亿', '兆']
+    num = float(pd.to_numeric(num, errors='coerce'))
+    if pd.isna(num):
+        return ''
+    if num == 0:
+        return '零元整'
+    neg = num < 0
+    num = abs(num)
+    integer_part = int(num)
+    decimal_part = round((num - integer_part) * 100)
+    jiao = decimal_part // 10
+    fen = decimal_part % 10
+    result = ''
+    if integer_part > 0:
+        s = str(integer_part)
+        n = len(s)
+        for i, ch in enumerate(s):
+            d = int(ch)
+            pos = n - 1 - i
+            big = pos // 4
+            small = pos % 4
+            if d != 0:
+                result += digits[d] + units[small]
+            else:
+                if small == 0 and big > 0:
+                    result = result.rstrip('零') + big_units[big]
+                elif not result.endswith('零'):
+                    result += '零'
+        result = result.rstrip('零') + '元'
+    if jiao == 0 and fen == 0:
+        result += '整'
+    else:
+        if jiao > 0:
+            result += digits[jiao] + '角'
+        elif integer_part > 0:
+            result += '零'
+        if fen > 0:
+            result += digits[fen] + '分'
+    return ('负' if neg else '') + result
+
+
+def _asc_func(text):
+    """ASC → 全角转半角。"""
+    def _convert(s):
+        result = []
+        for ch in s:
+            code = ord(ch)
+            if 0xFF01 <= code <= 0xFF5E:
+                result.append(chr(code - 0xFEE0))
+            elif code == 0x3000:
+                result.append(' ')
+            else:
+                result.append(ch)
+        return ''.join(result)
+    if isinstance(text, pd.Series):
+        return text.astype(str).apply(_convert)
+    return _convert(str(text))
+
+
+def _widechar(text):
+    """WIDECHAR/WIDECHAR → 半角转全角。"""
+    def _convert(s):
+        result = []
+        for ch in s:
+            code = ord(ch)
+            if 0x21 <= code <= 0x7E:
+                result.append(chr(code + 0xFEE0))
+            elif ch == ' ':
+                result.append('　')
+            else:
+                result.append(ch)
+        return ''.join(result)
+    if isinstance(text, pd.Series):
+        return text.astype(str).apply(_convert)
+    return _convert(str(text))
+
+
+def _counta(*args):
+    """COUNTA → 统计非空值个数。"""
+    count = 0
+    for a in args:
+        if isinstance(a, pd.Series):
+            count += a.dropna().astype(str).ne('').sum()
+        elif a is not None and str(a) != '':
+            count += 1
+    return count
+
+
+def _countblank(*args):
+    """COUNTBLANK → 统计空值个数。"""
+    count = 0
+    for a in args:
+        if isinstance(a, pd.Series):
+            count += a.isna().sum() + (a.astype(str) == '').sum()
+        elif a is None or str(a) == '':
+            count += 1
+    return count
+
+
+def _countifs(*args):
+    """COUNTIFS → 多条件计数（criteria_range1, criteria1, ...）。"""
+    if len(args) < 2 or len(args) % 2 != 0:
+        return 0
+    ranges = [args[i] for i in range(0, len(args), 2)]
+    criteria = [args[i] for i in range(1, len(args), 2)]
+    mask = pd.Series([True] * len(ranges[0])) if isinstance(ranges[0], pd.Series) else True
+    for r, c in zip(ranges, criteria):
+        if isinstance(r, pd.Series):
+            c_str = str(c).strip('"\'')
+            if c_str.startswith('>=') or c_str.startswith('<=') or c_str.startswith('<>') or c_str.startswith('!='):
+                pass
+            elif c_str.startswith('>'):
+                mask = mask & (pd.to_numeric(r, errors='coerce') > pd.to_numeric(c_str[1:], errors='coerce'))
+            elif c_str.startswith('<'):
+                mask = mask & (pd.to_numeric(r, errors='coerce') < pd.to_numeric(c_str[1:], errors='coerce'))
+            else:
+                mask = mask & (r.astype(str) == c_str)
+    if isinstance(mask, pd.Series):
+        return mask.sum()
+    return 0
+
+
+def _sumifs(sum_range, *args):
+    """SUMIFS → 多条件求和（sum_range, criteria_range1, criteria1, ...）。"""
+    if len(args) < 2 or len(args) % 2 != 0:
+        return 0
+    ranges = [args[i] for i in range(0, len(args), 2)]
+    criteria = [args[i] for i in range(1, len(args), 2)]
+    mask = pd.Series([True] * len(ranges[0])) if isinstance(ranges[0], pd.Series) else True
+    for r, c in zip(ranges, criteria):
+        c_str = str(c).strip('"\'')
+        if c_str.startswith('>'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') > pd.to_numeric(c_str[1:], errors='coerce'))
+        elif c_str.startswith('<'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') < pd.to_numeric(c_str[1:], errors='coerce'))
+        else:
+            mask = mask & (r.astype(str) == c_str)
+    if isinstance(mask, pd.Series) and isinstance(sum_range, pd.Series):
+        return pd.to_numeric(sum_range, errors='coerce')[mask].sum()
+    return 0
+
+
+def _averageifs(avg_range, *args):
+    """AVERAGEIFS → 多条件求平均。"""
+    if len(args) < 2 or len(args) % 2 != 0:
+        return np.nan
+    ranges = [args[i] for i in range(0, len(args), 2)]
+    criteria = [args[i] for i in range(1, len(args), 2)]
+    mask = pd.Series([True] * len(ranges[0])) if isinstance(ranges[0], pd.Series) else True
+    for r, c in zip(ranges, criteria):
+        c_str = str(c).strip('"\'')
+        if c_str.startswith('>'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') > pd.to_numeric(c_str[1:], errors='coerce'))
+        elif c_str.startswith('<'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') < pd.to_numeric(c_str[1:], errors='coerce'))
+        else:
+            mask = mask & (r.astype(str) == c_str)
+    if isinstance(mask, pd.Series) and isinstance(avg_range, pd.Series):
+        return pd.to_numeric(avg_range, errors='coerce')[mask].mean()
+    return np.nan
+
+
+def _maxifs(max_range, *args):
+    """MAXIFS → 多条件求最大值。"""
+    if len(args) < 2 or len(args) % 2 != 0:
+        return np.nan
+    ranges = [args[i] for i in range(0, len(args), 2)]
+    criteria = [args[i] for i in range(1, len(args), 2)]
+    mask = pd.Series([True] * len(ranges[0])) if isinstance(ranges[0], pd.Series) else True
+    for r, c in zip(ranges, criteria):
+        c_str = str(c).strip('"\'')
+        if c_str.startswith('>'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') > pd.to_numeric(c_str[1:], errors='coerce'))
+        elif c_str.startswith('<'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') < pd.to_numeric(c_str[1:], errors='coerce'))
+        else:
+            mask = mask & (r.astype(str) == c_str)
+    if isinstance(mask, pd.Series) and isinstance(max_range, pd.Series):
+        return pd.to_numeric(max_range, errors='coerce')[mask].max()
+    return np.nan
+
+
+def _minifs(min_range, *args):
+    """MINIFS → 多条件求最小值。"""
+    if len(args) < 2 or len(args) % 2 != 0:
+        return np.nan
+    ranges = [args[i] for i in range(0, len(args), 2)]
+    criteria = [args[i] for i in range(1, len(args), 2)]
+    mask = pd.Series([True] * len(ranges[0])) if isinstance(ranges[0], pd.Series) else True
+    for r, c in zip(ranges, criteria):
+        c_str = str(c).strip('"\'')
+        if c_str.startswith('>'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') > pd.to_numeric(c_str[1:], errors='coerce'))
+        elif c_str.startswith('<'):
+            mask = mask & (pd.to_numeric(r, errors='coerce') < pd.to_numeric(c_str[1:], errors='coerce'))
+        else:
+            mask = mask & (r.astype(str) == c_str)
+    if isinstance(mask, pd.Series) and isinstance(min_range, pd.Series):
+        return pd.to_numeric(min_range, errors='coerce')[mask].min()
+    return np.nan
+
+
+def _percentile(arr, k):
+    """PERCENTILE → 第 k 百分位数（0~1）。"""
+    arr = pd.to_numeric(arr, errors='coerce').dropna()
+    k = float(k)
+    return arr.quantile(k)
+
+
+def _percentile_inc(arr, k):
+    """PERCENTILE.INC → 同 PERCENTILE。"""
+    return _percentile(arr, k)
+
+
+def _percentile_exc(arr, k):
+    """PERCENTILE.EXC → 第 k 百分位数（0<k<1）。"""
+    arr = pd.to_numeric(arr, errors='coerce').dropna()
+    k = float(k)
+    if k <= 0 or k >= 1:
+        return np.nan
+    return arr.quantile(k)
+
+
+def _quartile(arr, quart):
+    """QUARTILE → 四分位数。"""
+    q = int(quart)
+    k_map = {0: 0.0, 1: 0.25, 2: 0.5, 3: 0.75, 4: 1.0}
+    return _percentile(arr, k_map.get(q, 0.5))
+
+
+def _quartile_inc(arr, quart):
+    """QUARTILE.INC → 同 QUARTILE。"""
+    return _quartile(arr, quart)
+
+
+def _quartile_exc(arr, quart):
+    """QUARTILE.EXC → 四分位数（排除边界）。"""
+    q = int(quart)
+    k_map = {1: 0.25, 2: 0.5, 3: 0.75}
+    return _percentile_exc(arr, k_map.get(q, 0.5))
+
+
+def _percentrank(arr, x, significance=3):
+    """PERCENTRANK → 值在数组中的百分比排位。"""
+    arr = pd.to_numeric(arr, errors='coerce').dropna().sort_values()
+    x = float(x)
+    sig = int(significance)
+    if x < arr.min() or x > arr.max():
+        return np.nan
+    rank = (arr < x).sum()
+    return round(rank / (len(arr) - 1), sig)
+
+
+def _percentrank_inc(arr, x, significance=3):
+    """PERCENTRANK.INC → 同 PERCENTRANK。"""
+    return _percentrank(arr, x, significance)
+
+
+def _percentrank_exc(arr, x, significance=3):
+    """PERCENTRANK.EXC → 百分比排位（排除边界）。"""
+    arr = pd.to_numeric(arr, errors='coerce').dropna().sort_values()
+    x = float(x)
+    sig = int(significance)
+    n = len(arr)
+    if x <= arr.min() or x >= arr.max():
+        return np.nan
+    rank = (arr < x).sum()
+    return round(rank / (n + 1), sig)
+
+
+def _stdev_s(*args):
+    """STDEV.S → 样本标准差（新版名称）。"""
+    return _stdev(*args)
+
+
+def _var_s(*args):
+    """VAR.S → 样本方差（新版名称）。"""
+    return _var(*args)
+
+
+def _stdev_p(*args):
+    """STDEV.P → 总体标准差（新版名称）。"""
+    return _stdevp(*args)
+
+
+def _var_p(*args):
+    """VAR.P → 总体方差（新版名称）。"""
+    return _varp(*args)
+
+
+def _ifna(val, fallback):
+    """IFNA → 如果是 #N/A 则返回备选值。"""
+    if isinstance(val, pd.Series):
+        return val.fillna(fallback)
+    return val if pd.notna(val) else fallback
+
+
+def _iserror(val):
+    """ISERROR → 是否为任何错误。"""
+    if isinstance(val, pd.Series):
+        return val.isna() | val.astype(str).str.contains(r'#(REF|NAME|VALUE|DIV|NULL|N/A|NUM)!', na=False)
+    return pd.isna(val)
+
+
+def _iserr(val):
+    """ISERR → 是否为错误（不含 #N/A）。"""
+    if isinstance(val, pd.Series):
+        return val.astype(str).str.contains(r'#(REF|NAME|VALUE|DIV|NULL|NUM)!', na=False)
+    return False
+
+
+def _iseven(num):
+    """ISEVEN → 是否为偶数。"""
+    num = pd.to_numeric(num, errors='coerce')
+    return (num % 2) == 0
+
+
+def _isodd(num):
+    """ISODD → 是否为奇数。"""
+    num = pd.to_numeric(num, errors='coerce')
+    return (num % 2) == 1
+
+
+def _type_func(val):
+    """TYPE → 返回值的类型编号（1=数字,2=文本,4=布尔,16=错误,64=数组）。"""
+    if isinstance(val, pd.Series):
+        return val.apply(lambda x: 2 if isinstance(x, str) else (16 if pd.isna(x) else 1))
+    if isinstance(val, str):
+        return 2
+    if pd.isna(val):
+        return 16
+    return 1
+
+
+def _choose(index, *args):
+    """CHOOSE → 按索引选择值。"""
+    idx = int(index) if not isinstance(index, pd.Series) else int(index.iloc[0])
+    if 1 <= idx <= len(args):
+        return args[idx - 1]
+    return np.nan
+
+
+def _datevalue(text):
+    """DATEVALUE → 日期文本转日期序号。"""
+    return pd.to_datetime(text, errors='coerce')
+
+
+def _timevalue(text):
+    """TIMEVALUE → 时间文本转时间小数。"""
+    t = pd.to_datetime(text, errors='coerce')
+    if isinstance(t, pd.Series):
+        return t.dt.hour / 24 + t.dt.minute / 1440 + t.dt.second / 86400
+    return t.hour / 24 + t.minute / 1440 + t.second / 86400 if pd.notna(t) else np.nan
+
+
+def _days(end_date, start_date):
+    """DAYS → 两个日期之间的天数。"""
+    end = pd.to_datetime(end_date, errors='coerce')
+    start = pd.to_datetime(start_date, errors='coerce')
+    return (end - start).dt.days
+
+
+def _networkdays(start, end, holidays=None):
+    """NETWORKDAYS → 两个日期之间的工作日天数。"""
+    start = pd.to_datetime(start, errors='coerce')
+    end = pd.to_datetime(end, errors='coerce')
+    if isinstance(start, pd.Series):
+        result = []
+        for s, e in zip(start, end):
+            if pd.notna(s) and pd.notna(e):
+                result.append(len(pd.bdate_range(s, e)))
+            else:
+                result.append(np.nan)
+        return pd.Series(result)
+    return len(pd.bdate_range(start, end)) if pd.notna(start) and pd.notna(end) else np.nan
+
+
+def _workday(start, days, holidays=None):
+    """WORKDAY → 指定工作日数后的日期。"""
+    start = pd.to_datetime(start, errors='coerce')
+    d = int(days)
+    if isinstance(start, pd.Series):
+        return start.apply(lambda s: s + pd.tseries.offsets.BDay(d) if pd.notna(s) else pd.NaT)
+    return start + pd.tseries.offsets.BDay(d) if pd.notna(start) else pd.NaT
+
+
+def _textbefore(text, delimiter, instance_num=1):
+    """TEXTBEFORE → 分隔符之前的文本。"""
+    s = text.astype(str)
+    d = str(delimiter)
+    n = int(instance_num)
+    def _extract(x):
+        parts = x.split(d)
+        if n <= len(parts) - 1:
+            return d.join(parts[:n])
+        return x
+    if isinstance(s, pd.Series):
+        return s.apply(_extract)
+    return _extract(s)
+
+
+def _textafter(text, delimiter, instance_num=1):
+    """TEXTAFTER → 分隔符之后的文本。"""
+    s = text.astype(str)
+    d = str(delimiter)
+    n = int(instance_num)
+    def _extract(x):
+        parts = x.split(d)
+        if n <= len(parts) - 1:
+            return d.join(parts[n:])
+        return ''
+    if isinstance(s, pd.Series):
+        return s.apply(_extract)
+    return _extract(s)
+
+
+def _textsplit(text, col_delim, row_delim=None):
+    """TEXTSPLIT → 按分隔符拆分文本（返回列表，取第一列）。"""
+    s = text.astype(str)
+    cd = str(col_delim)
+    def _split(x):
+        return x.split(cd)[0] if cd in x else x
+    if isinstance(s, pd.Series):
+        return s.apply(_split)
+    return _split(s)
+
+
 # ==================== Excel 函数注册表 ====================
 _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     # --- 日期时间 ---
@@ -1552,7 +2575,6 @@ _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     'HOUR':      (lambda s: pd.to_datetime(s, errors='coerce').dt.hour, 1, 1),
     'MINUTE':    (lambda s: pd.to_datetime(s, errors='coerce').dt.minute, 1, 1),
     'SECOND':    (lambda s: pd.to_datetime(s, errors='coerce').dt.second, 1, 1),
-    'WEEKDAY':   (lambda s: pd.to_datetime(s, errors='coerce').dt.dayofweek + 1, 1, 1),
     'WEEKNUM':   (lambda s, rt=2: _weeknum(s, rt), 1, 2),
     'DATEDIF':   (lambda start, end, unit: _datedif(start, end, unit), 3, 3),
     'DATE':      (lambda y, m, d: pd.to_datetime({'year': y, 'month': m, 'day': d}), 3, 3),
@@ -1565,11 +2587,14 @@ _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     'ISOWEEKNUM': (_isoweeknum, 1, 1),
 
     # --- 逻辑 ---
-    'IF':        (lambda cond, a, b: np.where(cond, a, b), 3, 3),
+    'IF':        (lambda cond, a, b: np.where(pd.Series(cond, dtype='boolean').fillna(False).values
+                                              if isinstance(cond, pd.Series) else bool(cond), a, b), 3, 3),
     'IFS':       (_ifs, 2, None),
-    'AND':       (lambda *args: np.logical_and.reduce(args), 1, None),
-    'OR':        (lambda *args: np.logical_or.reduce(args), 1, None),
-    'NOT':       (lambda x: ~(x.astype(bool)), 1, 1),
+    'AND':       (lambda *args: pd.Series(np.logical_and.reduce(
+                     [a.fillna(False) if isinstance(a, pd.Series) else a for a in args]), dtype='boolean'), 1, None),
+    'OR':        (lambda *args: pd.Series(np.logical_or.reduce(
+                     [a.fillna(False) if isinstance(a, pd.Series) else a for a in args]), dtype='boolean'), 1, None),
+    'NOT':       (lambda x: ~(x.astype(bool).fillna(False)), 1, 1),
     'IFERROR':   (lambda val, fallback: val.where(~val.isna() & ~val.astype(str).str.contains('\\[公式错误\\]', na=False), fallback), 2, 2),
     'TRUE':      (lambda: True, 0, 0),
     'FALSE':     (lambda: False, 0, 0),
@@ -1587,7 +2612,7 @@ _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     'POWER':     (lambda base, exp: np.power(base, exp), 2, 2),
     'SUM':       (lambda *args: sum(args), 1, None),
     'AVERAGE':   (lambda *args: sum(args) / len(args), 1, None),
-    'COUNT':     (lambda *args: sum(1 for a in args), 1, None),
+    'COUNT':     (_count_numeric, 1, None),
     'MAX':       (lambda *args: np.maximum.reduce(args), 1, None),
     'MIN':       (lambda *args: np.minimum.reduce(args), 1, None),
     'CEILING':   (_ceiling, 1, 2),
@@ -1652,6 +2677,94 @@ _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     'ISTEXT':    (_istext, 1, 1),
     'ISBLANK':   (_isblank, 1, 1),
     'ISNA':      (lambda s: s.isna(), 1, 1),
+
+    # --- 行间引用 ---
+    'LAG':       (lambda s, n=1: s.shift(int(n)), 1, 2),
+    'LEAD':      (lambda s, n=1: s.shift(-int(n)), 1, 2),
+    'NEXT_IF':   (_next_if, 2, None),   # NEXT_IF(返回列, 匹配列1, [匹配列2, ...])
+    'PREV_IF':   (_prev_if, 2, None),   # PREV_IF(返回列, 匹配列1, [匹配列2, ...])
+    'NEXT_IF_ANY': (_next_if_any, 2, None),   # NEXT_IF_ANY: 空值跳过该列
+    'PREV_IF_ANY': (_prev_if_any, 2, None),   # PREV_IF_ANY: 空值跳过该列
+
+    # --- 数学扩展 ---
+    'SUMSQ':     (_sumsq, 1, None),
+    'GCD':       (_gcd, 1, None),
+    'LCM':       (_lcm, 1, None),
+    'COMBIN':    (_combin, 2, 2),
+    'PERMUT':    (_permut, 2, 2),
+    'RAND':      (_rand, 0, 0),
+    'RANDBETWEEN': (_randbetween, 2, 2),
+    'SUBTOTAL':  (_subtotal, 2, None),
+    'ROMAN':     (_roman, 1, 2),
+    'ARABIC':    (_arabic, 1, 1),
+    'BASE':      (_base, 2, 3),
+    'DECIMAL':   (_decimal, 2, 2),
+    'AGGREGATE': (_subtotal, 2, None),    # AGGREGATE 兼容 SUBTOTAL
+
+    # --- 文本扩展 ---
+    'T':         (_t_func, 1, 1),
+    'NUMBERVALUE': (_numbervalue, 1, 3),
+    'DOLLAR':    (_dollar, 1, 2),
+    'RMBTEXT':   (_rmbtext, 1, 1),
+    'ASC':       (_asc_func, 1, 1),
+    'WIDECHAR':  (_widechar, 1, 1),
+    'TEXTBEFORE': (_textbefore, 2, 3),
+    'TEXTAFTER': (_textafter, 2, 3),
+    'TEXTSPLIT': (_textsplit, 2, 3),
+
+    # --- 条件统计扩展 ---
+    'COUNTIFS':  (_countifs, 2, None),
+    'SUMIFS':    (_sumifs, 3, None),
+    'AVERAGEIFS': (_averageifs, 3, None),
+    'MAXIFS':    (_maxifs, 3, None),
+    'MINIFS':    (_minifs, 3, None),
+
+    # --- 统计扩展 ---
+    'COUNTA':    (_counta, 1, None),
+    'COUNTBLANK': (_countblank, 1, None),
+    'PERCENTILE': (_percentile, 2, 2),
+    'PERCENTILE.INC': (_percentile_inc, 2, 2),
+    'PERCENTILE.EXC': (_percentile_exc, 2, 2),
+    'QUARTILE':  (_quartile, 2, 2),
+    'QUARTILE.INC': (_quartile_inc, 2, 2),
+    'QUARTILE.EXC': (_quartile_exc, 2, 2),
+    'PERCENTRANK': (_percentrank, 2, 3),
+    'PERCENTRANK.INC': (_percentrank_inc, 2, 3),
+    'PERCENTRANK.EXC': (_percentrank_exc, 2, 3),
+    'STDEV.S':   (_stdev_s, 1, None),
+    'VAR.S':     (_var_s, 1, None),
+    'STDEV.P':   (_stdev_p, 1, None),
+    'VAR.P':     (_var_p, 1, None),
+    'GEOMEAN':   (lambda *args: np.exp(np.nanmean(np.log(np.concatenate([pd.to_numeric(a, errors='coerce').dropna().values if isinstance(a, pd.Series) else [float(a)] for a in args])))), 1, None),
+    'HARMEAN':   (lambda *args: len(args) / sum(1/pd.to_numeric(a, errors='coerce').mean() if isinstance(a, pd.Series) else 1/float(a) for a in args), 1, None),
+    'TRIMMEAN':  (lambda arr, pct: pd.to_numeric(arr, errors='coerce').dropna().pipe(lambda s: s[(s >= s.quantile(float(pct)/2)) & (s <= s.quantile(1 - float(pct)/2))]).mean(), 2, 2),
+
+    # --- 逻辑扩展 ---
+    'IFNA':      (_ifna, 2, 2),
+
+    # --- 类型判断扩展 ---
+    'ISERROR':   (_iserror, 1, 1),
+    'ISERR':     (_iserr, 1, 1),
+    'ISEVEN':    (_iseven, 1, 1),
+    'ISODD':     (_isodd, 1, 1),
+
+    # --- 信息函数 ---
+    'TYPE':      (_type_func, 1, 1),
+    'N':         (lambda s: pd.to_numeric(s, errors='coerce'), 1, 1),
+
+    # --- 查找引用 ---
+    'CHOOSE':    (_choose, 2, None),
+    'MATCH':     (lambda val, arr, mt=1: pd.to_numeric(arr, errors='coerce').eq(val).idxmax() if isinstance(arr, pd.Series) else np.nan, 2, 3),
+    'INDEX':     (lambda arr, row, col=None: arr.iloc[int(row) - 1] if isinstance(arr, pd.Series) and 1 <= int(row) <= len(arr) else np.nan, 2, 3),
+
+    # --- 日期扩展 ---
+    'DATEVALUE': (_datevalue, 1, 1),
+    'TIMEVALUE': (_timevalue, 1, 1),
+    'DAYS':      (_days, 2, 2),
+    'NETWORKDAYS': (_networkdays, 2, 3),
+    'WORKDAY':   (_workday, 2, 3),
+    'WEEKDAY':   (lambda s, rt=1: pd.to_datetime(s, errors='coerce').dt.dayofweek + int(rt), 1, 2),
+    'VLOOKUP2': (_vlookup2, 3, 4),
 }
 
 
@@ -1766,7 +2879,7 @@ def _tokenize_excel_formula(expr: str) -> list[tuple[str, str]]:
 
         # 运算符
         if ch in '+-*/><=&|^%':
-            if i + 1 < n and expr[i:i + 2] in ('>=', '<=', '!=', '=='):
+            if i + 1 < n and expr[i:i + 2] in ('>=', '<=', '!=', '<>', '=='):
                 tokens.append(('op', expr[i:i + 2]))
                 i += 2
             else:
@@ -1847,7 +2960,7 @@ def _eval_formula(expr: str, df: pd.DataFrame) -> pd.Series:
     df_cols = df.columns.tolist()
     col_map = {c: c for c in df_cols}  # 保持原始列名不变
 
-    # 尝试简单情况：纯算术表达式 → 直接用 df.eval
+	# 尝试简单情况：纯算术表达式 → 直接用 df.eval
     if not _has_excel_func(expr):
         safe_expr, safe_map, _ = _replace_column_refs(expr, df_cols)
         rename_map = {v: k for k, v in safe_map.items()}
@@ -1857,32 +2970,42 @@ def _eval_formula(expr: str, df: pd.DataFrame) -> pd.Series:
         except Exception:
             pass
 
-    # 复杂情况：有 Excel 函数 → tokenize + convert
-    tokens = _tokenize_excel_formula(expr)
+    # --- 向量化路径：tokenize + 构建 Python 表达式（缓存编译结果） ---
+    # 缓存思路：同一公式列对不同 batch 列集相同，tokenize 和 build 可复用
+    cache_key = (expr, frozenset(df_cols))
+    compiled = getattr(_eval_formula, '_cache', None)
+    if compiled is None:
+        compiled = {}
+        _eval_formula._cache = compiled
 
-    # 将 tokens 中未识别的 ident 尝试匹配列名
-    col_set = set(df_cols)
-    for idx, (ttype, tval) in enumerate(tokens):
-        if ttype == 'ident' and tval in col_set:
-            tokens[idx] = ('col', tval)
-        elif ttype == 'ident':
-            # 尝试模糊匹配
-            for col in df_cols:
-                if col in tval or tval in col:
-                    # 不自动替换，保持原样（可能是变量名）
-                    pass
+    py_expr = compiled.get(cache_key)
+    if py_expr is None:
+        tokens = _tokenize_excel_formula(expr)
+        col_set = set(df_cols)
+        for idx, (ttype, tval) in enumerate(tokens):
+            if ttype == 'ident':
+                stripped = tval.strip('[]') if tval.startswith('[') and tval.endswith(']') else tval
+                if stripped in col_set:
+                    tokens[idx] = ('col', stripped)
+                elif tval in col_set:
+                    tokens[idx] = ('col', tval)
+                else:
+                    for col in df_cols:
+                        if col in stripped or stripped in col:
+                            tokens[idx] = ('col', col)
+                            break
+        py_expr = _build_python_expr_from_tokens(tokens, df_cols)
+        compiled[cache_key] = py_expr
+        if len(compiled) > 128:
+            oldest = next(iter(compiled))
+            del compiled[oldest]
 
-    # 构建 Python 表达式
-    py_expr = _build_python_expr_from_tokens(tokens, df_cols)
-
-    # 构建受控的 eval 命名空间
     namespace = {
         '_df': df,
         '_EF': _build_func_wrappers(),
         'np': np,
         'pd': pd,
     }
-
     try:
         result = eval(py_expr, {"__builtins__": {}}, namespace)
         return _ensure_series(result, df.index)
@@ -1944,13 +3067,25 @@ def _build_python_expr_from_tokens(tokens: list[tuple[str, str]],
             elif tval in col_set:
                 parts.append(f"_df['{tval}']")
             else:
-                parts.append(tval)
+                # 处理 [列名] 方括号语法
+                stripped = tval.strip('[]') if tval.startswith('[') and tval.endswith(']') else tval
+                if stripped in col_set:
+                    parts.append(f"_df['{stripped}']")
+                else:
+                    parts.append(tval)
         elif ttype == 'number':
             parts.append(tval)
         elif ttype == 'literal':
             parts.append(tval)
         elif ttype == 'op':
-            parts.append(' ' + tval + ' ')
+            # Excel 公式中的 = 是比较运算符，Python 中需要 ==；<> 转为 !=
+            if tval == '=':
+                op = '=='
+            elif tval == '<>':
+                op = '!='
+            else:
+                op = tval
+            parts.append(' ' + op + ' ')
         else:
             parts.append(tval)
 
@@ -1988,20 +3123,63 @@ def eval_formula_columns(df: pd.DataFrame, columns: list) -> pd.DataFrame:
     Returns:
         增加了计算列的 DataFrame
     """
+    formula_count = sum(1 for c in columns if _is_formula(c))
+    logger.info(f"[FormulaEngine] 开始计算 {formula_count} 个公式列, DataFrame {len(df)} 行 x {len(df.columns)} 列")
+    try:
+        return _eval_formula_columns_impl(df, columns)
+    except Exception as e:
+        import traceback
+        logger.error(f"[FormulaEngine] 顶层异常: {e}\n{traceback.format_exc()}")
+        return df
+    except BaseException as e:
+        # 捕获 MemoryError / SystemExit 等，防止闪退
+        logger.error(f"[FormulaEngine] 致命异常（BaseException）: {e}")
+        return df
+
+
+def _resolve_api_field_refs(expr: str, api_to_display: dict[str, str]) -> str:
+    """将公式中的 CRM API 字段名（如 field_yMJbo__c）替换为 DataFrame 显示名列名。
+
+    按字段名长度降序替换，避免短名误匹配长名的一部分。
+    """
+    if not api_to_display:
+        return expr
+    result = expr
+    for api_name in sorted(api_to_display, key=len, reverse=True):
+        display = api_to_display[api_name]
+        if api_name in result:
+            result = result.replace(api_name, display)
+    return result
+
+
+def _eval_formula_columns_impl(df: pd.DataFrame, columns: list) -> pd.DataFrame:
+    """eval_formula_columns 的实际实现。"""
+    # 构建 CRM API 字段名 → 显示名 的映射（用于公式中引用内部字段名的场景）
+    api_to_display = {}
+    for col in columns:
+        sf = col.source_field if hasattr(col, 'source_field') else col.get('source_field', '')
+        dn = col.display_name if hasattr(col, 'display_name') else col.get('display_name', '')
+        if sf and dn and dn in df.columns:
+            api_to_display[sf] = dn
+
     for col in columns:
         if not _is_formula(col):
             continue
-        if not col.formula_expression.strip():
+        raw_expr = col.formula_expression if hasattr(col, 'formula_expression') else col.get('formula_expression', '')
+        if not raw_expr or not str(raw_expr).strip():
             continue
 
-        expr = _normalize_expr(col.formula_expression)
-        display = col.display_name or '计算列'
+        # 将公式中的 CRM API 字段名替换为 DataFrame 中的显示名列名
+        display = (col.display_name if hasattr(col, 'display_name') else col.get('display_name', '')) or '计算列'
 
         try:
+            resolved_expr = _resolve_api_field_refs(str(raw_expr), api_to_display)
+            expr = _normalize_expr_with_cols(resolved_expr, df.columns.tolist())
             result = _eval_formula(expr, df)
             df[display] = result
         except Exception as e:
-            logger.warning(f"[FormulaEngine] 公式计算失败 '{display}': {e}")
+            import traceback
+            logger.warning(f"[FormulaEngine] 公式计算失败 '{display}': {e}\n  原始公式: {raw_expr}\n  列名: {df.columns.tolist()[:10]}...\n  {traceback.format_exc()}")
             df[display] = f"[公式错误]"
 
     return df
@@ -2119,6 +3297,7 @@ _UNTRANSLATABLE_FUNCS: set[str] = {
     'VALUE', 'FIXED', 'CHAR', 'CODE', 'CLEAN',
     'MEDIAN', 'STDEV', 'STDEVP', 'VAR', 'VARP',
     'LARGE', 'SMALL', 'RANK', 'MODE',
+    'LEAD', 'LAG', 'NEXT_IF', 'PREV_IF', 'NEXT_IF_ANY', 'PREV_IF_ANY',
 }
 
 
@@ -2155,15 +3334,32 @@ def _translate_weeknum(expr: str) -> str:
     return re.sub(r'WEEKNUM\s*\(', '__WEEKNUM_START__(', expr, flags=re.IGNORECASE)
 
 
-# Excel → MySQL 日期格式转换映射（不含 mm，因其含义取决于上下文）
+# Excel → MySQL 日期格式转换映射
+# 按长度降序：长模式优先替换，防止短模式截断长模式的一部分
 _EXCEL_TO_MYSQL_DATE_FORMAT = [
     ('yyyy', '%Y'), ('yy', '%y'),
-    ('MMMM', '%M'), ('MMM', '%b'), ('MM', '%m'),
-    ('dddd', '%W'), ('ddd', '%a'), ('dd', '%d'),
-    ('HH', '%H'), ('hh', '%h'),
+    ('mmmm', '%M'), ('MMMM', '%M'), ('mmm', '%b'), ('MMM', '%b'), ('MM', '%m'), ('mm', '%m'),
+    ('dddd', '%W'), ('ddd', '%a'), ('dddd', '%W'), ('ddd', '%a'), ('dd', '%d'),
+    ('HH', '%H'), ('hh', '%h'), ('HH', '%H'), ('hh', '%h'),
     ('ss', '%S'),
-    ('AM/PM', '%p'), ('A/P', '%p'),
+    ('AM/PM', '%p'), ('A/P', '%p'), ('am/pm', '%p'), ('a/p', '%p'),
 ]
+
+
+def _excel_date_format_to_strftime(excel_fmt: str) -> str:
+    """将 Excel 日期格式字符串转换为 Python strftime 格式字符串。"""
+    mapping = [
+        ('yyyy', '%Y'), ('yy', '%y'),
+        ('mmmm', '%B'), ('MMMM', '%B'), ('mmm', '%b'), ('MMM', '%b'), ('MM', '%m'), ('mm', '%m'),
+        ('dddd', '%A'), ('ddd', '%a'), ('dd', '%d'),
+        ('HH', '%H'), ('hh', '%I'),
+        ('ss', '%S'),
+        ('AM/PM', '%p'), ('A/P', '%p'), ('am/pm', '%p'), ('a/p', '%p'),
+    ]
+    result = excel_fmt
+    for excel_pat, py_pat in sorted(mapping, key=lambda x: -len(x[0])):
+        result = result.replace(excel_pat, py_pat)
+    return result
 
 
 def _excel_date_format_to_mysql(excel_fmt: str) -> str:
@@ -2174,21 +3370,20 @@ def _excel_date_format_to_mysql(excel_fmt: str) -> str:
       - 否则 → 月份 → MySQL %m
     """
     result = excel_fmt
-    for excel_pat, mysql_pat in _EXCEL_TO_MYSQL_DATE_FORMAT:
+    # 按长度降序替换，避免短模式（如 'm'）被多次误匹配
+    for excel_pat, mysql_pat in sorted(_EXCEL_TO_MYSQL_DATE_FORMAT, key=lambda x: -len(x[0])):
         result = result.replace(excel_pat, mysql_pat)
-
-    # 在上下文敏感的映射之前，先完成 MM → %m，再根据格式中是否含时间成分来决定 mm 的含义
+    # mm 在映射表中已处理为 %m（月份）。如果有时间上下文则覆盖为分钟
     has_time_context = bool(re.search(r'[Hhs]', excel_fmt))
-    if has_time_context:
-        result = result.replace('mm', '%i')   # 分钟
-    else:
-        result = result.replace('mm', '%m')   # 月份（纯日期格式）
-    return result
+    if has_time_context and 'mm' in excel_fmt:
+        # 先恢复 %m（月份），再只对原始格式中出现的 mm 替换为分钟
+        result = result.replace('%i', '%m')  # undo any earlier min-based replace
+        result = result.replace('%m', '%i', 1)  # only first occurrence → minutes
 
 
 def _has_date_format_patterns(fmt: str) -> bool:
-    """判断格式字符串是否包含日期格式模式（y, M, d, H, h, s 等）。"""
-    date_indicators = {'y', 'M', 'd', 'H', 'h', 's', 'A', 'P', '上午', '下午'}
+    """判断格式字符串是否包含日期格式模式（y, M, d, H, h, s 等，含大小写）。"""
+    date_indicators = {'y', 'Y', 'M', 'm', 'd', 'D', 'H', 'h', 's', 'S', 'A', 'a', 'P', 'p', '上午', '下午'}
     return any(c in fmt for c in date_indicators)
 
 
@@ -2304,8 +3499,13 @@ def _translate_text_to_sql(expr: str) -> str:
 
                         if _has_date_format_patterns(fmt_str):
                             mysql_fmt = _excel_date_format_to_mysql(fmt_str)
+                            # 用 CASE WHEN 包裹，防止非日期值（如 '1'）触发
+                            # MySQL 严格模式的 "Incorrect datetime value" 错误
                             result.append(
-                                f"DATE_FORMAT({value_expr}, '{mysql_fmt}')"
+                                f"CASE WHEN {value_expr} IS NULL THEN NULL "
+                                f"WHEN CHAR_LENGTH({value_expr}) >= 8 "
+                                f"THEN DATE_FORMAT({value_expr}, '{mysql_fmt}') "
+                                f"ELSE CAST({value_expr} AS CHAR) END"
                             )
                         else:
                             result.append(f"CAST({value_expr} AS CHAR)")
@@ -2318,6 +3518,88 @@ def _translate_text_to_sql(expr: str) -> str:
             i += 1
 
     return ''.join(result)
+
+def _split_vlookup2_args(inner: str) -> list[str]:
+    """按逗号分隔 VLOOKUP2 参数，尊重括号嵌套。"""
+    args = []
+    depth = 0
+    current = []
+    for ch in inner:
+        if ch == '(':
+            depth += 1
+            current.append(ch)
+        elif ch == ')':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            args.append(''.join(current))
+            current = []
+        else:
+            current.append(ch)
+    args.append(''.join(current))
+    return args
+
+
+def _translate_vlookup2_to_sql(expr: str) -> str:
+    """将表达式中的 VLOOKUP2(field_a, field_b, result, mode) 翻译为 MySQL SQL。
+    
+    当前仅支持 mode='next'，生成：
+        CASE WHEN A = LEAD(A) OVER (ORDER BY _row_id)
+              AND B = LEAD(B) OVER (ORDER BY _row_id)
+             THEN LEAD(C) OVER (ORDER BY _row_id)
+             ELSE '' END
+    """
+    import re
+    result_parts = []
+    last_end = 0
+
+    for m in re.finditer(r'VLOOKUP2\s*\(', expr, re.IGNORECASE):
+        start = m.start()
+        depth = 1
+        i = m.end()
+        while i < len(expr) and depth > 0:
+            if expr[i] == '(':
+                depth += 1
+            elif expr[i] == ')':
+                depth -= 1
+            i += 1
+        if depth != 0:
+            continue
+
+        inner = expr[m.end():i - 1]
+        args = _split_vlookup2_args(inner)
+        if len(args) < 3:
+            continue
+
+        field_a = args[0].strip()
+        field_b = args[1].strip()
+        result_field = args[2].strip()
+        mode_arg = args[3].strip() if len(args) > 3 else ''
+
+        mode_clean = mode_arg.strip('"\' ').lower()
+        if mode_clean.startswith('\x00l') or mode_clean.startswith('\x00L'):
+            mode_clean = 'next'
+
+        if mode_clean == 'next':
+            replacement = (
+                f"CASE WHEN {field_a} <=> LEAD({field_a}) OVER (ORDER BY _row_id) "
+                f"AND {field_b} <=> LEAD({field_b}) OVER (ORDER BY _row_id) "
+                f"THEN LEAD({result_field}) OVER (ORDER BY _row_id) "
+                f"ELSE '' END"
+            )
+        else:
+            continue
+
+        result_parts.append(expr[last_end:start])
+        result_parts.append(replacement)
+        last_end = i
+
+    if not result_parts:
+        return expr
+
+    result_parts.append(expr[last_end:])
+    return ''.join(result_parts)
+
 
 
 def translate_formula_to_sql(expr: str, column_names: list[str],
@@ -2335,7 +3617,7 @@ def translate_formula_to_sql(expr: str, column_names: list[str],
     Returns:
         MySQL SQL 表达式字符串，或 None（表示无法翻译）
     """
-    expr = _normalize_expr(expr)
+    expr = _normalize_expr_with_cols(expr, column_names)
     if not expr.strip():
         return 'NULL'
 
@@ -2368,15 +3650,21 @@ def translate_formula_to_sql(expr: str, column_names: list[str],
     expr = re.sub(r"'[^']*'", _save_literal, expr)
     expr = re.sub(r'"[^"]*"', _save_literal, expr)
 
+    # 列引用中的方括号：Excel 结构化引用 [列名] → 列名
+    expr = re.sub(r'(?<!_)\.?(?<!\\[)`?\[([^\]]+)\]`?', r'`\1`', expr)
+
     # 特殊处理 WEEKNUM → MySQL WEEK
     expr = _translate_weeknum(expr)
     # 还原 WEEKNUM 占位符（_translate_weeknum 替换了函数名开头，这里补全参数处理）
     # 简化处理：直接匹配完整的 WEEKNUM(...) 调用
     if '__WEEKNUM_START__' in expr:
         expr = _finish_weeknum_translation(expr)
+    # 特殊处理 VLOOKUP2 → MySQL CASE WHEN + LEAD 窗口函数
+    expr = _translate_vlookup2_to_sql(expr)
+
 
     # 按列名长度降序替换列引用（避免短列名错误匹配长列名的一部分）
-    sorted_cols = sorted(column_names, key=len, reverse=True)
+    sorted_cols = sorted([str(c) for c in column_names], key=len, reverse=True)
     for col in sorted_cols:
         if col in expr:
             quoted = f"`{col.replace('`', '``')}`"
@@ -2457,296 +3745,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont, QColor, QAction
 
 
-
-class ReportListPage(QWidget):
-    """报表预设列表页。
-
-    信号:
-        reportEdit(str): 双击/编辑报表时发射，携带报表 ID
-        newReport(): 点击"新建报表"时发射
-    """
-
-    reportEdit = pyqtSignal(str)
-    newReport = pyqtSignal()
-
-    def __init__(self, store=None, parent=None):
-        super().__init__(parent)
-        self._store = store
-        self._presets = []
-        self._filtered_presets = []
-        self._current_page = 1
-        self._page_size = DEFAULT_PAGE_SIZES[0] if DEFAULT_PAGE_SIZES else 20
-
-        self._build_ui()
-        self._connect_signals()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-
-        # 标题栏
-        title_layout = QHBoxLayout()
-        title_label = QLabel("📊 自定义报表")
-        title_font = QFont()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_layout.addWidget(title_label)
-        title_layout.addStretch()
-        layout.addLayout(title_layout)
-
-        # 工具栏
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(6)
-
-        self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("搜索报表名称...")
-        self._search_edit.setMinimumWidth(200)
-        toolbar.addWidget(self._search_edit)
-
-        toolbar.addStretch()
-
-        self._new_btn = QPushButton("＋ 新建报表")
-        self._new_btn.setStyleSheet(
-            "QPushButton { background-color: #1890FF; color: white; padding: 6px 16px; "
-            "border-radius: 4px; border: none; } "
-            "QPushButton:hover { background-color: #40A9FF; }"
-        )
-        toolbar.addWidget(self._new_btn)
-
-        self._delete_btn = QPushButton("删除")
-        self._delete_btn.setStyleSheet(
-            "QPushButton { padding: 6px 12px; border: 1px solid #D9D9D9; border-radius: 4px; } "
-            "QPushButton:hover { border-color: #FF4D4F; color: #FF4D4F; }"
-        )
-        toolbar.addWidget(self._delete_btn)
-
-        self._copy_btn = QPushButton("复制")
-        self._copy_btn.setStyleSheet(
-            "QPushButton { padding: 6px 12px; border: 1px solid #D9D9D9; border-radius: 4px; } "
-            "QPushButton:hover { border-color: #1890FF; color: #1890FF; }"
-        )
-        toolbar.addWidget(self._copy_btn)
-
-        layout.addLayout(toolbar)
-
-        # 表格
-        self._table = QTableWidget()
-        self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(["报表名称", "类型", "主数据源", "修改时间", "状态"])
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.setAlternatingRowColors(True)
-        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        layout.addWidget(self._table)
-
-        # 分页
-        page_layout = QHBoxLayout()
-        page_layout.addStretch()
-
-        page_layout.addWidget(QLabel("每页:"))
-        self._page_size_combo = QComboBox()
-        for size in DEFAULT_PAGE_SIZES:
-            self._page_size_combo.addItem(str(size), size)
-        page_layout.addWidget(self._page_size_combo)
-
-        page_layout.addSpacing(16)
-
-        self._prev_btn = QPushButton("◀ 上一页")
-        self._prev_btn.setStyleSheet(
-            "QPushButton { padding: 4px 12px; border: 1px solid #D9D9D9; border-radius: 4px; } "
-            "QPushButton:hover { border-color: #1890FF; } "
-            "QPushButton:disabled { color: #CCCCCC; }"
-        )
-        page_layout.addWidget(self._prev_btn)
-
-        self._page_label = QLabel("第 1 页 / 共 1 页")
-        page_layout.addWidget(self._page_label)
-
-        self._next_btn = QPushButton("下一页 ▶")
-        self._next_btn.setStyleSheet(
-            "QPushButton { padding: 4px 12px; border: 1px solid #D9D9D9; border-radius: 4px; } "
-            "QPushButton:hover { border-color: #1890FF; } "
-            "QPushButton:disabled { color: #CCCCCC; }"
-        )
-        page_layout.addWidget(self._next_btn)
-
-        layout.addLayout(page_layout)
-
-    def _connect_signals(self):
-        self._new_btn.clicked.connect(self._on_new_report)
-        self._delete_btn.clicked.connect(self._on_delete)
-        self._copy_btn.clicked.connect(self._on_copy)
-        self._search_edit.textChanged.connect(self._on_search)
-        self._table.cellDoubleClicked.connect(self._on_double_click)
-        self._table.customContextMenuRequested.connect(self._on_context_menu)
-        self._page_size_combo.currentIndexChanged.connect(self._on_page_size_changed)
-        self._prev_btn.clicked.connect(self._on_prev_page)
-        self._next_btn.clicked.connect(self._on_next_page)
-
-    def refresh(self):
-        """刷新列表数据。"""
-        if self._store:
-            filter_text = self._search_edit.text().strip() or None
-            self._presets = self._store.list_presets(filter_text=filter_text)
-        else:
-            self._presets = []
-        self._filtered_presets = list(self._presets)
-        self._current_page = 1
-        self._populate_table()
-
-    def _populate_table(self):
-        total = len(self._filtered_presets)
-        page_count = max(1, (total + self._page_size - 1) // self._page_size)
-        self._current_page = min(self._current_page, page_count)
-        start = (self._current_page - 1) * self._page_size
-        end = min(start + self._page_size, total)
-        page_items = self._filtered_presets[start:end]
-
-        self._table.setRowCount(len(page_items))
-        for row_idx, preset in enumerate(page_items):
-            name_item = QTableWidgetItem(preset.name)
-            name_item.setData(Qt.ItemDataRole.UserRole, preset.key)
-            self._table.setItem(row_idx, 0, name_item)
-
-            type_display = {"report": "报表", "folder": "文件夹", "dashboard": "仪表盘"}.get(preset.type, preset.type)
-            self._table.setItem(row_idx, 1, QTableWidgetItem(type_display))
-            self._table.setItem(row_idx, 2, QTableWidgetItem(preset.main_source or '-'))
-            self._table.setItem(row_idx, 3, QTableWidgetItem(preset.modified or '-'))
-            status_display = "✓ 启用" if preset.status == 'enabled' else "✗ 禁用"
-            self._table.setItem(row_idx, 4, QTableWidgetItem(status_display))
-
-        self._update_pagination_ui(page_count)
-
-    def _update_pagination_ui(self, page_count):
-        self._page_label.setText(f"第 {self._current_page} 页 / 共 {page_count} 页")
-        self._prev_btn.setEnabled(self._current_page > 1)
-        self._next_btn.setEnabled(self._current_page < page_count)
-
-    def _on_search(self, text):
-        filter_text = text.strip().lower()
-        if filter_text:
-            self._filtered_presets = [p for p in self._presets if filter_text in p.name.lower()]
-        else:
-            self._filtered_presets = list(self._presets)
-        self._current_page = 1
-        self._populate_table()
-
-    def _on_double_click(self, row, col):
-        item = self._table.item(row, 0)
-        if item:
-            report_id = item.data(Qt.ItemDataRole.UserRole)
-            if report_id:
-                self.reportEdit.emit(report_id)
-
-    def _on_new_report(self):
-        self.newReport.emit()
-
-    def _on_delete(self):
-        row = self._table.currentRow()
-        if row < 0:
-            return
-        item = self._table.item(row, 0)
-        if not item:
-            return
-        name = item.text()
-        report_id = item.data(Qt.ItemDataRole.UserRole)
-        reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除报表「{name}」吗？\n此操作不可恢复。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            if self._store:
-                self._store.delete_preset(report_id or name)
-            self.refresh()
-
-    def _on_copy(self):
-        row = self._table.currentRow()
-        if row < 0:
-            return
-        item = self._table.item(row, 0)
-        if not item:
-            return
-        name = item.text()
-        report_id = item.data(Qt.ItemDataRole.UserRole)
-        if self._store:
-            config = self._store.load_preset(report_id or name)
-            if config:
-                new_name = f"{name} - 副本"
-                self._store.save_preset(new_name, config)
-                self.refresh()
-
-    def _on_context_menu(self, pos):
-        row = self._table.rowAt(pos.y())
-        if row < 0:
-            return
-        item = self._table.item(row, 0)
-        if not item:
-            return
-        name = item.text()
-        report_id = item.data(Qt.ItemDataRole.UserRole)
-
-        menu = QMenu(self)
-        edit_action = QAction("编辑", menu)
-        edit_action.triggered.connect(lambda: self.reportEdit.emit(report_id or name))
-        menu.addAction(edit_action)
-
-        copy_action = QAction("复制", menu)
-        copy_action.triggered.connect(self._on_copy)
-        menu.addAction(copy_action)
-
-        menu.addSeparator()
-
-        delete_action = QAction("删除", menu)
-        delete_action.triggered.connect(self._on_delete)
-        menu.addAction(delete_action)
-
-        menu.exec(self._table.viewport().mapToGlobal(pos))
-
-    def _on_page_size_changed(self):
-        self._page_size = self._page_size_combo.currentData() or 20
-        self._current_page = 1
-        self._populate_table()
-
-    def _on_prev_page(self):
-        if self._current_page > 1:
-            self._current_page -= 1
-            self._populate_table()
-
-    def _on_next_page(self):
-        total = len(self._filtered_presets)
-        page_count = max(1, (total + self._page_size - 1) // self._page_size)
-        if self._current_page < page_count:
-            self._current_page += 1
-            self._populate_table()
-
-
-# -- custom_report/models.py --
-"""
-自定义报表数据模型
-
-ReportDefinition 是一份报表的完整定义，包含:
-- 基本信息 (名称、主表)
-- JOIN 关系 (哪些表、怎么连)
-- 显示列 (哪些字段、显示名)
-- 筛选条件
-- 画布布局
-"""
-
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from typing import Optional
-import uuid
-import json
-
-
-# ==================== 枚举 ====================
 
 class JoinType(Enum):
     """两张表之间的 JOIN 方式"""
@@ -2872,7 +3870,7 @@ class FieldColumn:
     # 地址提取字段
     address_source_fields: list = field(default_factory=list)
     # 候选列显示名列表，最多 5 个，按优先级排列
-    address_target_level: str = ""     # "province" | "province_short" | "city" | "area"
+    address_target_level: str = ""     # "province" | "province_short" | "city_full" | "city_short"
     # 日期成分提取字段
     date_part_source_field: str = ""   # 源日期字段 API 名（如 create_time）
     date_part_unit: str = ""           # "year" | "month" | "week" | "quarter"
@@ -2939,14 +3937,48 @@ class ReportDefinition:
     sync_id_fields: list = field(default_factory=list)   # 列显示名列表，如 ["销售订单号", "发货单号"]
     sync_id_separator: str = "_"                          # 拼接分隔符
 
+    # 排序配置
+    sort_config: list = field(default_factory=list)        # [{"field": "列显示名", "direction": "asc"|"desc"}, ...]
+
+    # AI 助手对话管理
+    ai_conversations: list = field(default_factory=list)  # [{id, title, created_at, messages, context_texts}]
+    ai_active_conversation_id: str = ""                    # 当前活跃对话 ID
+
+    # 旧版兼容字段（不再写入，仅用于迁移）
+    ai_chat_messages: list = field(default_factory=list)
+
     def __post_init__(self):
         # 反序列化时修复嵌套对象类型
         if self.joins and isinstance(self.joins[0], dict):
             self.joins = [JoinDefinition(**j) if isinstance(j, dict) else j for j in self.joins]
         if self.columns and isinstance(self.columns[0], dict):
-            self.columns = [FieldColumn(**c) if isinstance(c, dict) else c for c in self.columns]
+            fixed = []
+            for c in self.columns:
+                if isinstance(c, dict):
+                    # 兼容旧数据：source_object → source_object_api
+                    if 'source_object' in c and 'source_object_api' not in c:
+                        c = dict(c)
+                        c['source_object_api'] = c.pop('source_object')
+                    fixed.append(FieldColumn(**c))
+                else:
+                    fixed.append(c)
+            self.columns = fixed
         if self.filters and isinstance(self.filters[0], dict):
             self.filters = [FilterCondition(**f) if isinstance(f, dict) else f for f in self.filters]
+
+        # 兼容旧数据：ai_chat_messages → ai_conversations
+        if self.ai_chat_messages and not self.ai_conversations:
+            import uuid as _uuid
+            conv_id = _uuid.uuid4().hex[:8]
+            self.ai_conversations = [{
+                'id': conv_id,
+                'title': '对话 1',
+                'created_at': self.modified_at or '',
+                'messages': list(self.ai_chat_messages),
+                'context_texts': [],
+            }]
+            self.ai_active_conversation_id = conv_id
+            self.ai_chat_messages = []  # 清空旧字段
 
     def to_dict(self) -> dict:
         """序列化为可 JSON 存储的 dict"""
@@ -3009,7 +4041,17 @@ def _deserialize_report(data: dict) -> dict:
         if k == 'joins':
             result[k] = [JoinDefinition(**j) if isinstance(j, dict) else j for j in (v or [])]
         elif k == 'columns':
-            result[k] = [FieldColumn(**c) if isinstance(c, dict) else c for c in (v or [])]
+            fixed_cols = []
+            for c in (v or []):
+                if isinstance(c, dict):
+                    # 兼容旧数据：source_object → source_object_api
+                    if 'source_object' in c and 'source_object_api' not in c:
+                        c = dict(c)
+                        c['source_object_api'] = c.pop('source_object')
+                    fixed_cols.append(FieldColumn(**c))
+                else:
+                    fixed_cols.append(c)
+            result[k] = fixed_cols
         elif k == 'filters':
             result[k] = [FilterCondition(**f) if isinstance(f, dict) else f for f in (v or [])]
         else:
@@ -3498,6 +4540,16 @@ class ReportRepository:
         report.modified_at = now
         report.version += 1
         self._cache[report.id] = report
+        self._save()
+
+    def update_refresh_meta(self, report_id: str, row_count: int, refresh_time: str):
+        """仅更新刷新元数据（不改动 modified_at 和 version）"""
+        rpt = self._cache.get(report_id)
+        if not rpt:
+            return
+        rpt.result_row_count = row_count
+        rpt.last_refresh_time = refresh_time
+        rpt.result_table_name = ReportDatabase.result_table_name(report_id)
         self._save()
 
     def save_filters(self, report_id: str, filters: list):
@@ -4153,7 +5205,6 @@ class JoinSQLBuilder:
             return inner_sql
 
         outer_select = "SELECT " + ",\n       ".join(outer_parts)
-        sql = f"{outer_select}\nFROM (\n  {inner_sql}\n) _base"
 
         # 记录生成的 SQL 便于排查问题
         logger.info(f"[SQLBuilder] 生成拼表 SQL ({translated_count} 个公式列, {len(sql)} 字符):\n{sql}")
@@ -4168,8 +5219,20 @@ class JoinSQLBuilder:
     # ==================== 别名分配 + 拓扑排序 ====================
 
     def _assign_aliases(self):
-        """为每个涉及的对象分配表别名 (t0, t1, t2 ...)"""
+        """为每个涉及的对象分配表别名 (t0, t1, t2 ...)。
+        ✅ 跳过不存在的表，避免生成引用不存在表的 SQL。
+        """
         apis = list(dict.fromkeys(self._get_apis_in_join_order()))
+        # 过滤掉 MySQL 中不存在的表
+        if self._db:
+            filtered = []
+            for api in apis:
+                table = self._table_name(api)
+                if self._db.table_exists(table):
+                    filtered.append(api)
+                else:
+                    logger.warning(f"[SQLBuilder] 跳过不存在的表: api={api} → table=`{table}`")
+            apis = filtered
         self._aliases = {api: f"t{i}" for i, api in enumerate(apis)}
         self._join_order = apis
 
@@ -4259,6 +5322,9 @@ class JoinSQLBuilder:
         main_alias = self._aliases.get(self._report.main_object_api, 't0')
         has_aggregate = self._has_aggregate_columns()
         has_group_by = bool(self._report.group_by_fields)
+        has_joins = bool(self._report.joins)
+        # 有 JOIN 无聚合时，GROUP BY 主表 _id 去重，JOIN 表列需要 ANY_VALUE() 包裹
+        need_any_value = has_joins and not has_aggregate
 
         if not self._report.columns:
             return f"SELECT {main_alias}.*", []
@@ -4293,6 +5359,10 @@ class JoinSQLBuilder:
                 alias = self._aliases.get(api)
                 if alias:
                     resolved_field = self._resolve_field(api, col.source_field)
+                    if not self._is_literal_table(api):
+                        real_columns = self._get_table_columns(api)
+                        if real_columns and resolved_field not in real_columns and col.source_field in real_columns:
+                            resolved_field = col.source_field
                     direct_col_map[col.display_name] = (alias, resolved_field)
 
         for col in sorted_columns:
@@ -4326,14 +5396,31 @@ class JoinSQLBuilder:
                 display = col.display_name or '时间成分'
                 src_field_display = getattr(col, 'date_part_source_field', '') or ''
                 unit = getattr(col, 'date_part_unit', 'year') or 'year'
+                # 优先从报表已选列中查找（direct_col_map）
                 src_info = direct_col_map.get(src_field_display, (None, None))
                 src_alias, src_quoted_field = src_info
+                # 回退：在所有 JOIN 表的字段标签中搜索（源字段可能不在报表列中）
+                if not (src_alias and src_quoted_field):
+                    for api, alias in self._aliases.items():
+                        labels = self._field_labels.get(api, {})
+                        for field_key, field_label in labels.items():
+                            if field_label == src_field_display or field_key == src_field_display:
+                                resolved = self._resolve_field(api, field_key)
+                                if not self._is_literal_table(api):
+                                    real_columns = self._get_table_columns(api)
+                                    if real_columns and resolved not in real_columns and field_key in real_columns:
+                                        resolved = field_key
+                                src_alias = alias
+                                src_quoted_field = self._quote_ident(resolved)
+                                break
+                        if src_alias and src_quoted_field:
+                            break
                 if src_alias and src_quoted_field:
                     func_map = {
-                        'year': f"CAST(YEAR({src_alias}.{src_quoted_field}) AS UNSIGNED)",
-                        'month': f"CAST(MONTH({src_alias}.{src_quoted_field}) AS UNSIGNED)",
-                        'week': f"CAST(WEEK({src_alias}.{src_quoted_field}, 3) AS UNSIGNED)",
-                        'quarter': f"CAST(QUARTER({src_alias}.{src_quoted_field}) AS UNSIGNED)",
+                        'year': f"YEAR({src_alias}.{src_quoted_field})",
+                        'month': f"MONTH({src_alias}.{src_quoted_field})",
+                        'week': f"WEEK({src_alias}.{src_quoted_field}, 3)",
+                        'quarter': f"QUARTER({src_alias}.{src_quoted_field})",
                     }
                     sql_expr = func_map.get(unit, f"YEAR({src_alias}.{src_quoted_field})")
                 else:
@@ -4383,6 +5470,22 @@ class JoinSQLBuilder:
                                     resolved_field = display_agg
                 display = col.display_name or f"{col.aggregate_func}({col.source_field})"
                 agg_func = col.aggregate_func.upper()
+                # 最终校验：聚合列的字段也必须在目标表中存在
+                final_agg_cols = self._get_table_columns(api)
+                if final_agg_cols and resolved_field not in final_agg_cols:
+                    # 回退：尝试用 source_field (API 原始名) 匹配
+                    if col.source_field and col.source_field in final_agg_cols:
+                        resolved_field = col.source_field
+                        logger.info(
+                            f"[SQLBuilder] 聚合列 '{display}' 的字段 '"
+                            f"{resolved_field}' 使用 source_field '{col.source_field}' 作为列名"
+                        )
+                    else:
+                        logger.warning(
+                            f"[SQLBuilder] 聚合列 '{display}' 的字段 '{resolved_field}' "
+                            f"在表 {api} 中不存在，已跳过"
+                        )
+                        continue
                 col_infos.append({
                     'alias': alias,
                     'field': resolved_field,
@@ -4455,6 +5558,30 @@ class JoinSQLBuilder:
             # 仅当 api 被更正时才重新解析字段名（保留 display_name 回退的结果）
             if api != original_api:
                 resolved_field = self._resolve_field(api, col.source_field)
+            # 最终校验：确认 resolved_field 在目标表中确实存在
+            final_cols = self._get_table_columns(api)
+            if final_cols and resolved_field not in final_cols:
+                # 回退1: 尝试用 display_name 匹配
+                display = col.display_name or ''
+                if display and display in final_cols:
+                    resolved_field = display
+                    logger.info(
+                        f"[SQLBuilder] 列 '{col.display_name or col.source_field}' "
+                        f"使用 display_name '{display}' 作为列名"
+                    )
+                # 回退2: 尝试用 source_field (API 原始名) 匹配
+                elif col.source_field and col.source_field in final_cols:
+                    resolved_field = col.source_field
+                    logger.info(
+                        f"[SQLBuilder] 列 '{col.display_name or col.source_field}' "
+                        f"使用 source_field '{col.source_field}' 作为列名"
+                    )
+                else:
+                    logger.warning(
+                        f"[SQLBuilder] 列 '{col.display_name or col.source_field}' "
+                        f"(解析为 '{resolved_field}') 在表 {api} 中不存在，已跳过"
+                    )
+                    continue
             display = col.display_name or col.source_field
             col_infos.append({
                 'alias': alias,
@@ -4464,6 +5591,24 @@ class JoinSQLBuilder:
                 'is_aggregate': False,
                 'agg_func': '',
             })
+
+        # 汇总日志：记录哪些列被包含、哪些被跳过
+        included_names = {ci['display'] for ci in col_infos}
+        skipped = []
+        for col in sorted_columns:
+            if not isinstance(col, FieldColumn):
+                col = FieldColumn(**col)
+            if not col.visible:
+                continue
+            comp = getattr(col, 'computation_type', 'direct')
+            if comp == 'formula':
+                continue  # 公式列由外层处理，不算跳过
+            dn = col.display_name or ''
+            if dn and dn not in included_names:
+                skipped.append(f"{dn}(src={col.source_field}, api={col.source_object_api})")
+        if skipped:
+            import sys
+            print(f"[SQLBuilder] 跳过的列({len(skipped)}个): {skipped}", file=sys.stderr, flush=True)
 
         if not col_infos:
             if not (has_aggregate and has_group_by):
@@ -4516,7 +5661,11 @@ class JoinSQLBuilder:
                     f"{ci['agg_func']}({ci['alias']}.{quoted_field}) AS {self._quote_ident(display)}"
                 )
             else:
-                parts.append(f"{ci['alias']}.{quoted_field} AS {self._quote_ident(display)}")
+                col_expr = f"{ci['alias']}.{quoted_field}"
+                # 有 JOIN 无聚合时，JOIN 表列用 ANY_VALUE() 防止 MySQL strict mode 报错
+                if need_any_value and ci['alias'] != main_alias:
+                    col_expr = f"ANY_VALUE({col_expr})"
+                parts.append(f"{col_expr} AS {self._quote_ident(display)}")
 
         # 拼接 ID 列（如果配置了 sync_id_fields）
         composite_id_sql = self._build_composite_id_sql(col_infos, main_alias)
@@ -4541,9 +5690,8 @@ class JoinSQLBuilder:
             return None
         separator = getattr(self._report, 'sync_id_separator', '_') or '_'
 
-        import sys
-        print(f"[SQLBuilder] sync_id_fields={id_fields}, separator={separator}", file=sys.stderr, flush=True)
-        print(f"[SQLBuilder] aliases={self._aliases}", file=sys.stderr, flush=True)
+        logger.debug(f"[SQLBuilder] sync_id_fields={id_fields}, separator={separator}")
+        logger.debug(f"[SQLBuilder] aliases={self._aliases}")
 
         # 构建 display → (alias, mysql_field) 映射
         display_map = {}
@@ -4559,7 +5707,7 @@ class JoinSQLBuilder:
             else:
                 target_api, target_label = None, df
 
-            print(f"[SQLBuilder] 处理字段: df={df}, api={target_api}, label={target_label}", file=sys.stderr, flush=True)
+            logger.debug(f"[SQLBuilder] 处理字段: df={df}, api={target_api}, label={target_label}")
 
             if target_label == '_id':
                 # _id 是源表直列，不需要翻译
@@ -4567,11 +5715,11 @@ class JoinSQLBuilder:
                 if not alias:
                     alias = main_alias
                 parts.append(f"{alias}.`_id`")
-                print(f"[SQLBuilder]   → _id 直列: {alias}._id", file=sys.stderr, flush=True)
+                logger.debug(f"[SQLBuilder]   → _id 直列: {alias}._id")
             elif target_label in display_map:
                 alias, field = display_map[target_label]
                 parts.append(f"{alias}.{self._quote_ident(field)}")
-                print(f"[SQLBuilder]   → display_map 命中: {alias}.`{field}`", file=sys.stderr, flush=True)
+                logger.debug(f"[SQLBuilder]   → display_map 命中: {alias}.`{field}`")
             elif target_api and target_api in self._aliases:
                 # 按指定 API 查找
                 alias = self._aliases[target_api]
@@ -4581,12 +5729,11 @@ class JoinSQLBuilder:
                     if flabel == target_label:
                         resolved = self._resolve_field(target_api, fkey)
                         parts.append(f"{alias}.{self._quote_ident(resolved)}")
-                        print(f"[SQLBuilder]   → field_labels 命中 ({target_api}): {alias}.`{resolved}`", file=sys.stderr, flush=True)
+                        logger.debug(f"[SQLBuilder]   → field_labels 命中 ({target_api}): {alias}.`{resolved}`")
                         found = True
                         break
                 if not found:
                     logger.warning(f"[SQLBuilder] 拼接 ID 字段 '{df}' 在表 {target_api} 中未找到")
-                    print(f"[SQLBuilder]   → 表 {target_api} 中未找到 label='{target_label}'", file=sys.stderr, flush=True)
                     parts.append(f"'?'")
             else:
                 # 在 field_labels 中按标签反查
@@ -4597,23 +5744,22 @@ class JoinSQLBuilder:
                         if flabel == target_label:
                             resolved = self._resolve_field(api, fkey)
                             parts.append(f"{alias}.{self._quote_ident(resolved)}")
-                            print(f"[SQLBuilder]   → 全扫描命中 ({api}): {alias}.`{resolved}`", file=sys.stderr, flush=True)
+                            logger.debug(f"[SQLBuilder]   → 全扫描命中 ({api}): {alias}.`{resolved}`")
                             found = True
                             break
                     if found:
                         break
                 if not found:
                     logger.warning(f"[SQLBuilder] 拼接 ID 字段 '{df}' 未在任何表中找到")
-                    print(f"[SQLBuilder]   → 未在任何表中找到", file=sys.stderr, flush=True)
                     parts.append(f"'?'")
 
         if not parts:
-            print(f"[SQLBuilder] 无有效字段，跳过", file=sys.stderr, flush=True)
+            logger.debug(f"[SQLBuilder] 无有效字段，跳过")
             return None
 
         concat = f"CONCAT_WS('{separator}', {', '.join(parts)})"
         result = f"{concat} AS {self._quote_ident('唯一ID')}"
-        print(f"[SQLBuilder] 生成 SQL: {result}", file=sys.stderr, flush=True)
+        logger.debug(f"[SQLBuilder] 生成 SQL: {result}")
         return result
 
     def _get_base_display_names(self) -> set[str]:
@@ -4677,6 +5823,9 @@ class JoinSQLBuilder:
             if resolved == f"sr_{api}" and not self._db.table_exists(resolved):
                 if self._db.table_exists(api):
                     return api
+            # 最终兜底：确认表确实存在，不存在则回退到 sr_{api}
+            if not self._db.table_exists(resolved):
+                return f"sr_{api}"
             return resolved
         return f"sr_{api}"
 
@@ -4711,6 +5860,12 @@ class JoinSQLBuilder:
             left_api = jd.left_object_api
             right_api = jd.right_object_api
 
+            # ✅ 检查右表是否存在，不存在则跳过该 JOIN 并记录警告
+            right_table = self._table_name(right_api)
+            if self._db and not self._db.table_exists(right_table):
+                logger.warning(f"[SQLBuilder] JOIN 跳过: 右表 `{right_table}` (api={right_api}) 不存在")
+                continue
+
             left_alias = self._aliases.get(left_api)
             right_alias = self._aliases.get(right_api)
 
@@ -4726,10 +5881,12 @@ class JoinSQLBuilder:
 
             join_keyword = self._join_keyword(jd.join_type)
             right_table = self._table_name(right_api)
-            logger.info(f"[SQLBuilder] JOIN: api={right_api} → table=`{right_table}` alias={right_alias} type={jd.join_type}")
+            multi_match = getattr(jd, 'multi_match', 'expand') or 'expand'
+            logger.info(f"[SQLBuilder] JOIN: api={right_api} → table=`{right_table}` alias={right_alias} type={jd.join_type} multi_match={multi_match}")
 
             # ON 条件：match_keys
             on_conditions = []
+            match_key_fields = []  # (left_field, right_field) 用于 multi_match 子查询
             for mk in jd.match_keys:
                 mk_obj = mk if isinstance(mk, MatchKey) else MatchKey(**mk)
                 if mk_obj.left_field and mk_obj.right_field:
@@ -4739,6 +5896,7 @@ class JoinSQLBuilder:
                         f"{left_alias}.{self._quote_ident(left_field)} = "
                         f"{right_alias}.{self._quote_ident(right_field)}"
                     )
+                    match_key_fields.append((left_field, right_field))
 
             # ON 条件：该 JOIN 表专属的筛选条件（防止 LEFT JOIN 退化为 INNER JOIN）
             extra_conds = join_conds.pop(right_api, [])
@@ -4748,10 +5906,46 @@ class JoinSQLBuilder:
                 continue
 
             on_clause = " AND ".join(on_conditions)
-            parts.append(
-                f"{join_keyword} {self._quote_ident(right_table)} {right_alias}\n"
-                f"    ON {on_clause}"
-            )
+
+            # ── multi_match 策略：非 expand 时用子查询去重 ──
+            if multi_match == 'first' and match_key_fields:
+                # 每组取第一条：GROUP BY join_key + MIN(_id) → 自 JOIN 取完整行
+                gk = match_key_fields[0][1]  # 右表 join key 列名
+                mm_sub = (
+                    f"(SELECT _src.* FROM `{right_table}` _src "
+                    f"INNER JOIN (SELECT `{gk}` AS _mm_gk, MIN(`_id`) AS _mm_id "
+                    f"FROM `{right_table}` GROUP BY `{gk}`) _mm "
+                    f"ON _src.`_id` = _mm._mm_id)"
+                )
+                parts.append(
+                    f"{join_keyword} {mm_sub} {right_alias}\n"
+                    f"    ON {on_clause}"
+                )
+            elif multi_match == 'concat' and match_key_fields:
+                # 拼接所有匹配值：GROUP BY join_key + GROUP_CONCAT
+                sep = getattr(jd, 'concat_separator', '、') or '、'
+                gk = match_key_fields[0][1]
+                cols = self._get_table_columns(right_api)
+                if cols:
+                    select_parts = [f"`{gk}` AS `{gk}`"]
+                    for c in sorted(cols):
+                        if c != gk:
+                            select_parts.append(
+                                f"GROUP_CONCAT(DISTINCT `{c}` SEPARATOR '{sep}') AS `{c}`"
+                            )
+                    mm_sub = f"(SELECT {', '.join(select_parts)} FROM `{right_table}` GROUP BY `{gk}`)"
+                else:
+                    mm_sub = f"`{right_table}`"
+                parts.append(
+                    f"{join_keyword} {mm_sub} {right_alias}\n"
+                    f"    ON {on_clause}"
+                )
+            else:
+                # expand 或无 match_key：普通 JOIN（一对多展开行）
+                parts.append(
+                    f"{join_keyword} {self._quote_ident(right_table)} {right_alias}\n"
+                    f"    ON {on_clause}"
+                )
 
         # 剩余未匹配到任何 JOIN 的筛选条件（罕见：过滤字段在别名表中但没有对应 JOIN）
         # 放回 WHERE 子句作为兜底
@@ -4787,10 +5981,10 @@ class JoinSQLBuilder:
 
         for fc in self._report.filters:
             if isinstance(fc, dict):
-                field_api = fc.get('field_api', '')
+                field_api = fc.get('field_api', '') or fc.get('field', '')
                 operator = fc.get('operator', 'EQ')
                 value = fc.get('value', '')
-                target_api = fc.get('target_object_api', '')
+                target_api = fc.get('target_object_api', '') or fc.get('target_api', '')
             elif hasattr(fc, 'field_api'):
                 field_api = fc.field_api
                 operator = fc.operator
@@ -4810,6 +6004,10 @@ class JoinSQLBuilder:
 
             alias = self._aliases.get(target_api, 't0')
             resolved_field = self._resolve_field(target_api, field_api)
+            # 校验：用实际 MySQL 列名修正（中文标签可能在表中不存在）
+            real_cols = self._get_table_columns(target_api)
+            if real_cols and resolved_field not in real_cols and field_api in real_cols:
+                resolved_field = field_api
             cond = self._build_filter_condition(alias, resolved_field, operator, value)
             if not cond:
                 continue
@@ -4833,11 +6031,20 @@ class JoinSQLBuilder:
         return False
 
     def _build_group_by(self) -> str:
-        """为非聚合的直接列生成 GROUP BY 子句。
+        """生成 GROUP BY 子句。
 
-        只有当存在聚合列时才生成 GROUP BY。
-        GROUP BY 键 = 所有 computation_type='direct' 的可见列。
+        两种情况：
+        1. 有聚合列 → GROUP BY 所有直接列（原有逻辑）
+        2. 有 JOIN 但无聚合列 → GROUP BY 主表 _id（防止一对多 JOIN 产生重复行）
         """
+        main_alias = self._aliases.get(self._report.main_object_api, 't0')
+        has_joins = bool(self._report.joins)
+
+        # 情况 2：有 JOIN 无聚合 → GROUP BY 主表 _id 去重
+        if has_joins and not self._has_aggregate_columns():
+            return f"GROUP BY {main_alias}.`_id`"
+
+        # 情况 1：有聚合列 → GROUP BY 所有直接列
         if not self._has_aggregate_columns():
             return ""
         if not self._report.columns:
@@ -4901,7 +6108,7 @@ class JoinSQLBuilder:
         if op == 'CONTAINS':
             return f"{col} LIKE '%{escaped}%'"
         if op == 'NOT_CONTAINS':
-            return f"{col} NOT LIKE '%{escaped}%'"
+            return f"({col} IS NULL OR {col} NOT LIKE '%{escaped}%')"
         if op == 'STARTS_WITH':
             return f"{col} LIKE '{escaped}%'"
         if op == 'ENDS_WITH':
@@ -4919,7 +6126,7 @@ class JoinSQLBuilder:
             if not vals:
                 return ""
             quoted = ", ".join(f"'{self._escape(v)}'" for v in vals)
-            return f"{col} NOT IN ({quoted})"
+            return f"({col} IS NULL OR {col} NOT IN ({quoted}))"
         if op == 'GT':
             return f"{col} > '{escaped}'"
         if op == 'LT':
@@ -4934,37 +6141,40 @@ class JoinSQLBuilder:
             return f"({col} IS NOT NULL AND {col} != '')"
 
         # --- 日期操作符 ---
+        # 使用字符串日期比较（MySQL datetime 字符串格式 'yyyy-mm-dd HH:MM:SS'）
+        # 直接用字符串比较即可，无需转时间戳
+        escaped_date = self._escape(value)
         if op == 'DATE_BEFORE':
-            return f"{col} < {self._date_to_ts(value)}"
+            return f"{col} < '{escaped_date}'"
         if op == 'DATE_AFTER':
-            return f"{col} > {self._date_to_ts(value)}"
+            return f"{col} > '{escaped_date} 23:59:59'"
         if op == 'DATE_BEFORE_EQ':
-            return f"{col} <= {self._date_to_ts(value, end_of_day=True)}"
+            return f"{col} <= '{escaped_date} 23:59:59'"
         if op == 'DATE_AFTER_EQ':
-            return f"{col} >= {self._date_to_ts(value)}"
+            return f"{col} >= '{escaped_date}'"
         if op == 'DATE_RANGE':
             parts = value.split('~')
             if len(parts) == 2:
-                ts_start = self._date_to_ts(parts[0].strip())
-                ts_end = self._date_to_ts(parts[1].strip(), end_of_day=True)
-                return f"({col} >= {ts_start} AND {col} <= {ts_end})"
+                start = self._escape(parts[0].strip())
+                end = self._escape(parts[1].strip())
+                return f"({col} >= '{start}' AND {col} <= '{end} 23:59:59')"
             return ""
 
         # --- 相对日期（范围）操作符 ---
         if op in _RELATIVE_DATE_RANGE_OPS:
-            ts_pair = self._compute_relative_ts_range(op, value)
-            if ts_pair:
-                return f"({col} >= {ts_pair[0]} AND {col} <= {ts_pair[1]})"
+            pair = self._compute_relative_date_range_str(op, value)
+            if pair:
+                return f"({col} >= '{pair[0]}' AND {col} <= '{pair[1]}')"
             return ""
 
         # --- 相对日期（边界）操作符: N天前/N天后等 ---
         if op in _RELATIVE_DATE_BOUND_OPS:
-            ts_bound = self._compute_relative_ts_bound(op, value)
-            if ts_bound is not None:
+            bound = self._compute_relative_date_bound_str(op, value)
+            if bound is not None:
                 if 'AGO' in op:
-                    return f"{col} <= {ts_bound}"
+                    return f"{col} <= '{bound}'"
                 else:
-                    return f"{col} >= {ts_bound}"
+                    return f"{col} >= '{bound}'"
             return ""
 
         return ""
@@ -4995,7 +6205,7 @@ class JoinSQLBuilder:
         return {
             'left': 'LEFT JOIN',
             'inner': 'INNER JOIN',
-            'one_to_one': 'LEFT JOIN',  # MySQL 不支持 LIMIT 1 子查询，引擎层面处理
+            'one_to_one': 'LEFT JOIN',  # one_to_one 通过 multi_match='first' 子查询实现
         }.get(join_type, 'LEFT JOIN')
 
     @staticmethod
@@ -5134,6 +6344,85 @@ class JoinSQLBuilder:
             return _ts(target.replace(hour=23, minute=59, second=59))
         if op == 'N_WEEKS_LATER':
             return _ts(today_start + timedelta(weeks=n))
+        return None
+
+    @staticmethod
+    def _compute_relative_date_range_str(operator: str, n_str: str):
+        """计算相对日期范围，返回日期字符串对 (start, end)。"""
+        from datetime import datetime, timedelta
+        try:
+            n = int(n_str)
+        except (ValueError, TypeError):
+            return None
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+        def _s(dt):
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        op = operator.upper()
+        if op == 'PAST_N_DAYS_EXCLUSIVE':
+            return (_s(today_start - timedelta(days=n)), _s(today_start - timedelta(seconds=1)))
+        if op == 'PAST_N_DAYS_INCLUSIVE':
+            return (_s(today_start - timedelta(days=n)), _s(today_end))
+        if op == 'FUTURE_N_DAYS_EXCLUSIVE':
+            return (_s(today_end + timedelta(seconds=1)), _s(today_start + timedelta(days=n) - timedelta(seconds=1)))
+        if op == 'FUTURE_N_DAYS_INCLUSIVE':
+            return (_s(today_start), _s((today_start + timedelta(days=n)).replace(hour=23, minute=59, second=59)))
+        if op == 'PAST_N_WEEKS_EXCLUSIVE':
+            return (_s(today_start - timedelta(weeks=n)), _s(today_start - timedelta(seconds=1)))
+        if op == 'PAST_N_WEEKS_INCLUSIVE':
+            return (_s(today_start - timedelta(weeks=n)), _s(today_end))
+        if op == 'FUTURE_N_WEEKS_EXCLUSIVE':
+            return (_s(today_end + timedelta(seconds=1)), _s(today_start + timedelta(weeks=n) - timedelta(seconds=1)))
+        if op == 'FUTURE_N_WEEKS_INCLUSIVE':
+            return (_s(today_start), _s((today_start + timedelta(weeks=n)).replace(hour=23, minute=59, second=59)))
+        if op in ('PAST_N_MONTHS_EXCLUSIVE', 'PAST_N_MONTHS_INCLUSIVE'):
+            sm = now.month - 1 - n
+            sy = now.year + sm // 12
+            sm = sm % 12 + 1
+            start = datetime(sy, sm, 1)
+            end = today_end if 'INCLUSIVE' in op else today_start - timedelta(seconds=1)
+            return (_s(start), _s(end))
+        if op in ('FUTURE_N_MONTHS_EXCLUSIVE', 'FUTURE_N_MONTHS_INCLUSIVE'):
+            em = now.month - 1 + n
+            ey = now.year + em // 12
+            em = em % 12 + 1
+            end_dt = datetime(ey + 1, 1, 1) - timedelta(seconds=1) if em == 12 else datetime(ey, em + 1, 1) - timedelta(seconds=1)
+            start = today_start if 'INCLUSIVE' in op else today_end + timedelta(seconds=1)
+            return (_s(start), _s(end_dt))
+        if op == 'PAST_N_QUARTERS_INCLUSIVE':
+            cq = (now.month - 1) // 3
+            tm = cq * 3 - n * 3
+            sy = now.year + tm // 12
+            sm = tm % 12 + 1
+            return (_s(datetime(sy, sm, 1)), _s(today_end))
+        return None
+
+    @staticmethod
+    def _compute_relative_date_bound_str(operator: str, n_str: str):
+        """计算相对日期边界，返回日期字符串。"""
+        from datetime import datetime, timedelta
+        try:
+            n = int(n_str)
+        except (ValueError, TypeError):
+            return None
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        def _s(dt):
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        op = operator.upper()
+        if op == 'N_DAYS_AGO':
+            return _s((today_start - timedelta(days=n)).replace(hour=23, minute=59, second=59))
+        if op == 'N_DAYS_LATER':
+            return _s(today_start + timedelta(days=n))
+        if op == 'N_WEEKS_AGO':
+            return _s((today_start - timedelta(weeks=n)).replace(hour=23, minute=59, second=59))
+        if op == 'N_WEEKS_LATER':
+            return _s(today_start + timedelta(weeks=n))
         return None
 
     @staticmethod
@@ -5486,12 +6775,44 @@ class ReportRefreshWorker:
                     'duration': time.time() - t0}
 
         if progress_callback:
-            progress_callback('join', '正在执行拼表...', 20)
+            has_filters = bool(report.filters)
+            msg = '正在执行拼表（含筛选条件）...' if has_filters else '正在执行拼表...'
+            progress_callback('join', msg, 20)
 
         # Phase 2: 生成并执行拼表 SQL
         try:
             builder = JoinSQLBuilder(report, db=self._db)
             select_sql = builder.build_create_sql()
+            filter_count = len(report.filters) if report.filters else 0
+            if filter_count > 0:
+                for i, fc in enumerate(report.filters):
+                    if isinstance(fc, dict):
+                        fn = fc.get('field_api', '') or fc.get('field', '')
+                        fo = fc.get('operator', '')
+                        fv = fc.get('value', '')
+                    else:
+                        fn = getattr(fc, 'field_api', '')
+                        fo = getattr(fc, 'operator', '')
+                        fv = getattr(fc, 'value', '')
+                    logger.info(f"[ReportRefresh] 筛选条件 {i+1}: {fn} {fo} '{fv}'")
+            logger.info(f"[ReportRefresh] 拼表 SQL 已生成 | 筛选条件: {filter_count} 个 | SQL长度: {len(select_sql)}")
+            # 诊断：采样字段值 + 打印 SQL 片段
+            if filter_count > 0:
+                logger.info(f"[ReportRefresh] === 拼表SQL (前600字符) ===\n{select_sql[:600]}")
+                try:
+                    main_api = report.main_object_api
+                    main_table = self._db.resolve_existing_table(main_api)
+                    for fc in (report.filters or []):
+                        fn = getattr(fc, 'field_api', '') if not isinstance(fc, dict) else (fc.get('field_api', '') or fc.get('field', ''))
+                        if not fn:
+                            continue
+                        resolved = builder._resolve_field(main_api, fn)
+                        rows = self._db.execute(f"SELECT `{resolved}` FROM `{main_table}` WHERE `{resolved}` IS NOT NULL AND `{resolved}` != '' LIMIT 3")
+                        if rows:
+                            vals = [str(list(r.values())[0]) for r in rows]
+                            logger.info(f"[ReportRefresh] 诊断 - '{fn}' → 列 '{resolved}' | 样本: {vals}")
+                except Exception as diag_e:
+                    logger.warning(f"[ReportRefresh] 诊断失败: {diag_e}")
             self._db.create_result_table_as(report.id, select_sql,
                                             write_mode=report.write_mode)
         except Exception as e:
@@ -5503,10 +6824,22 @@ class ReportRefreshWorker:
             progress_callback('join', '拼表完成，正在统计...', 80)
 
         # Phase 2.5: 地址提取后处理
-        self._run_address_extraction(report, progress_callback)
+        try:
+            self._run_address_extraction(report, progress_callback)
+        except Exception as e:
+            logger.error(f"[ReportRefresh] 地址提取后处理异常（不阻断）: {e}")
 
-        # Phase 2.6: 公式列后处理（对 SQL 无法翻译的公式列，通过 pandas 计算并写回 MySQL）
-        self._run_formula_backfill(report, progress_callback)
+        # Phase 2.6: 时间成分后处理（年/月/周/季度提取，对 SQL 已生成 NULL 的列做 pandas 回填）
+        try:
+            self._run_date_part_extraction(report, progress_callback)
+        except Exception as e:
+            logger.error(f"[ReportRefresh] 时间成分后处理异常（不阻断）: {e}")
+
+        # Phase 2.7: 公式列后处理（对 SQL 无法翻译的公式列，通过 pandas 计算并写回 MySQL）
+        try:
+            self._run_formula_backfill(report, progress_callback)
+        except Exception as e:
+            logger.error(f"[ReportRefresh] 公式列后处理异常（不阻断）: {e}")
 
         # Phase 3: 更新元数据
         row_count = self._db.get_result_count(report.id)
@@ -5628,9 +6961,10 @@ class ReportRefreshWorker:
 
     def _run_date_part_extraction(self, report: ReportDefinition,
                                    progress_callback: Callable = None):
-        """对结果表中时间成分列进行后处理填充。
+        """对结果表中时间成分列进行后处理填充（用单次 SQL UPDATE 完成，无逐行网络往返）。
 
-        读取结果表 → 逐行解析源日期字段 → 提取年/月/周/季度 → UPDATE 写回。
+        通过读取结果表的源日期列 → 用 MySQL 内置的 YEAR/MONTH/WEEK/QUARTER
+        函数直接在 MySQL 侧计算并写回，只发一次 UPDATE 语句。
         """
         from datetime import datetime as dt
 
@@ -5651,20 +6985,15 @@ class ReportRefreshWorker:
             logger.warning(f"[DatePart] 结果表 `{table}` 不存在，跳过")
             return
 
-        # 获取现有列，检查 _row_id
+        # 获取现有列
         try:
             cols_info = self._db.execute(f"SHOW COLUMNS FROM `{table}`")
             existing_cols = {r['Field'] for r in cols_info} if cols_info else set()
-            has_row_id = '_row_id' in existing_cols
         except Exception as e:
             logger.warning(f"[DatePart] 获取列信息失败: {e}")
             return
 
-        if not has_row_id:
-            logger.warning("[DatePart] 结果表无 _row_id 列，无法逐行更新")
-            return
-
-        # 收集所有有效的时间成分别
+        # 收集有效的时间成分别
         pending_cols = []
         for dc in dp_cols:
             display_name = dc.get('display_name', '') if isinstance(dc, dict) else dc.display_name
@@ -5675,9 +7004,7 @@ class ReportRefreshWorker:
         if not pending_cols:
             return
 
-        logger.info(f"[DatePart] 发现 {len(pending_cols)} 个时间成分别，将逐行计算并写回")
-
-        # 确保目标列存在（缺失则添加）
+        # 确保目标列存在（缺失则添加为 VARCHAR，避免 INT 列 + 空字符串报错）
         for dc in pending_cols[:]:
             display_name = dc.get('display_name', '') if isinstance(dc, dict) else dc.display_name
             if display_name not in existing_cols:
@@ -5693,71 +7020,47 @@ class ReportRefreshWorker:
         if not pending_cols:
             return
 
-        # 分批读取、计算并批量更新
-        batch_size = 5000
-        offset = 0
-        total = 0
+        logger.info(f"[DatePart] 发现 {len(pending_cols)} 个时间成分别，用 MySQL 单次 UPDATE 写回")
 
-        while True:
-            rows = self._db.execute(
-                f"SELECT * FROM `{table}` LIMIT {batch_size} OFFSET {offset}"
+        # 构建 SET 子句：用 MySQL YEAR/MONTH/WEEK/QUARTER 函数直接在 DB 侧计算
+        set_parts = []
+        for dc in pending_cols:
+            display_name = dc.get('display_name', '') if isinstance(dc, dict) else dc.display_name
+            src_field = dc.get('date_part_source_field', '') if isinstance(dc, dict) else getattr(dc, 'date_part_source_field', '')
+            unit = dc.get('date_part_unit', 'year') if isinstance(dc, dict) else getattr(dc, 'date_part_unit', 'year') or 'year'
+
+            # 校验源字段是否在结果表中（SELECT 可能已用 API 名）
+            if src_field not in existing_cols:
+                logger.warning(f"[DatePart] 源字段 `{src_field}` 不在结果表中，跳过（SELECT 已计算）")
+                continue
+
+            if unit == 'year':
+                mysql_expr = f"YEAR(`{src_field}`)"
+            elif unit == 'month':
+                mysql_expr = f"MONTH(`{src_field}`)"
+            elif unit == 'week':
+                mysql_expr = f"WEEK(`{src_field}`, 3)"
+            elif unit == 'quarter':
+                mysql_expr = f"QUARTER(`{src_field}`)"
+            else:
+                continue
+            # 仅对源日期非 NULL 的行更新，避免空字符串写入问题
+            set_parts.append(
+                f"`{display_name}` = IF(`{src_field}` IS NOT NULL AND `{src_field}` != '', "
+                f"CAST({mysql_expr} AS CHAR), '')"
             )
-            if not rows:
-                break
 
-            for row in rows:
-                row_id = row.get('_row_id')
-                if row_id is None:
-                    continue
+        if not set_parts:
+            return
 
-                updates = {}
-                for dc in pending_cols:
-                    if isinstance(dc, dict):
-                        src_field = dc.get('date_part_source_field', '')
-                        unit = dc.get('date_part_unit', 'year') or 'year'
-                        display_name = dc.get('display_name', '')
-                    else:
-                        src_field = getattr(dc, 'date_part_source_field', '')
-                        unit = getattr(dc, 'date_part_unit', 'year') or 'year'
-                        display_name = dc.display_name or ''
-
-                    if not src_field or not display_name:
-                        continue
-
-                    raw_value = row.get(src_field, '')
-                    date_val = self._parse_date_value(raw_value)
-                    if date_val is None:
-                        result_value = ''
-                    elif unit == 'year':
-                        result_value = str(date_val.year)
-                    elif unit == 'month':
-                        result_value = str(date_val.month)
-                    elif unit == 'week':
-                        result_value = str(date_val.isocalendar()[1])
-                    elif unit == 'quarter':
-                        result_value = str((date_val.month - 1) // 3 + 1)
-                    else:
-                        result_value = ''
-
-                    updates[display_name] = result_value
-
-                if updates:
-                    set_clause = ', '.join(
-                        f"`{col}` = %s" for col in updates.keys()
-                    )
-                    values = list(updates.values()) + [int(row_id)]
-                    try:
-                        self._db.execute(
-                            f"UPDATE `{table}` SET {set_clause} WHERE `_row_id` = %s",
-                            tuple(values)
-                        )
-                        total += 1
-                    except Exception as e:
-                        logger.warning(f"[DatePart] 更新行 {row_id} 失败: {e}")
-
-            offset += batch_size
-
-        logger.info(f"[DatePart] 完成: {total} 行已处理")
+        set_clause = ', '.join(set_parts)
+        update_sql = f"UPDATE `{table}` SET {set_clause}"
+        try:
+            self._db.execute(update_sql)
+            total = self._db.table_row_count(table)
+            logger.info(f"[DatePart] 完成: 用单次 UPDATE 处理了约 {total} 行")
+        except Exception as e:
+            logger.warning(f"[DatePart] 批量更新失败: {e}")
 
     @staticmethod
     def _parse_date_value(raw_value):
@@ -5858,12 +7161,85 @@ class ReportRefreshWorker:
         if not missing_formula_cols:
             return
 
-        # 5. 分批读取数据、计算并写回
+        # 5. 全量读取数据、计算并写回（LEAD/LAG 等行间函数需要看到全量数据）
+        import pandas as pd
+
+        # 检查是否含有行间引用函数（LEAD/LAG），需要全量计算
+        has_row_ref = False
+        for fc in missing_formula_cols:
+            expr = fc.get('formula_expression', '') if isinstance(fc, dict) else getattr(fc, 'formula_expression', '')
+            if expr and re.search(r'\b(LEAD|LAG|NEXT_IF|PREV_IF)\s*\(', str(expr), re.IGNORECASE):
+                has_row_ref = True
+                break
+
+        if has_row_ref:
+            # 全量加载（LEAD/LAG 需要跨行比较，不能分块）
+            rows = self._db.execute(f"SELECT * FROM `{table}`")
+            if not rows:
+                return
+            df = pd.DataFrame(rows)
+            if df.empty:
+                return
+
+            try:
+                # 传入 report.columns 让 _resolve_api_field_refs 能建立 API→显示名映射
+                df = eval_formula_columns(df, report.columns)
+            except Exception as e:
+                logger.warning(f"[FormulaBackfill] 公式计算失败: {e}")
+
+            # 批量 UPDATE — 使用 CASE-WHEN 单次 SQL（全量加载路径）
+            conn = self._db._get_conn() if hasattr(self._db, '_get_conn') else None
+            for fc in missing_formula_cols:
+                display_name = fc.get('display_name', '') if isinstance(fc, dict) else fc.display_name
+                if display_name not in df.columns:
+                    continue
+
+                updated = 0
+                if conn:
+                    try:
+                        cases = []
+                        params = []
+                        for _, row_data in df.iterrows():
+                            row_id = row_data.get('_row_id')
+                            if row_id is None:
+                                continue
+                            val = row_data.get(display_name)
+                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                                continue
+                            val_str = str(val)
+                            cases.append("WHEN %s THEN %s")
+                            params.append(int(row_id))
+                            params.append(val_str)
+
+                        if cases:
+                            for i in range(0, len(cases), 500):
+                                batch_cases = cases[i:i + 500]
+                                batch_params = params[i * 2:(i + 500) * 2]
+                                batch_clause = " ".join(batch_cases)
+                                batch_sql = (
+                                    f"UPDATE `{table}` SET `{display_name}` = "
+                                    f"CASE `_row_id` {batch_clause} "
+                                    f"ELSE `{display_name}` END"
+                                )
+                                with conn.cursor() as cur:
+                                    cur.execute(batch_sql, batch_params)
+                            updated = len(cases)
+                    except Exception as e:
+                        logger.warning(
+                            f"[FormulaBackfill] 更新列 `{display_name}` 失败: {e}"
+                        )
+                total_updated = updated
+
+            logger.info(
+                f"[FormulaBackfill] 完成(全量): {len(missing_formula_cols)} 个公式列, "
+                f"共更新 {total_updated} 行"
+            )
+            return
+
+        # 无行间函数：分批处理即可
         batch_size = 5000
         offset = 0
         total_updated = 0
-
-        import pandas as pd
 
         while True:
             rows = self._db.execute(
@@ -5878,44 +7254,65 @@ class ReportRefreshWorker:
 
             # 计算所有缺失的公式列（只针对缺失列）
             try:
-                df = eval_formula_columns(df, missing_formula_cols)
+                # 传入 report.columns 让 _resolve_api_field_refs 能建立 API→显示名映射
+                df = eval_formula_columns(df, report.columns)
             except Exception as e:
                 logger.warning(f"[FormulaBackfill] 公式计算失败 (offset={offset}): {e}")
                 offset += len(rows)
                 continue
 
-            # 批量 UPDATE
+            # 批量 UPDATE — 使用 CASE-WHEN 单次 SQL，避免逐行网络往返
             conn = self._db._get_conn() if hasattr(self._db, '_get_conn') else None
             for fc in missing_formula_cols:
                 display_name = fc.get('display_name', '') if isinstance(fc, dict) else fc.display_name
                 if display_name not in df.columns:
                     continue
 
-                updates = []
-                for _, row_data in df.iterrows():
-                    row_id = row_data.get('_row_id')
-                    if row_id is None:
-                        continue
-                    val = row_data.get(display_name)
-                    if val is None or (isinstance(val, float) and pd.isna(val)):
-                        val_str = None
-                    else:
-                        val_str = str(val)
-                    updates.append((val_str, int(row_id)))
-
-                if updates and conn:
+                updated = 0
+                if conn:
                     try:
-                        with conn.cursor() as cur:
-                            cur.executemany(
-                                f"UPDATE `{table}` SET `{display_name}` = %s "
-                                f"WHERE `_row_id` = %s",
-                                updates,
+                        # 构建 CASE-WHEN 批量 UPDATE: UPDATE t SET col = CASE _row_id
+                        # WHEN 1 THEN 'val1' WHEN 2 THEN 'val2' ... ELSE col END
+                        cases = []
+                        params = []
+                        for _, row_data in df.iterrows():
+                            row_id = row_data.get('_row_id')
+                            if row_id is None:
+                                continue
+                            val = row_data.get(display_name)
+                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                                continue  # NULL 值不更新（保持原值）
+                            val_str = str(val)
+                            cases.append("WHEN %s THEN %s")
+                            params.append(int(row_id))
+                            params.append(val_str)
+
+                        if cases:
+                            case_clause = " ".join(cases)
+                            sql = (
+                                f"UPDATE `{table}` SET `{display_name}` = "
+                                f"CASE `_row_id` {case_clause} "
+                                f"ELSE `{display_name}` END"
                             )
-                        total_updated += len(updates)
+                            # 分批执行，每批 500 个 WHEN 避免 SQL 过长
+                            batch_size = 500
+                            for i in range(0, len(cases), batch_size):
+                                batch_cases = cases[i:i + batch_size]
+                                batch_params = params[i * 2:(i + batch_size) * 2]
+                                batch_clause = " ".join(batch_cases)
+                                batch_sql = (
+                                    f"UPDATE `{table}` SET `{display_name}` = "
+                                    f"CASE `_row_id` {batch_clause} "
+                                    f"ELSE `{display_name}` END"
+                                )
+                                with conn.cursor() as cur:
+                                    cur.execute(batch_sql, batch_params)
+                            updated = len(cases)
                     except Exception as e:
                         logger.warning(
                             f"[FormulaBackfill] 更新列 `{display_name}` 失败: {e}"
                         )
+                total_updated += updated
 
             offset += len(rows)
 
@@ -5928,16 +7325,14 @@ class ReportRefreshWorker:
                                    progress_callback=None):
         """如果配置了 sync_id_fields，在结果表中追加拼接 ID 列供预览。"""
         id_fields = getattr(report, 'sync_id_fields', None) or []
-        import sys
-        print(f"[CompositeID] sync_id_fields={id_fields}", file=sys.stderr, flush=True)
+        logger.debug(f"[CompositeID] sync_id_fields={id_fields}")
         if not id_fields:
-            print("[CompositeID] 跳过：未配置 ID 字段", file=sys.stderr, flush=True)
             return
         separator = getattr(report, 'sync_id_separator', '_') or '_'
         table = report.result_table
-        print(f"[CompositeID] 结果表={table}, 分隔符='{separator}'", file=sys.stderr, flush=True)
+        logger.debug(f"[CompositeID] 结果表={table}, 分隔符='{separator}'")
         if not self._db.table_exists(table):
-            print(f"[CompositeID] 跳过：表 {table} 不存在", file=sys.stderr, flush=True)
+            logger.debug(f"[CompositeID] 跳过：表 {table} 不存在")
             return
 
         col_name = "唯一ID"
@@ -5949,17 +7344,16 @@ class ReportRefreshWorker:
             if cols_info:
                 db_cols = {r['Field'] for r in cols_info}
         except Exception as e:
-            print(f"[CompositeID] 获取列信息失败: {e}", file=sys.stderr, flush=True)
+            logger.warning(f"[CompositeID] 获取列信息失败: {e}")
             return
 
-        print(f"[CompositeID] 结果表列名({len(db_cols)}): {sorted(db_cols)}", file=sys.stderr, flush=True)
+        logger.debug(f"[CompositeID] 结果表列名({len(db_cols)}): {sorted(db_cols)}")
 
         # 验证 ID 字段在结果表中存在
         valid_fields = [f for f in id_fields if f in db_cols]
         if not valid_fields:
             missing = [f for f in id_fields if f not in db_cols]
-            print(f"[CompositeID] 跳过：以下字段不在结果表中: {missing}", file=sys.stderr, flush=True)
-            logger.warning(f"[CompositeID] ID 字段在结果表中不存在: {id_fields}, db_cols={sorted(db_cols)[:10]}...")
+            logger.warning(f"[CompositeID] ID 字段在结果表中不存在: {id_fields}, 缺失: {missing}")
             return
 
         if progress_callback:
@@ -5969,19 +7363,13 @@ class ReportRefreshWorker:
             # 添加列（如不存在）
             if col_name not in db_cols:
                 self._db.execute(f"ALTER TABLE `{table}` ADD COLUMN `{col_name}` LONGTEXT")
-                print(f"[CompositeID] 已添加列 `{col_name}`", file=sys.stderr, flush=True)
 
             # 用 CONCAT_WS 生成拼接值
             concat_parts = ', '.join(f'`{f}`' for f in valid_fields)
             sql = f"UPDATE `{table}` SET `{col_name}` = CONCAT_WS('{separator}', {concat_parts})"
-            print(f"[CompositeID] 执行: {sql[:200]}", file=sys.stderr, flush=True)
             self._db.execute(sql)
-            print(f"[CompositeID] ✅ 已生成 '{col_name}' 列: {len(valid_fields)} 字段", file=sys.stderr, flush=True)
             logger.info(f"[CompositeID] 已生成 '{col_name}' 列: {len(valid_fields)} 字段, 分隔符='{separator}'")
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"[CompositeID] ❌ 生成失败: {e}", file=sys.stderr, flush=True)
             logger.error(f"[CompositeID] 生成失败: {e}")
 
 
@@ -6275,7 +7663,7 @@ class AIAssistant:
                 provider = LLMProvider(
                     id=pid,
                     name=name,
-                    api_url=api_url,
+                    api_url=(api_url or '').strip(),
                     default_model=default_model,
                     models=models,
                     api_key=pdata['api_key'].strip(),
@@ -6290,7 +7678,7 @@ class AIAssistant:
                     provider = LLMProvider(
                         id=pid,
                         name=preset.name,
-                        api_url=cfg.get('api_url', preset.api_url),
+                        api_url=(cfg.get('api_url', preset.api_url) or '').strip(),
                         default_model=cfg.get('default_model', preset.default_model),
                         models=preset.models,
                         api_key=cfg['api_key'],
@@ -6324,7 +7712,7 @@ class AIAssistant:
             self._current_id = provider_id
 
     def chat(self, user_message: str, available_sources: list[dict],
-             provider_id: str = None) -> str:
+             provider_id: str = None, system_prompt_override: str = None) -> str:
         """
         发送消息到 AI，返回响应文本。
 
@@ -6333,6 +7721,7 @@ class AIAssistant:
             available_sources: 可用数据源列表
                 [{id, name, row_count, fields: [{key, label, data_type}]}]
             provider_id: 指定提供商 ID，不传则用当前
+            system_prompt_override: 自定义 system prompt，不传则用默认
 
         Returns:
             AI 响应文本（可能是 JSON 或纯文本）
@@ -6341,7 +7730,7 @@ class AIAssistant:
         if not provider:
             return "❌ 未配置 AI 模型，请先在 设置 → API 配置 中启用至少一个提供商。"
 
-        system_prompt = self._build_system_prompt(available_sources, provider)
+        system_prompt = system_prompt_override or self._build_system_prompt(available_sources, provider)
 
         # 调用 API（使用全局 perform_requests_request）
         try:
@@ -6396,6 +7785,59 @@ class AIAssistant:
 
         except Exception as e:
             logger.error(f"[AI] {provider.name} 调用失败: {e}")
+            return f"❌ AI 调用失败: {e}"
+
+    def chat_multi_turn(self, messages: list[dict], system_prompt: str,
+                        provider_id: str = None) -> str:
+        """
+        多轮对话：传入完整消息历史，返回 AI 响应。
+
+        Args:
+            messages: 对话历史 [{"role": "user"/"assistant", "content": "..."}, ...]
+            system_prompt: 系统提示词
+            provider_id: 指定提供商 ID，不传则用当前
+
+        Returns:
+            AI 响应文本
+        """
+        provider = self._providers.get(provider_id or self._current_id)
+        if not provider:
+            return "❌ 未配置 AI 模型，请先在 设置 → API 配置 中启用至少一个提供商。"
+
+        api_messages = [{'role': 'system', 'content': system_prompt}]
+        api_messages.extend(messages)
+
+        try:
+            import sys
+            main_mod = sys.modules.get('__main__')
+            perform_req = getattr(main_mod, 'perform_requests_request', None)
+            payload = {
+                'model': provider.default_model,
+                'messages': api_messages,
+                'temperature': 0.3,
+            }
+            headers = {
+                'Authorization': f'Bearer {provider.api_key}',
+                'Content-Type': 'application/json',
+            }
+            if perform_req:
+                response = perform_req('post', provider.api_url,
+                                       headers=headers, json=payload, timeout=90)
+            else:
+                import requests
+                response = requests.post(provider.api_url, headers=headers,
+                                         json=payload, timeout=90)
+
+            if hasattr(response, 'status_code') and response.status_code != 200:
+                return f"❌ API 请求失败 (HTTP {response.status_code}): {response.text[:200]}"
+
+            data = response.json() if hasattr(response, 'json') else json.loads(response.text)
+            content = data['choices'][0]['message']['content']
+            logger.info(f"[AI-multi] {provider.name} 响应: {content[:200]}...")
+            return content
+
+        except Exception as e:
+            logger.error(f"[AI-multi] {provider.name} 调用失败: {e}")
             return f"❌ AI 调用失败: {e}"
 
     def _build_system_prompt(self, available_sources: list[dict], provider=None) -> str:
@@ -6636,7 +8078,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QComboBox, QCheckBox, QPushButton, QScrollArea, QFrame,
     QMenu, QListWidget, QListWidgetItem, QAbstractItemView, QWidgetAction,
-    QSpinBox, QGroupBox, QGridLayout, QMessageBox,
+    QSpinBox, QGroupBox, QGridLayout, QMessageBox, QCompleter,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -6702,6 +8144,7 @@ class ChartConfigPanel(QWidget):
         self._current_source_id = ''   # 当前图表的数据源 ID
         self._chart_data_rows = []     # 当前图表的数据行
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -6921,6 +8364,11 @@ class ChartConfigPanel(QWidget):
         self._populate_type_combo()
 
         scroll.setWidget(container)
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setFixedHeight(20)
+        self._progress_bar.setVisible(False)
+        group_layout.addWidget(self._progress_bar)
+
         main_layout.addWidget(scroll)
 
     def _populate_type_combo(self):
@@ -7001,6 +8449,15 @@ class ChartConfigPanel(QWidget):
             idx = combo.findData(current_data)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
+
+        # 安装模糊搜索补全器（所有字段下拉统一支持中间文字匹配）
+        labels = [label for _, label in field_names]
+        for combo in direct_combos + opt_combos:
+            c = QCompleter(labels, combo)
+            c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            c.setFilterMode(Qt.MatchFlag.MatchContains)
+            c.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            combo.setCompleter(c)
 
     def load_chart(self, chart_data: dict):
         """
@@ -7259,6 +8716,12 @@ class ChartConfigPanel(QWidget):
         combo.setEditable(True)
         combo.setMinimumWidth(80)
         combo.currentTextChanged.connect(self._on_config_changed)
+        # 安装模糊搜索补全器（数据在 _update_field_combos 中填充后自动生效）
+        _c = QCompleter([], combo)
+        _c.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _c.setFilterMode(Qt.MatchFlag.MatchContains)
+        _c.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        combo.setCompleter(_c)
         layout.addWidget(combo, 1)
 
         agg = QComboBox()
@@ -7341,6 +8804,7 @@ class ChartConfigPanel(QWidget):
         multi_btn.setStyleSheet(
             "QPushButton { border: 1px solid #D9D9D9; border-radius: 3px; background: #FFF; font-size: 14px; }"
             "QPushButton:hover { border-color: #1890FF; background: #E6F7FF; }"
+            "QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }"
         )
 
         # 创建多选弹出菜单（懒加载，点击时刷新选项）
@@ -7797,6 +9261,7 @@ class DashboardDesigner(QWidget):
         self._report_manager = report_manager  # 用于单图表数据刷新
         self._bridge = bridge or DashboardBridge(self)
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -8584,7 +10049,7 @@ class DashboardDesigner(QWidget):
     def _on_import_excel(self, file_path: str):
         """导入 Excel/CSV 文件为数据集"""
         if not self._db or not self._db.available:
-            QMessageBox.warning(self, "数据库未连接", "请先在设置中配置并启用 MySQL 连接。")
+            frameless_message_box(self, "数据库未连接", "请先在设置中配置并启用 MySQL 连接。")
             return
         try:
             importer = ExcelImporter(self._db)
@@ -8595,12 +10060,12 @@ class DashboardDesigner(QWidget):
             self._refresh_data_sources()
         except Exception as e:
             _ui_output(f"[BI 报表] Excel 导入失败: {e}")
-            QMessageBox.warning(self, "导入失败", str(e))
+            frameless_message_box(self, "导入失败", str(e))
 
     def _on_import_mysql(self):
         """弹出 MySQL 表选择对话框，将选中的表添加为数据源"""
         if not self._db or not self._db.available:
-            QMessageBox.warning(self, "数据库未连接", "请先在设置中配置并启用 MySQL 连接。")
+            frameless_message_box(self, "数据库未连接", "请先在设置中配置并启用 MySQL 连接。")
             return
         dlg = _MySQLTableDialog(self._db, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -8623,7 +10088,7 @@ class DashboardDesigner(QWidget):
                     cnt = self._db.execute(f"SELECT COUNT(*) AS cnt FROM `{table_name}`")
                     row_count = cnt[0].get('cnt', 0) if cnt else 0
                 except Exception as e:
-                    QMessageBox.warning(self, "查询失败", f"无法查询表 {table_name}: {e}")
+                    frameless_message_box(self, "查询失败", f"无法查询表 {table_name}: {e}")
                     return
 
                 # 添加到数据源面板
@@ -8732,7 +10197,7 @@ class DashboardDesigner(QWidget):
 
         if not enabled_providers:
             _ui_output("[BI 报表] AI 助手未配置，请先在 设置 → API 配置 中启用至少一个 LLM 提供商并填写 API Key")
-            QMessageBox.information(self, "AI 助手未配置",
+            frameless_message_box(self, "AI 助手未配置",
                                     "请先在 设置 → API 配置 中启用至少一个 LLM 提供商并填写 API Key。")
             return
 
@@ -8750,7 +10215,7 @@ class DashboardDesigner(QWidget):
 
         if not sources_info:
             _ui_output("[BI 报表] 没有可用的数据源，请先配置自定义报表或在设置中加载数据")
-            QMessageBox.information(self, "无数据源", "没有可用的数据源，请先配置自定义报表。")
+            frameless_message_box(self, "无数据源", "没有可用的数据源，请先配置自定义报表。")
             return
 
         # 打开 AI 对话对话框
@@ -8830,6 +10295,7 @@ class _QuickChartDialog(QDialog):
     def __init__(self, source_type: str, source_id: str, name: str, fields: list, parent=None):
         super().__init__(parent)
         self.setWindowTitle("快速配置图表")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(420, 350)
         self._source_type = source_type
         self._source_id = source_id
@@ -8910,6 +10376,264 @@ class _QuickChartDialog(QDialog):
         }
 
 
+# ===== AI 助手终端风格主题 — 浅色共享常量 =====
+
+_CLAUDE_TERMINAL_THEME = {
+    # -- Core background colors --
+    'bg_primary':       '#FAFAFA',   # 主背景
+    'bg_secondary':     '#FFFFFF',   # 标题栏、底栏
+    'bg_input':         '#FFFFFF',   # 输入框背景
+    'bg_code_block':    '#F6F8FA',   # 代码块背景
+    'bg_hover':         '#F0F0F0',   # 悬停态
+    'bg_accent_subtle': '#F6FFED',   # 微弱强调背景
+
+    # -- Text colors --
+    'text_primary':     '#333333',   # 主文本
+    'text_secondary':   '#666666',   # 次要文本
+    'text_muted':       '#999999',   # 弱文本
+    'text_user':        '#1890FF',   # 用户消息（蓝色）
+    'text_system':      '#999999',   # 系统/状态文本
+    'text_code':        '#333333',   # 代码文本
+    'text_success':     '#52C41A',   # 成功
+    'text_warning':     '#FAAD14',   # 警告
+    'text_error':       '#FF4D4F',   # 错误
+
+    # -- Border colors --
+    'border_default':   '#D9D9D9',
+    'border_subtle':    '#E8E8E8',
+    'border_focus':     '#1890FF',
+
+    # -- Accent colors --
+    'accent_blue':      '#1890FF',
+    'accent_green':     '#52C41A',
+    'accent_orange':    '#FA8C16',
+    'accent_purple':    '#722ED1',
+
+    # -- Typography --
+    'font_mono':        "'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace",
+    'font_mono_size':   '13px',
+    'font_ui_size':     '13px',
+    'font_small_size':  '11px',
+
+    # -- Code block --
+    'code_header_bg':   '#F0F0F0',
+    'code_header_text': '#666666',
+
+    # -- Scrollbar --
+    'scrollbar_bg':     '#FAFAFA',
+    'scrollbar_handle': '#D9D9D9',
+    'scrollbar_hover':   '#BFBFBF',
+
+    # -- Prompt prefix --
+    'prompt_char':      '❯',
+    'assistant_dot':    '●',
+}
+
+
+def _claude_apply_palette(widget):
+    """Apply QPalette from _CLAUDE_TERMINAL_THEME so native controls match."""
+    from PyQt6.QtGui import QPalette
+    t = _CLAUDE_TERMINAL_THEME
+    pal = widget.palette()
+    pal.setColor(QPalette.ColorRole.Window,          QColor(t['bg_primary']))
+    pal.setColor(QPalette.ColorRole.WindowText,      QColor(t['text_primary']))
+    pal.setColor(QPalette.ColorRole.Base,            QColor(t['bg_input']))
+    pal.setColor(QPalette.ColorRole.AlternateBase,   QColor(t['bg_secondary']))
+    pal.setColor(QPalette.ColorRole.Text,            QColor(t['text_primary']))
+    pal.setColor(QPalette.ColorRole.Button,          QColor(t['bg_secondary']))
+    pal.setColor(QPalette.ColorRole.ButtonText,      QColor(t['text_primary']))
+    pal.setColor(QPalette.ColorRole.ToolTipBase,     QColor(t['bg_secondary']))
+    pal.setColor(QPalette.ColorRole.ToolTipText,     QColor(t['text_primary']))
+    pal.setColor(QPalette.ColorRole.Highlight,       QColor(t['accent_blue']))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor('#FFFFFF'))
+    widget.setPalette(pal)
+
+
+def _claude_scrollbar_stylesheet():
+    """QSS snippet for dark-themed scrollbars."""
+    t = _CLAUDE_TERMINAL_THEME
+    return f"""
+        QScrollBar:vertical {{
+            background: {t['scrollbar_bg']}; width: 8px; margin: 0;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {t['scrollbar_handle']}; border-radius: 4px; min-height: 24px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {t['scrollbar_hover']};
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0;
+        }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+        QScrollBar:horizontal {{
+            background: {t['scrollbar_bg']}; height: 8px; margin: 0;
+        }}
+        QScrollBar::handle:horizontal {{
+            background: {t['scrollbar_handle']}; border-radius: 4px; min-width: 24px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background: {t['scrollbar_hover']};
+        }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            width: 0;
+        }}
+    """
+
+
+def _claude_markdown_to_html(text):
+    """Markdown → HTML with Claude Code terminal dark-theme styling."""
+    import re as _re_md
+    t = _CLAUDE_TERMINAL_THEME
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    # Fenced code blocks
+    def _code_block(m):
+        lang = (m.group(1) or '').strip()
+        lang_label = lang.upper() if lang else 'CODE'
+        code = m.group(2).strip()
+        return (
+            f'<div style="margin:8px 0; border:1px solid {t["border_default"]}; '
+            f'border-radius:6px; overflow:hidden;">'
+            f'<div style="background:{t["code_header_bg"]}; padding:5px 12px; '
+            f'font-size:11px; color:{t["code_header_text"]}; '
+            f'font-family:{t["font_mono"]}; '
+            f'border-bottom:1px solid {t["border_default"]};">'
+            f'<span>{lang_label}</span></div>'
+            f'<div style="background:{t["bg_code_block"]}; padding:10px 12px; '
+            f'font-family:{t["font_mono"]}; font-size:12px; '
+            f'color:{t["text_code"]}; white-space:pre-wrap; overflow-x:auto; '
+            f'line-height:1.5;">{code}</div></div>'
+        )
+    text = _re_md.sub(r'```(\w*)\n?(.*?)```', _code_block, text, flags=_re_md.DOTALL)
+
+    # Inline code
+    text = _re_md.sub(
+        r'`([^`]+)`',
+        f'<code style="background:{t["bg_secondary"]}; padding:1px 5px; '
+        f'border-radius:3px; font-family:{t["font_mono"]}; font-size:12px; '
+        f'color:{t["accent_purple"]};">\\1</code>',
+        text,
+    )
+
+    # Headings
+    text = _re_md.sub(r'^### (.+)$',
+        f'<div style="font-size:14px;font-weight:600;color:{t["text_primary"]};margin:8px 0 4px;">\\1</div>',
+        text, flags=_re_md.MULTILINE)
+    text = _re_md.sub(r'^## (.+)$',
+        f'<div style="font-size:15px;font-weight:600;color:{t["text_primary"]};margin:10px 0 4px;">\\1</div>',
+        text, flags=_re_md.MULTILINE)
+    text = _re_md.sub(r'^# (.+)$',
+        f'<div style="font-size:16px;font-weight:700;color:{t["text_primary"]};margin:12px 0 6px;">\\1</div>',
+        text, flags=_re_md.MULTILINE)
+
+    # Bold / Italic
+    text = _re_md.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = _re_md.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+
+    # Horizontal rule
+    text = _re_md.sub(r'^---+$',
+        f'<hr style="border:none;border-top:1px solid {t["border_default"]};margin:8px 0;">',
+        text, flags=_re_md.MULTILINE)
+
+    # Unordered list
+    text = _re_md.sub(r'^[\-\*] (.+)$',
+        f'<div style="padding-left:12px;color:{t["text_primary"]};">• \\1</div>',
+        text, flags=_re_md.MULTILINE)
+
+    # Ordered list
+    text = _re_md.sub(r'^(\d+)\. (.+)$',
+        f'<div style="padding-left:12px;color:{t["text_primary"]};">\\1. \\2</div>',
+        text, flags=_re_md.MULTILINE)
+
+    # Line breaks
+    text = text.replace('\n', '<br>')
+    return text
+
+
+def _claude_message_html(role, content):
+    """生成聊天消息 HTML — 微信风格左右气泡布局。
+    role: user|assistant|system|thinking|error|hint
+    """
+    t = _CLAUDE_TERMINAL_THEME
+
+    # ---- 用户消息：靠右蓝色气泡 ----
+    if role == 'user':
+        escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+        return (
+            f'<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
+            f'<tr>'
+            f'<td style="width:18%;"></td>'
+            f'<td style="text-align:right; vertical-align:top;">'
+            f'<div style="display:inline-block; max-width:80%; text-align:left; '
+            f'background:#1890FF; color:#FFFFFF; border-radius:12px 12px 2px 12px; '
+            f'padding:8px 14px; font-size:13px; line-height:1.6; '
+            f'word-wrap:break-word;">{escaped}</div>'
+            f'</td>'
+            f'</tr></table>'
+        )
+
+    # ---- AI 回复：靠左灰色气泡 ----
+    if role == 'assistant':
+        rendered = _claude_markdown_to_html(content)
+        return (
+            f'<table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
+            f'<tr>'
+            f'<td style="vertical-align:top;">'
+            f'<div style="display:inline-block; max-width:80%; '
+            f'background:{t["bg_code_block"]}; color:{t["text_primary"]}; '
+            f'border-radius:12px 12px 12px 2px; padding:8px 14px; '
+            f'font-size:13px; line-height:1.6; word-wrap:break-word;">'
+            f'{rendered}</div>'
+            f'</td>'
+            f'<td style="width:18%;"></td>'
+            f'</tr></table>'
+        )
+
+    # ---- 系统/状态消息：居中小字 ----
+    if role == 'system':
+        escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        return (
+            f'<div style="text-align:center; margin:6px 0; padding:2px 0; '
+            f'color:{t["text_system"]}; font-size:{t["font_small_size"]}; '
+            f'font-style:italic;">{escaped}</div>'
+        )
+
+    if role == 'thinking':
+        return (
+            f'<div style="text-align:center; margin:4px 0; padding:2px 0; '
+            f'color:{t["text_muted"]}; font-size:{t["font_small_size"]};">'
+            f'{t["assistant_dot"]} 思考中...</div>'
+        )
+
+    if role == 'error':
+        escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        return (
+            f'<div style="margin:4px auto; padding:6px 10px; max-width:85%; text-align:center; '
+            f'color:{t["text_error"]}; font-size:{t["font_small_size"]}; '
+            f'background:rgba(248,81,73,0.08); border-radius:6px;">'
+            f'❌ {escaped}</div>'
+        )
+
+    if role == 'hint':
+        escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        return (
+            f'<div style="text-align:center; margin:4px 0; padding:2px 0; '
+            f'color:{t["text_success"]}; font-size:{t["font_small_size"]};">'
+            f'{escaped}</div>'
+        )
+
+    # 兜底
+    escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    return (
+        f'<div style="margin:4px 0; color:{t["text_primary"]}; '
+        f'font-family:{t["font_mono"]}; font-size:{t["font_mono_size"]}; '
+        f'white-space:pre-wrap;">{escaped}</div>'
+    )
+
+
 # ===== AI 助手对话框 =====
 
 class AIChartDialog(QDialog):
@@ -8925,7 +10649,11 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
         super().__init__(parent)
         model_name = assistant.current_model_name if hasattr(assistant, 'current_model_name') else 'AI'
         self.setWindowTitle(f"AI 数据分析助手 — {model_name}")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(700, 550)
+        # Claude Code 深色主题
+        _claude_apply_palette(self)
+        self.setStyleSheet(f"background-color: {_CLAUDE_TERMINAL_THEME['bg_primary']};")
         self._assistant = assistant
         self._sources_info = sources_info
         self._chart_def = None
@@ -8934,15 +10662,20 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
         layout = QVBoxLayout(self)
 
         # ---- 数据源信息（可折叠） ----
-        src_text = "📊 可用数据源:\n"
+        t = _CLAUDE_TERMINAL_THEME
+        src_text = "可用数据源:\n"
         for src in sources_info:
             fields_str = ", ".join(
                 f.get('label', f.get('key', str(f))) if isinstance(f, dict) else str(f)
                 for f in src.get('fields', [])[:8]
             )
-            src_text += f"  • {src['name']} ({src['row_count']} 行): {fields_str}\n"
+            src_text += f"  * {src['name']} ({src['row_count']} rows): {fields_str}\n"
         info_label = QLabel(src_text)
-        info_label.setStyleSheet("font-size: 11px; color: #666; background: #F5F5F5; padding: 8px; border-radius: 4px;")
+        info_label.setStyleSheet(
+            f"font-size: {t['font_small_size']}; color: {t['text_secondary']}; "
+            f"background: {t['bg_secondary']}; padding: 8px; border-radius: 4px; "
+            f"font-family: {t['font_mono']};"
+        )
         info_label.setWordWrap(True)
         info_label.setMaximumHeight(80)
         layout.addWidget(info_label)
@@ -8950,7 +10683,12 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
         # ---- 对话历史 ----
         self._chat_view = QTextEdit()
         self._chat_view.setReadOnly(True)
-        self._chat_view.setStyleSheet("QTextEdit { font-size: 13px; border: 1px solid #E8E8E8; border-radius: 4px; }")
+        self._chat_view.setStyleSheet(
+            f"QTextEdit {{ background-color: {t['bg_primary']}; "
+            f"color: {t['text_primary']}; border: none; padding: 12px; "
+            f"font-family: {t['font_mono']}; font-size: {t['font_mono_size']}; }}"
+            f"{_claude_scrollbar_stylesheet()}"
+        )
         layout.addWidget(self._chat_view, 1)
 
         # ---- 输入区域 ----
@@ -8960,20 +10698,30 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
         input_layout.setSpacing(8)
 
         self._input_edit = QTextEdit()
+        self._input_edit.setAcceptRichText(False)  # 强制纯文本粘贴
         self._input_edit.setPlaceholderText(
-            "💬 问数据: 哪个大区的合同金额最高？\n"
-            "📈 分析: 分析各产品类型的销售趋势\n"
-            "📊 图表: 按月份统计合同数量的柱状图\n"
-            "📋 总结: 总结本季度核心指标\n"
+            "问我关于数据的问题...\n"
             "（Enter 发送，Shift+Enter 换行）"
         )
         self._input_edit.setMaximumHeight(72)
+        self._input_edit.setStyleSheet(
+            f"QTextEdit {{ background-color: {t['bg_input']}; "
+            f"color: {t['text_primary']}; "
+            f"border: 1px solid {t['border_default']}; border-radius: 6px; "
+            f"padding: 8px 12px; font-family: {t['font_mono']}; "
+            f"font-size: {t['font_mono_size']}; }}"
+            f"QTextEdit:focus {{ border-color: {t['border_focus']}; }}"
+        )
         self._input_edit.installEventFilter(self)
         input_layout.addWidget(self._input_edit, 1)
 
         send_btn = QPushButton("发送")
         send_btn.setFixedSize(60, 44)
-        send_btn.setStyleSheet("QPushButton { background: #1890FF; color: #FFF; border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background: #40A9FF; }")
+        send_btn.setStyleSheet(
+            f"QPushButton {{ background: {t['accent_blue']}; color: #FFF; "
+            f"border: none; border-radius: 4px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: #79C0FF; }}"
+        )
         send_btn.clicked.connect(self._on_send)
         input_layout.addWidget(send_btn)
 
@@ -8981,19 +10729,33 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
 
         # ---- 底部按钮 ----
         btn_layout = QHBoxLayout()
-        self._add_btn = QPushButton("➕ 添加图表到仪表盘")
+        self._add_btn = QPushButton("添加图表到仪表盘")
         self._add_btn.setEnabled(False)
         self._add_btn.setFixedHeight(30)
+        self._add_btn.setStyleSheet(
+            f"QPushButton {{ background: {t['accent_green']}; color: #FFF; "
+            f"border: none; border-radius: 4px; padding: 6px 16px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: #56D364; }}"
+            f"QPushButton:disabled {{ background: {t['bg_hover']}; color: {t['text_muted']}; }}"
+        )
         self._add_btn.clicked.connect(self._on_add_chart)
         btn_layout.addWidget(self._add_btn)
 
         btn_layout.addStretch()
 
+        _btn_ss = (
+            f"QPushButton {{ border: 1px solid {t['border_default']}; border-radius: 4px; "
+            f"padding: 6px 16px; background: {t['bg_secondary']}; "
+            f"color: {t['text_primary']}; }}"
+            f"QPushButton:hover {{ border-color: {t['accent_blue']}; }}"
+        )
         clear_btn = QPushButton("清空对话")
+        clear_btn.setStyleSheet(_btn_ss)
         clear_btn.clicked.connect(self._on_clear)
         btn_layout.addWidget(clear_btn)
 
         close_btn = QPushButton("关闭")
+        close_btn.setStyleSheet(_btn_ss)
         close_btn.clicked.connect(self.reject)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
@@ -9017,9 +10779,9 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
             return
 
         # 显示用户消息
-        self._append_message("🙋 你", user_input)
+        self._append_message("user", user_input)
         self._input_edit.clear()
-        self._chat_view.append("⏳ AI 思考中...")
+        self._chat_view.append(_claude_message_html("thinking", ""))
 
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(50, lambda: self._do_chat(user_input))
@@ -9034,7 +10796,7 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
         cursor.deletePreviousChar()
 
         # 显示 AI 响应
-        self._append_message("🤖 AI", response)
+        self._append_message("assistant", response)
 
         # 尝试解析 JSON 图表定义
         self._chart_def = None
@@ -9056,23 +10818,26 @@ radar(雷达图), sankey(桑基图), word_cloud(词云)"""
                 if isinstance(parsed, dict) and 'chart_type' in parsed:
                     self._chart_def = parsed
                     self._add_btn.setEnabled(True)
-                    self._append_message("💡 提示", f"检测到图表定义「{parsed.get('title', '未命名')}」，点击下方按钮添加到仪表盘")
+                    self._append_message("hint", f"Chart definition detected: '{parsed.get('title', 'Untitled')}'. Click the button below to add it to the dashboard.")
                     _ui_output(f"[BI 报表] AI 返回了图表定义: {parsed.get('title', '未命名')}")
         except Exception:
             self._add_btn.setEnabled(False)
 
     def _append_message(self, role: str, content: str):
         """追加一条消息到对话历史"""
-        self._chat_history.append({"role": role, "content": content})
-        html = f'<p><b style="color:#1890FF">{role}:</b></p><p style="margin:4px 0 12px 12px;white-space:pre-wrap;">{content}</p>'
-        self._chat_view.append(html)
+        # 兼容旧 role 名
+        role_map = {"\U0001f64b 你": "user", "\U0001f916 AI": "assistant",
+                    "\U0001f4a1 提示": "hint"}
+        mapped = role_map.get(role, role)
+        self._chat_history.append({"role": mapped, "content": content})
+        self._chat_view.append(_claude_message_html(mapped, content))
 
     def _on_clear(self):
         self._chat_view.clear()
         self._chat_history.clear()
         self._chart_def = None
         self._add_btn.setEnabled(False)
-        self._append_message("💡 提示", "对话已清空，请提出新的问题。")
+        self._append_message("hint", "对话已清空，请提出新的问题。")
 
     def _on_add_chart(self):
         if self._chart_def:
@@ -9208,6 +10973,7 @@ class DashboardListPage(QWidget):
         self._table = QTableWidget()
         self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(["名称", "图表数", "数据源", "修改时间", "操作"])
+        install_autofilter_header(self._table)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(30)
@@ -9215,18 +10981,19 @@ class DashboardListPage(QWidget):
         for c in range(5):
             header.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
         # 默认列宽（总宽约 700px；超出部分留白，不强制铺满）
-        self._table.setColumnWidth(0, 200)
-        self._table.setColumnWidth(1, 60)
-        self._table.setColumnWidth(2, 180)
-        self._table.setColumnWidth(3, 140)
-        self._table.setColumnWidth(4, 160)
+        self._table.setColumnWidth(0, 28)
+        self._table.setColumnWidth(1, 200)
+        self._table.setColumnWidth(2, 60)
+        self._table.setColumnWidth(3, 180)
+        self._table.setColumnWidth(4, 140)
+        self._table.setColumnWidth(5, 160)
         # 不自动调整大小以适应内容，让用户自定义的列宽始终生效
         self._table.setSizeAdjustPolicy(
             self._table.sizeAdjustPolicy().AdjustToContentsOnFirstShow
         )
         # 显式启用水平滚动条（列宽总和超出视口时出现）
         self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
@@ -9234,12 +11001,7 @@ class DashboardListPage(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._table.doubleClicked.connect(self._on_double_click)
-        self._table.setStyleSheet("""
-            QTableWidget { border: 1px solid #E8E8E8; font-size: 13px; }
-            QTableWidget::item { padding: 6px 8px; }
-            QTableWidget::item:hover { background: #FFF7E6; }
-            QHeaderView::section { background: #FAFAFA; padding: 6px 8px; font-weight: bold; }
-        """)
+        # QSS 样式表已删除，与订单转合同表格保持完全一致，让 Qt 默认渲染
         gl.addWidget(self._table)
 
         # 分页栏
@@ -9345,7 +11107,7 @@ class DashboardListPage(QWidget):
         if not item:
             return
         row = item.row()
-        name_item = self._table.item(row, 0)
+        name_item = self._table.item(row, 1)
         if not name_item:
             return
         dashboard_id = name_item.data(Qt.ItemDataRole.UserRole)
@@ -9444,11 +11206,11 @@ class DashboardListPage(QWidget):
     def _on_export_selected(self):
         selected = self._get_selected_id()
         if not selected:
-            QMessageBox.information(self, "提示", "请先在表格中单击选中一个仪表盘")
+            frameless_message_box(self, "提示", "请先在表格中单击选中一个仪表盘")
             return
         dashboard = self._repo.get(selected)
         if not dashboard:
-            QMessageBox.warning(self, "导出失败", "未找到该仪表盘")
+            frameless_message_box(self, "导出失败", "未找到该仪表盘")
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -9462,16 +11224,16 @@ class DashboardListPage(QWidget):
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, ensure_ascii=False, indent=2)
             print(f"[BI 报表] 已导出: {file_path}")
-            QMessageBox.information(self, "导出成功", f"仪表盘已导出到:\n{file_path}")
+            frameless_message_box(self, "导出成功", f"仪表盘已导出到:\n{file_path}")
         except Exception as e:
-            QMessageBox.warning(self, "导出失败", str(e))
+            frameless_message_box(self, "导出失败", str(e))
             print(f"[BI 报表] 导出失败: {e}")
 
     def _export_dashboard(self, dashboard_id: str):
         """导出指定仪表盘为 JSON 文件"""
         dashboard = self._repo.get(dashboard_id)
         if not dashboard:
-            QMessageBox.warning(self, "导出失败", "未找到该仪表盘")
+            frameless_message_box(self, "导出失败", "未找到该仪表盘")
             return
         file_path, _ = QFileDialog.getSaveFileName(
             self, "导出仪表盘 JSON", f"{dashboard.name}.json",
@@ -9484,9 +11246,9 @@ class DashboardListPage(QWidget):
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, ensure_ascii=False, indent=2)
             print(f"[BI 报表] 已导出: {file_path}")
-            QMessageBox.information(self, "导出成功", f"仪表盘已导出到:\n{file_path}")
+            frameless_message_box(self, "导出成功", f"仪表盘已导出到:\n{file_path}")
         except Exception as e:
-            QMessageBox.warning(self, "导出失败", str(e))
+            frameless_message_box(self, "导出失败", str(e))
             print(f"[BI 报表] 导出失败: {e}")
 
     def _on_duplicate(self, dashboard_id: str):
@@ -9501,9 +11263,9 @@ class DashboardListPage(QWidget):
     def _on_rename(self, dashboard_id: str):
         dashboard = self._repo.get(dashboard_id)
         if dashboard:
-            from PyQt6.QtWidgets import QInputDialog
-            new_name, ok = QInputDialog.getText(
-                self, "重命名", "新名称:", text=dashboard.name
+            from common import frameless_input_text
+            new_name, ok = frameless_input_text(
+                self, "重命名", "新名称:", default_text=dashboard.name
             )
             if ok and new_name.strip():
                 dashboard.name = new_name.strip()
@@ -9652,10 +11414,7 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtGui import QColor
 
-import pandas as pd
-
-
-logger = logging.getLogger(__name__)
+# pd 已在文件顶部延迟导入（_LazyPd 代理），此处无需重复 import
 
 
 class DashboardViewPage(QWidget):
@@ -9672,6 +11431,7 @@ class DashboardViewPage(QWidget):
         self._bridge = bridge or DashboardBridge(self)
         self._fullscreen = False
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -9983,6 +11743,7 @@ class DataSourcePanel(QWidget):
             "font-size: 12px;"
             "QComboBox::drop-down { width: 12px; }"
             "QComboBox::down-arrow { width: 8px; height: 8px; }"
+            "QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }"
         )
 
         # 标题行：折叠按钮 + 标题
@@ -9994,6 +11755,7 @@ class DataSourcePanel(QWidget):
         self._collapse_btn.setStyleSheet(
             "QPushButton { border: 1px solid #D9D9D9; border-radius: 3px; background: #FFF; font-size: 10px; }"
             "QPushButton:hover { border-color: #1890FF; }"
+            "QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }"
         )
         self._collapse_btn.clicked.connect(self._toggle_collapse)
         header_row.addWidget(self._collapse_btn)
@@ -10227,6 +11989,7 @@ class _FieldPreviewDialog(QDialog):
     def __init__(self, source_type: str, source_id: str, fields: list, parent=None):
         super().__init__(parent)
         self.setWindowTitle("字段预览")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(400, 350)
         self.setStyleSheet("QDialog { background: #FAFAFA; }")
 
@@ -10283,8 +12046,7 @@ import os
 import logging
 from datetime import datetime
 
-import pandas as pd
-import numpy as np
+# pd/np 已在文件顶部延迟导入（_LazyPd/_LazyNp 代理），此处无需重复 import
 
 
 logger = logging.getLogger(__name__)
@@ -10302,6 +12064,95 @@ _PD_TYPE_TO_MYSQL = {
 }
 
 SUPPORTED_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.json']
+
+
+def _flatten_nested_json(data) -> pd.DataFrame:
+    """将嵌套 JSON 数据自动展平为扁平 DataFrame。
+
+    策略：
+    - list[flat-dict] → 直接 DataFrame
+    - list[nested-dict] → 递归展平，父级标量字段传播到子行
+    - dict → 找第一个 list[dict] 字段作为主数据，其余标量作为 meta
+    """
+
+    def _is_flat(d: dict) -> bool:
+        return all(isinstance(v, (str, int, float, bool, type(None))) for v in d.values())
+
+    def _flatten_rows(rows: list, parent_prefix: str = "") -> list[dict]:
+        flat = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            scalar = {}
+            nested_lists = {}
+            used_keys = set()
+            for k, v in item.items():
+                col = _clean_column_name(k)
+                # 去掉父级前缀，只保留叶子节点名；若冲突则加后缀
+                if col in used_keys:
+                    col = _clean_column_name(f"{parent_prefix}_{k}" if parent_prefix else k)
+                used_keys.add(col)
+                if isinstance(v, list):
+                    dict_items = [x for x in v if isinstance(x, dict)]
+                    if dict_items:
+                        nested_lists[col] = dict_items
+                    else:
+                        scalar[col] = ", ".join(str(x) for x in v if x is not None)
+                elif isinstance(v, dict):
+                    for sk, sv in v.items():
+                        sub_col = _clean_column_name(sk)
+                        if sub_col in used_keys:
+                            sub_col = _clean_column_name(f"{col}_{sk}")
+                        used_keys.add(sub_col)
+                        if isinstance(sv, (str, int, float, bool, type(None))):
+                            scalar[sub_col] = sv
+                        else:
+                            scalar[sub_col] = str(sv)
+                else:
+                    scalar[col] = v
+            if nested_lists:
+                first_key = list(nested_lists.keys())[0]
+                child_rows = _flatten_rows(nested_lists[first_key], first_key)
+                for cr in child_rows:
+                    flat.append({**scalar, **cr})
+            else:
+                flat.append(scalar)
+        return flat
+
+    if isinstance(data, list):
+        if not data:
+            return pd.DataFrame()
+        if all(isinstance(x, dict) for x in data):
+            if all(_is_flat(x) for x in data):
+                return pd.DataFrame(data)
+            rows = _flatten_rows(data)
+            return pd.DataFrame(rows) if rows else pd.DataFrame()
+        return pd.DataFrame({"value": data})
+
+    if isinstance(data, dict):
+        main_key = None
+        for k, v in data.items():
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                main_key = k
+                break
+        if main_key:
+            meta = {k: v for k, v in data.items()
+                    if k != main_key and isinstance(v, (str, int, float, bool, type(None)))}
+            rows = data[main_key]
+            if all(_is_flat(x) for x in rows):
+                df = pd.DataFrame(rows)
+            else:
+                flat_rows = _flatten_rows(rows, main_key)
+                df = pd.DataFrame(flat_rows) if flat_rows else pd.DataFrame()
+            for mk, mv in meta.items():
+                df[_clean_column_name(mk)] = mv
+            return df
+        try:
+            return pd.json_normalize(data)
+        except Exception:
+            return pd.DataFrame([data])
+
+    return pd.DataFrame({"value": [data]})
 
 
 class ExcelImporter:
@@ -10328,7 +12179,12 @@ class ExcelImporter:
             if ext == '.csv':
                 df = pd.read_csv(file_path, nrows=nrows)
             elif ext == '.json':
-                df = pd.read_json(file_path, nrows=nrows)
+                import json as _json
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    raw = _json.load(f)
+                df = _flatten_nested_json(raw)
+                if nrows and len(df) > nrows:
+                    df = df.head(nrows)
             else:
                 df = pd.read_excel(file_path, nrows=nrows)
         except Exception as e:
@@ -10382,7 +12238,10 @@ class ExcelImporter:
             if ext == '.csv':
                 df = pd.read_csv(file_path)
             elif ext == '.json':
-                df = pd.read_json(file_path)
+                import json as _json
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    raw = _json.load(f)
+                df = _flatten_nested_json(raw)
             else:
                 df = pd.read_excel(file_path)
         except Exception as e:
@@ -11678,15 +13537,15 @@ LLM_PROVIDERS = {
         id="deepseek",
         name="DeepSeek",
         api_url="https://api.deepseek.com/v1/chat/completions",
-        default_model="deepseek-chat",
-        models=["deepseek-chat", "deepseek-reasoner"],
+        default_model="deepseek-v4-pro",
+        models=["deepseek-v4-flash", "deepseek-v4-pro"],
     ),
     "xiaomi_mimo": LLMProvider(
         id="xiaomi_mimo",
         name="小米 MiMo",
-        api_url="https://api.xiaomimimo.com/v1/chat/completions",
-        default_model="mimo-large",
-        models=["mimo-large", "mimo-pro"],
+        api_url="https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
+        default_model="mimo-v2.5-pro",
+        models=["mimo-v2.5-pro"],
     ),
     "zhipu_glm": LLMProvider(
         id="zhipu_glm",
@@ -14087,7 +15946,7 @@ def render_chart_html(chart: Any, data: List[dict]) -> str:
 
     Args:
         chart: ChartWidget 对象或任何具有 chart_type/title/x_field/y_fields/
-               color_field/size_field/style_config 属性的对象
+                color_field/size_field/style_config 属性的对象
         data: 查询结果行列表 list[dict]
 
     Returns:
@@ -14401,9 +16260,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QHeaderView, QAbstractItemView, QLabel, QCheckBox,
     QMessageBox, QComboBox, QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
-    QRadioButton, QFrame,
+    QRadioButton, QFrame, QTabWidget, QLayout, QLayoutItem,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QEvent, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QEvent, QTimer, QRect, QSize
 from PyQt6.QtGui import QColor, QDrag, QDropEvent
 
 logger = logging.getLogger(__name__)
@@ -14453,21 +16312,133 @@ class _DragTable(QTableWidget):
         self.dragFinished.emit(from_row, to_row)
 
 
+class BatchPasteFieldsDialog(QDialog):
+    """批量粘贴字段弹窗 — 粘贴多行字段名，匹配后批量添加到报表列"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("批量粘贴字段")
+        self.setMinimumSize(420, 360)
+        self.setStyleSheet("""
+            QDialog { background: #FAFAFA; }
+            QLabel { color: #333; font-size: 13px; }
+            QTextEdit { background: #FFFFFF; border: 1px solid #D9D9D9; border-radius: 4px;
+                        padding: 6px; font-size: 13px; color: #333; }
+            QTextEdit:focus { border-color: #4096FF; }
+            QPushButton { border-radius: 4px; padding: 6px 18px; font-size: 13px; }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        tip = QLabel("每行一个字段名（中文标签或 API key），按行序匹配并添加到报表列：")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        self._text_edit = QTextEdit()
+        self._text_edit.setAcceptRichText(False)  # 强制纯文本粘贴
+        self._text_edit.setPlaceholderText("例如：\n客户名称\n设备序列号\n工单编码\n...")
+        # 自定义右键菜单：白底 + 中文
+        self._text_edit.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._text_edit.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self._text_edit, 1)
+
+        # 状态标签（匹配结果反馈用）
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: #999; font-size: 12px;")
+        layout.addWidget(self._status_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedHeight(30)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("确定添加")
+        ok_btn.setFixedHeight(30)
+        ok_btn.setStyleSheet("""
+            QPushButton { background: #4096FF; color: #FFFFFF; border: none; }
+            QPushButton:hover { background: #1677FF; }
+        """)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+    def _show_context_menu(self, pos):
+        """右键菜单：白底 + 中文标签"""
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtGui import QAction
+        te = self._text_edit
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background: #FFFFFF; border: 1px solid #D9D9D9; padding: 4px 0; }
+            QMenu::item { padding: 6px 24px; color: #333; font-size: 13px; }
+            QMenu::item:selected { background: #E6F4FF; }
+            QMenu::item:disabled { color: #BBB; }
+        """)
+        has_sel = te.textCursor().hasSelection()
+        # 剪切
+        act_cut = QAction("剪切", self)
+        act_cut.setShortcut("Ctrl+X")
+        act_cut.setEnabled(has_sel)
+        act_cut.triggered.connect(te.cut)
+        menu.addAction(act_cut)
+        # 复制
+        act_copy = QAction("复制", self)
+        act_copy.setShortcut("Ctrl+C")
+        act_copy.setEnabled(has_sel)
+        act_copy.triggered.connect(te.copy)
+        menu.addAction(act_copy)
+        # 粘贴
+        act_paste = QAction("粘贴", self)
+        act_paste.setShortcut("Ctrl+V")
+        act_paste.triggered.connect(te.paste)
+        menu.addAction(act_paste)
+        menu.addSeparator()
+        # 全选
+        act_sel_all = QAction("全选", self)
+        act_sel_all.setShortcut("Ctrl+A")
+        act_sel_all.triggered.connect(te.selectAll)
+        menu.addAction(act_sel_all)
+        menu.exec(te.mapToGlobal(pos))
+
+    def get_field_names(self) -> list[str]:
+        """返回去重去空的字段名列表（保持行序）。
+        支持换行、制表符、逗号、分号等多种分隔符（兼容 Excel/文档复制）。
+        """
+        import re
+        text = self._text_edit.toPlainText()
+        # 统一分隔符：换行、制表符、中文逗号/顿号 → 统一按 \n 拆分
+        text = re.sub(r'[\t\r,;，；、]+', '\n', text)
+        seen = set()
+        result = []
+        for line in text.splitlines():
+            name = line.strip()
+            if name and name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
+
+
 class FieldConfigPanel(QWidget):
     """字段配置面板"""
 
     columnsChanged = pyqtSignal()       # 列配置变更
     fieldRemoved = pyqtSignal(str)      # column_id
     fieldMoved = pyqtSignal(int, int)   # from_row, to_row
+    sortConfigChanged = pyqtSignal(list)  # 排序配置变更
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._columns: list[dict] = []  # [{id, display_name, source_object, source_field, visible, computation_type, aggregate_func, formula_expression}]
         self._building = False           # 防止循环信号
         self._show_summary_row = False
+        self._sort_config: list = []     # 排序配置
         self._group_by_fields: set = set()
         self._save_config_fn = None
         self._load_config_fn = None
+        self._available_fields: list[dict] = []  # [{'api': str, 'name': str, 'fields': [(key, label)]}]
+        self._sync_available_fn = None  # 由 editor page 注入，用于刷新可用字段
         self._setup_ui()
 
     def _setup_ui(self):
@@ -14505,13 +16476,35 @@ class FieldConfigPanel(QWidget):
         remove_btn.clicked.connect(self._remove_selected)
         header_row.addWidget(remove_btn)
 
+        paste_btn = QPushButton("📋 粘贴")
+        paste_btn.setMinimumWidth(60)
+        paste_btn.setFixedHeight(24)
+        paste_btn.setStyleSheet("font-size: 12px; padding: 2px 8px; border: 1px solid #D9D9D9; border-radius: 3px;")
+        paste_btn.setToolTip("批量粘贴字段名，自动匹配并添加到报表列")
+        paste_btn.clicked.connect(self._on_batch_paste)
+        header_row.addWidget(paste_btn)
+
         layout.addLayout(header_row)
 
-        # 字段表格 (5列: 可见 | 显示名 | 来源 | 聚合方式 | 字段格式)
+        # 搜索框
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("🔍 搜索列显示名或来源...")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setFixedHeight(26)
+        self._search_edit.setStyleSheet(
+            "QLineEdit { border: 1px solid #D9D9D9; border-radius: 3px; "
+            "padding: 4px 8px; font-size: 12px; color: #333333; background: #FFFFFF; }"
+            "QLineEdit:focus { border-color: #FF8C00; }"
+        )
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        layout.addWidget(self._search_edit)
+
+        # 字段表格 (4列: 可见 | 显示名 | 来源 | 字段格式)
         self._table = _DragTable()
-        self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(["显示", "列显示名", "来源", "聚合方式", "字段格式"])
-        for c in range(5):
+        self._table.setColumnCount(4)
+        self._table.setHorizontalHeaderLabels(["显示", "列显示名", "来源", "字段格式"])
+        install_autofilter_header(self._table)
+        for c in range(4):
             hdr = self._table.horizontalHeaderItem(c)
             if hdr:
                 hdr.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -14524,10 +16517,14 @@ class FieldConfigPanel(QWidget):
                 background-color: #FFFFFF; font-size: 12px; color: #333333;
             }
             QHeaderView::section {
-                background-color: #FAFAFA; font-size: 11px; color: #333333;
+                background-color: #FFFFFF; font-size: 11px; color: #333333;
                 border: none; border-bottom: 1px solid #E0E0E0; padding: 4px;
             }
             QTableWidget::item { padding: 4px 6px; }
+            QTableWidget QLineEdit {
+                background-color: #FFFFFF; border: 1px solid #409EFF;
+                border-radius: 2px; padding: 4px 6px;
+            }
             QCheckBox { color: #333333; background: transparent; }
             QCheckBox::indicator { width: 14px; height: 14px; }
             QComboBox { font-size: 11px; color: #333333; background: #FFFFFF;
@@ -14538,13 +16535,12 @@ class FieldConfigPanel(QWidget):
         hh.setMinimumSectionSize(20)
         hh.sectionResized.connect(self._on_field_col_resized)
         # 全部 Interactive：用户可自由拖拽调整每列宽度，不强制铺满
-        for c in range(5):
+        for c in range(4):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
         self._table.setColumnWidth(0, 44)
         self._table.setColumnWidth(1, 140)
-        self._table.setColumnWidth(2, 200)
-        self._table.setColumnWidth(3, 72)
-        self._table.setColumnWidth(4, 130)
+        self._table.setColumnWidth(2, 300)
+        self._table.setColumnWidth(3, 130)
         # 水平滚动条：列宽总和超出视口时出现，不强制挤压
         self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # 列宽保存定时器（防抖）
@@ -14560,6 +16556,13 @@ class FieldConfigPanel(QWidget):
         # 排序按钮 + 计算字段 + 汇总行设置
         compute_row = QHBoxLayout()
         compute_row.setSpacing(4)
+
+        self._sort_btn = QPushButton("排序")
+        self._sort_btn.setFixedHeight(26)
+        self._sort_btn.setStyleSheet(self._btn_style())
+        self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sort_btn.clicked.connect(self._on_sort_clicked)
+        compute_row.addWidget(self._sort_btn)
 
         up_btn = QPushButton("↑ 上移")
         up_btn.setMinimumWidth(64)
@@ -14584,29 +16587,17 @@ class FieldConfigPanel(QWidget):
 
         compute_row.addSpacing(8)
 
-        add_formula_btn = QPushButton("+ 添加计算字段")
-        add_formula_btn.setFixedHeight(26)
-        add_formula_btn.setStyleSheet(self._btn_style())
-        add_formula_btn.clicked.connect(self._add_computed_field)
-        compute_row.addWidget(add_formula_btn)
-
-        add_addr_btn = QPushButton("+ 添加地址提取列")
-        add_addr_btn.setFixedHeight(26)
-        add_addr_btn.setStyleSheet(self._btn_style())
-        add_addr_btn.clicked.connect(self._add_address_extract_field)
-        compute_row.addWidget(add_addr_btn)
-
-        add_date_part_btn = QPushButton("+ 添加时间成分")
-        add_date_part_btn.setFixedHeight(26)
-        add_date_part_btn.setStyleSheet(self._btn_style())
-        add_date_part_btn.clicked.connect(self._add_date_part_field)
-        compute_row.addWidget(add_date_part_btn)
+        add_col_btn = QPushButton("+ 添加计算列")
+        add_col_btn.setFixedHeight(26)
+        add_col_btn.setStyleSheet(self._btn_style())
+        add_col_btn.clicked.connect(self._add_computed_column)
+        compute_row.addWidget(add_col_btn)
 
         compute_row.addStretch()
 
         self._summary_cb = QCheckBox("显示汇总行")
         self._summary_cb.setStyleSheet("font-size: 12px; color: #333333;")
-        self._summary_cb.stateChanged.connect(self._on_summary_changed)
+        self._summary_cb.stateChanged[int].connect(self._on_summary_changed)
         compute_row.addWidget(self._summary_cb)
 
         layout.addLayout(compute_row)
@@ -14619,109 +16610,121 @@ class FieldConfigPanel(QWidget):
             QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
         """
 
+    # ==================== 排序 ====================
+
+    def set_sort_config(self, config: list):
+        """设置排序配置。"""
+        self._sort_config = list(config or [])
+
+    def get_sort_config(self) -> list:
+        """获取当前排序配置。"""
+        return list(self._sort_config)
+
+    def _on_sort_clicked(self):
+        """弹出排序配置对话框（在排序按钮下方弹出）。"""
+        cols = [c.get('display_name', '') for c in self._columns if c.get('display_name')]
+        dlg = SortConfigDialog(cols, self._sort_config, self)
+        dlg.setPopupAnchorWidget(self._sort_btn)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._sort_config = dlg.get_sort_config()
+            self.sortConfigChanged.emit(self._sort_config)
+
     # ==================== 数据操作 ====================
 
     def set_columns(self, columns: list[dict]):
         """设置字段列表"""
         self._building = True
-        self._columns = columns
-        self._table.setRowCount(len(columns))
+        try:
+            self._columns = columns
+            self._table.setRowCount(len(columns))
 
-        for row, col in enumerate(columns):
-            # 可见性 (列 0)
-            check_widget = QWidget()
-            check_layout = QHBoxLayout(check_widget)
-            check_layout.setContentsMargins(0, 0, 0, 0)
-            check_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cb = QCheckBox()
-            cb.blockSignals(True)
-            cb.setChecked(col.get('visible', True))
-            cb.blockSignals(False)
-            cb.stateChanged.connect(lambda state, r=row: self._on_visible_changed(r, state))
-            check_layout.addWidget(cb)
-            self._table.setCellWidget(row, 0, check_widget)
+            for row, col in enumerate(columns):
+                # 可见性 (列 0)
+                check_widget = QWidget()
+                check_layout = QHBoxLayout(check_widget)
+                check_layout.setContentsMargins(0, 0, 0, 0)
+                check_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                cb = QCheckBox()
+                cb.blockSignals(True)
+                cb.setChecked(col.get('visible', True))
+                cb.blockSignals(False)
+                cb.stateChanged[int].connect(lambda state, r=row: self._on_visible_changed(r, state))
+                check_layout.addWidget(cb)
+                self._table.setCellWidget(row, 0, check_widget)
 
-            # 显示名 (列 1)
-            display_item = QTableWidgetItem(col.get('display_name', ''))
-            display_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(row, 1, display_item)
+                # 显示名 (列 1)
+                display_item = QTableWidgetItem(col.get('display_name', ''))
+                display_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._table.setItem(row, 1, display_item)
 
-            # 来源 (列 2)  — 聚合列为 "聚合(SUM, 金额)"，公式列为 "公式(=...)"
-            comp_type = col.get('computation_type', 'direct')
-            if comp_type == 'aggregate':
-                agg = col.get('aggregate_func', 'SUM')
-                sf = col.get('source_field', '')
-                source_text = f"聚合({agg}, {sf})"
-            elif comp_type == 'formula':
-                expr = col.get('formula_expression', '')
-                source_text = f"公式({expr[:30]}{'…' if len(expr) > 30 else ''})"
-            elif comp_type == 'address_extract':
-                level = col.get('address_target_level', 'city')
-                level_labels = {'province': '省-全称', 'province_short': '省-简称', 'city': '市', 'area': '区'}
-                level_label = level_labels.get(level, level)
-                src_cols = col.get('address_source_fields', [])
-                src_text = ', '.join([c for c in src_cols if c])
-                source_text = f"地址提取({level_label}, [{src_text}])"
-            elif comp_type == 'date_part':
-                unit = col.get('date_part_unit', 'year')
-                unit_labels = {'year': '年', 'month': '月', 'week': '周', 'quarter': '季度'}
-                unit_label = unit_labels.get(unit, unit)
-                src_field = col.get('date_part_source_field', '')
-                source_text = f"时间成分({unit_label}, {src_field})"
-            else:
-                source_text = f"{col.get('source_object', '')}.{col.get('source_field', '')}"
-            source_item = QTableWidgetItem(source_text)
-            source_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if comp_type == 'formula':
-                # 在 UserRole 中保存完整公式，避免从截断的显示文本恢复
-                source_item.setData(Qt.ItemDataRole.UserRole, expr)
-            elif comp_type == 'address_extract':
-                # 在 UserRole 中保存完整配置（JSON），避免从显示文本恢复时丢失
-                import json as _json
-                addr_config = _json.dumps({
-                    'address_source_fields': col.get('address_source_fields', []),
-                    'address_target_level': col.get('address_target_level', 'city'),
-                }, ensure_ascii=False)
-                source_item.setData(Qt.ItemDataRole.UserRole, addr_config)
-            elif comp_type == 'date_part':
-                import json as _json
-                dp_config = _json.dumps({
-                    'date_part_source_field': col.get('date_part_source_field', ''),
-                    'date_part_unit': col.get('date_part_unit', 'year'),
-                }, ensure_ascii=False)
-                source_item.setData(Qt.ItemDataRole.UserRole, dp_config)
-            self._table.setItem(row, 2, source_item)
+                # 来源 (列 2)  — 聚合列为 "聚合(SUM, 金额)"，公式列为 "公式(=...)"
+                comp_type = col.get('computation_type', 'direct')
+                if comp_type == 'aggregate':
+                    agg = col.get('aggregate_func', 'SUM')
+                    sf = col.get('source_field', '')
+                    source_text = f"聚合({agg}, {sf})"
+                elif comp_type == 'formula':
+                    expr = col.get('formula_expression', '')
+                    source_text = f"公式({expr})"
+                elif comp_type == 'address_extract':
+                    level = col.get('address_target_level', 'city')
+                    level_labels = {'province': '省-全称', 'province_short': '省-简称', 'city_full': '市-全称', 'city_short': '市-简称'}
+                    level_label = level_labels.get(level, level)
+                    src_cols = col.get('address_source_fields', [])
+                    src_text = ', '.join([c for c in src_cols if c])
+                    source_text = f"地址提取({level_label}, [{src_text}])"
+                elif comp_type == 'date_part':
+                    unit = col.get('date_part_unit', 'year')
+                    unit_labels = {'year': '年', 'month': '月', 'week': '周', 'quarter': '季度'}
+                    unit_label = unit_labels.get(unit, unit)
+                    src_field = col.get('date_part_source_field', '')
+                    source_text = f"时间成分({unit_label}, {src_field})"
+                else:
+                    source_text = f"{col.get('source_object', '')}.{col.get('source_field', '')}"
+                source_item = QTableWidgetItem(source_text)
+                source_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # 公式列允许编辑来源，其他类型锁定防止误改
+                if comp_type != 'formula':
+                    source_item.setFlags(source_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if comp_type == 'formula':
+                    # 在 UserRole 中保存完整公式，避免从截断的显示文本恢复
+                    source_item.setData(Qt.ItemDataRole.UserRole, expr)
+                elif comp_type == 'address_extract':
+                    # 在 UserRole 中保存完整配置（JSON），避免从显示文本恢复时丢失
+                    import json as _json
+                    addr_config = _json.dumps({
+                        'address_source_fields': col.get('address_source_fields', []),
+                        'address_target_level': col.get('address_target_level', 'city'),
+                    }, ensure_ascii=False)
+                    source_item.setData(Qt.ItemDataRole.UserRole, addr_config)
+                elif comp_type == 'date_part':
+                    import json as _json
+                    dp_config = _json.dumps({
+                        'date_part_source_field': col.get('date_part_source_field', ''),
+                        'date_part_unit': col.get('date_part_unit', 'year'),
+                    }, ensure_ascii=False)
+                    source_item.setData(Qt.ItemDataRole.UserRole, dp_config)
+                self._table.setItem(row, 2, source_item)
 
-            # 聚合方式 (列 3) — QComboBox（禁用滚轮）
-            agg_combo = NoWheelComboBox()
-            agg_combo.addItems(["—", "SUM", "AVG", "COUNT", "MAX", "MIN"])
-            agg_combo.setCurrentIndex(0)
-            agg_func = col.get('aggregate_func', '')
-            if comp_type == 'aggregate' and agg_func:
-                idx = agg_combo.findText(agg_func.upper())
-                if idx >= 0:
-                    agg_combo.setCurrentIndex(idx)
-            agg_combo.currentTextChanged.connect(
-                lambda text, r=row: self._on_agg_changed(r, text)
-            )
-            self._table.setCellWidget(row, 3, agg_combo)
-
-            # 字段格式 (列 4) — QComboBox（禁用滚轮）
-            fmt_combo = NoWheelComboBox()
-            for val, label in FIELD_FORMATS:
-                fmt_combo.addItem(label, val)
-            fmt_combo.setCurrentIndex(0)  # 默认 "文本"
-            current_fmt = col.get('field_format', 'text')
-            for idx in range(fmt_combo.count()):
-                if fmt_combo.itemData(idx) == current_fmt:
-                    fmt_combo.setCurrentIndex(idx)
-                    break
-            fmt_combo.currentTextChanged.connect(
-                lambda text, r=row: self._on_format_changed(r)
-            )
-            self._table.setCellWidget(row, 4, fmt_combo)
-
-        self._building = False
+                # 字段格式 (列 3) — QComboBox（禁用滚轮）
+                fmt_combo = NoWheelComboBox()
+                for val, label in FIELD_FORMATS:
+                    fmt_combo.addItem(label, val)
+                fmt_combo.setCurrentIndex(0)  # 默认 "文本"
+                current_fmt = col.get('field_format', 'text')
+                for idx in range(fmt_combo.count()):
+                    if fmt_combo.itemData(idx) == current_fmt:
+                        fmt_combo.setCurrentIndex(idx)
+                        break
+                fmt_combo.currentTextChanged.connect(
+                    lambda text, r=row: self._on_format_changed(r)
+                )
+                self._table.setCellWidget(row, 3, fmt_combo)
+        finally:
+            self._building = False
+            # 重新应用搜索过滤
+            if hasattr(self, '_search_edit'):
+                self._on_search_changed(self._search_edit.text())
 
     def get_columns(self) -> list[dict]:
         """获取当前字段列表"""
@@ -14730,7 +16733,6 @@ class FieldConfigPanel(QWidget):
             display_item = self._table.item(row, 1)
             source_item = self._table.item(row, 2)
             check_widget = self._table.cellWidget(row, 0)
-            agg_combo = self._table.cellWidget(row, 3)
 
             display_name = display_item.text().strip() if display_item else ''
             source_text = source_item.text().strip() if source_item else ''
@@ -14785,20 +16787,13 @@ class FieldConfigPanel(QWidget):
                     date_part_unit = 'year'
             elif source_text.startswith('公式('):
                 computation_type = 'formula'
-                # 优先从 UserRole 读取完整公式（显示文本可能被截断）
+                # 优先从 UserRole 读取完整公式
                 full_expr = source_item.data(Qt.ItemDataRole.UserRole)
                 if full_expr:
                     formula_expression = str(full_expr)
                 else:
                     inner = source_text[3:-1]
-                    # 防止从截断的显示文本（含 …）读取损毁的公式
-                    if '…' in inner:
-                        formula_expression = self._find_original_formula(display_name, row)
-                        if not formula_expression:
-                            logger.warning(f"[FieldConfig] 公式列 '{display_name}' UserRole 丢失且显示文本已截断，公式可能损毁")
-                            formula_expression = inner
-                    else:
-                        formula_expression = inner
+                    formula_expression = inner
             else:
                 parts = source_text.rsplit('.', 1) if '.' in source_text else ('', source_text)
                 source_object = parts[0] if len(parts) > 1 else ''
@@ -14810,18 +16805,9 @@ class FieldConfigPanel(QWidget):
                 if cb:
                     visible = cb.isChecked()
 
-            # 如果 combo 选了聚合函数但来源没变，修正 computation_type
-            if computation_type == 'direct' and isinstance(agg_combo, QComboBox):
-                agg_text = agg_combo.currentText()
-                if agg_text != '—':
-                    computation_type = 'aggregate'
-                    aggregate_func = agg_text
-                else:
-                    aggregate_func = ''
-
-            # 字段格式 (列 4)
+            # 字段格式 (列 3)
             field_format = 'text'
-            fmt_combo = self._table.cellWidget(row, 4)
+            fmt_combo = self._table.cellWidget(row, 3)
             if isinstance(fmt_combo, QComboBox):
                 field_format = fmt_combo.currentData() or 'text'
 
@@ -14838,6 +16824,7 @@ class FieldConfigPanel(QWidget):
                 'date_part_source_field': date_part_source_field if computation_type == 'date_part' else '',
                 'date_part_unit': date_part_unit if computation_type == 'date_part' else '',
                 'field_format': field_format,
+                'sort_order': row,
             })
         return result
 
@@ -14848,7 +16835,6 @@ class FieldConfigPanel(QWidget):
             display_item = self._table.item(row, 1)
             source_item = self._table.item(row, 2)
             check_widget = self._table.cellWidget(row, 0)
-            agg_combo = self._table.cellWidget(row, 3)
 
             display_name = display_item.text().strip() if display_item else ''
             source_text = source_item.text().strip() if source_item else ''
@@ -14898,13 +16884,7 @@ class FieldConfigPanel(QWidget):
                     formula_expression = str(full_expr)
                 else:
                     inner = source_text[3:-1]
-                    if '…' in inner:
-                        formula_expression = self._find_original_formula(display_name, row)
-                        if not formula_expression:
-                            logger.warning(f"[FieldConfig] 公式列 '{display_name}' UserRole 丢失且显示文本已截断，公式可能损毁")
-                            formula_expression = inner
-                    else:
-                        formula_expression = inner
+                    formula_expression = inner
             else:
                 parts = source_text.rsplit('.', 1) if '.' in source_text else ('', source_text)
                 source_object = parts[0] if len(parts) > 1 else ''
@@ -14916,15 +16896,9 @@ class FieldConfigPanel(QWidget):
                 if cb:
                     visible = cb.isChecked()
 
-            if computation_type == 'direct' and isinstance(agg_combo, QComboBox):
-                agg_text = agg_combo.currentText()
-                if agg_text != '—':
-                    computation_type = 'aggregate'
-                    aggregate_func = agg_text
-
-            # 字段格式 (列 4)
+            # 字段格式 (列 3)
             field_format = 'text'
-            fmt_combo = self._table.cellWidget(row, 4)
+            fmt_combo = self._table.cellWidget(row, 3)
             if isinstance(fmt_combo, QComboBox):
                 field_format = fmt_combo.currentData() or 'text'
 
@@ -14941,6 +16915,7 @@ class FieldConfigPanel(QWidget):
                 'date_part_source_field': date_part_source_field if computation_type == 'date_part' else '',
                 'date_part_unit': date_part_unit if computation_type == 'date_part' else '',
                 'field_format': field_format,
+                'sort_order': row,
             })
         if table_cols:
             self._columns = table_cols
@@ -14948,6 +16923,7 @@ class FieldConfigPanel(QWidget):
     def add_column(self, display_name: str, source_object: str, source_field: str):
         """添加一个字段列"""
         self._sync_columns_from_table()
+        max_so = max((c.get('sort_order', 0) for c in self._columns), default=-1)
         self._columns.append({
             'display_name': display_name,
             'source_object': source_object,
@@ -14957,6 +16933,7 @@ class FieldConfigPanel(QWidget):
             'aggregate_func': '',
             'formula_expression': '',
             'field_format': 'text',
+            'sort_order': max_so + 1,
         })
         self.set_columns(self._columns)
         self.columnsChanged.emit()
@@ -15016,6 +16993,68 @@ class FieldConfigPanel(QWidget):
                 if entry is not None:
                     self._columns[entry]['display_name'] = new_name
                     self.columnsChanged.emit()
+        elif col == 2:  # 来源
+            entry = self._find_column_by_table_row(row)
+            if entry is None:
+                return
+            source_item = self._table.item(row, 2)
+            if not source_item:
+                return
+            source_text = source_item.text().strip()
+            d = self._columns[entry]
+            # 保留原始公式表达式（避免从截断的显示文本恢复时丢失）
+            _prev_formula = d.get('formula_expression', '') or ''
+            _prev_comp_type = d.get('computation_type', 'direct')
+            # 重置解析字段
+            d['source_object'] = ''
+            d['source_field'] = ''
+            d['computation_type'] = 'direct'
+            d['aggregate_func'] = ''
+            d['formula_expression'] = ''
+            if source_text.startswith('聚合('):
+                d['computation_type'] = 'aggregate'
+                inner = source_text[3:-1]
+                parts = inner.split(',', 1)
+                d['aggregate_func'] = parts[0].strip() if parts else ''
+                d['source_field'] = parts[1].strip() if len(parts) > 1 else ''
+            elif source_text.startswith('公式('):
+                d['computation_type'] = 'formula'
+                inner = source_text[3:-1]  # 去掉 "公式(" 和 ")"
+                # 从 UserRole 读取上次保存的完整公式
+                stored_expr = source_item.data(Qt.ItemDataRole.UserRole)
+                # 如果用户编辑了单元格（文本与存储值不同），以用户输入为准
+                if stored_expr and inner != str(stored_expr) and '…' not in inner:
+                    # 用户编辑了公式 → 采用新表达式
+                    d['formula_expression'] = inner
+                elif stored_expr:
+                    # 用户未编辑或文本被截断 → 使用存储的完整公式
+                    d['formula_expression'] = str(stored_expr)
+                elif '…' in inner and _prev_comp_type == 'formula' and _prev_formula:
+                    # 截断文本且无存储值 → 回退到原始公式
+                    d['formula_expression'] = _prev_formula
+                else:
+                    d['formula_expression'] = inner
+                # 同步 UserRole（保持一致性）
+                source_item.setData(Qt.ItemDataRole.UserRole, d['formula_expression'])
+            elif _prev_comp_type == 'formula' and _prev_formula:
+                # 编辑公式列时用户可能直接输入表达式（不带"公式("前缀）
+                # 保留公式类型，将输入作为新表达式
+                d['computation_type'] = 'formula'
+                expr = source_text if source_text.startswith('=') else f'={source_text}'
+                d['formula_expression'] = expr
+                # 更新显示文本和 UserRole
+                self._building = True
+                source_item.setText(f'公式({expr})')
+                source_item.setData(Qt.ItemDataRole.UserRole, expr)
+                self._building = False
+            else:
+                if '.' in source_text:
+                    parts = source_text.rsplit('.', 1)
+                    d['source_object'] = parts[0]
+                    d['source_field'] = parts[1]
+                else:
+                    d['source_field'] = source_text
+            self.columnsChanged.emit()
 
     def _on_visible_changed(self, row, state):
         if self._building:
@@ -15058,7 +17097,7 @@ class FieldConfigPanel(QWidget):
         entry = self._find_column_by_table_row(row)
         if entry is None:
             return
-        fmt_combo = self._table.cellWidget(row, 4)
+        fmt_combo = self._table.cellWidget(row, 3)
         if isinstance(fmt_combo, QComboBox):
             self._columns[entry]['field_format'] = fmt_combo.currentData() or 'text'
         self.columnsChanged.emit()
@@ -15158,57 +17197,36 @@ class FieldConfigPanel(QWidget):
                     return expr
         return ''
 
-    def _add_computed_field(self):
-        """弹出添加计算字段对话框。"""
-        dlg = _ComputedFieldDialog(self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            field_data = dlg.get_field_data()
-            self._sync_columns_from_table()
-            self._columns.append(field_data)
-            self.set_columns(self._columns)
-            self.columnsChanged.emit()
-
-    def _add_address_extract_field(self):
-        """弹出添加地址提取列对话框。"""
-        # 先同步表状态，确保 _columns 是最新的
-        self._sync_columns_from_table()
-        # 收集当前所有直接列作为候选
-        candidate_cols = [
-            c.get('display_name', '')
-            for c in self._columns
-            if c.get('computation_type', 'direct') == 'direct' and c.get('display_name')
-        ]
-        dlg = _AddressExtractDialog(self, candidate_cols)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            field_data_list = dlg.get_field_data_list()
-            self._sync_columns_from_table()
-            for field_data in field_data_list:
-                self._columns.append(field_data)
-            self.set_columns(self._columns)
-            self.columnsChanged.emit()
-
-    def _add_date_part_field(self):
-        """弹出添加时间成分列对话框。"""
+    def _add_computed_column(self):
+        """弹出统一的添加计算列对话框（含公式/地址提取/时间成分三个标签页）。"""
         try:
             self._sync_columns_from_table()
-            # 收集当前所有直接列为候选源字段
             candidate_cols = [
                 c.get('display_name', '')
                 for c in self._columns
                 if c.get('computation_type', 'direct') == 'direct' and c.get('display_name')
             ]
-            dlg = _DatePartExtractDialog(self, candidate_cols)
+            dlg = _AddComputedColumnDialog(self, candidate_cols)
             if dlg.exec() == QDialog.DialogCode.Accepted:
-                field_data_list = dlg.get_field_data_list()
+                field_data = dlg.get_field_data()
                 self._sync_columns_from_table()
-                for field_data in field_data_list:
+                # 计算新字段的 sort_order（追加到末尾）
+                max_so = max((c.get('sort_order', 0) for c in self._columns), default=-1)
+                next_so = max_so + 1
+                if isinstance(field_data, list):
+                    for fd in field_data:
+                        fd['sort_order'] = next_so
+                        self._columns.append(fd)
+                        next_so += 1
+                else:
+                    field_data['sort_order'] = next_so
                     self._columns.append(field_data)
                 self.set_columns(self._columns)
                 self.columnsChanged.emit()
         except Exception as e:
             import traceback
             traceback.print_exc()
-            QMessageBox.warning(self, "错误", f"添加时间成分失败:\n{str(e)}")
+            frameless_message_box(self, "错误", f"添加计算列失败:\n{str(e)}")
 
     def _find_column_by_table_row(self, table_row: int) -> int | None:
         """根据表格行号查找 _columns 中的索引（按 source 字段匹配）。"""
@@ -15224,13 +17242,32 @@ class FieldConfigPanel(QWidget):
                 return i
         return table_row if table_row < len(self._columns) else None
 
+    def _on_search_changed(self, text: str):
+        """根据搜索文本过滤表格行。"""
+        keyword = text.strip().lower()
+        for row in range(self._table.rowCount()):
+            if not keyword:
+                self._table.setRowHidden(row, False)
+                continue
+            match = False
+            for col in (1, 2):
+                item = self._table.item(row, col)
+                if item and keyword in item.text().lower():
+                    match = True
+                    break
+            self._table.setRowHidden(row, not match)
+
     def _select_all(self):
         for row in range(self._table.rowCount()):
             w = self._table.cellWidget(row, 0)
             if w:
                 cb = w.findChild(QCheckBox)
                 if cb:
+                    cb.blockSignals(True)
                     cb.setChecked(True)
+                    cb.blockSignals(False)
+        for c in self._columns:
+            c['visible'] = True
         self.columnsChanged.emit()
 
     def _deselect_all(self):
@@ -15239,7 +17276,11 @@ class FieldConfigPanel(QWidget):
             if w:
                 cb = w.findChild(QCheckBox)
                 if cb:
+                    cb.blockSignals(True)
                     cb.setChecked(False)
+                    cb.blockSignals(False)
+        for c in self._columns:
+            c['visible'] = False
         self.columnsChanged.emit()
 
     def _on_drag_finished(self, from_row: int, to_row: int):
@@ -15294,6 +17335,96 @@ class FieldConfigPanel(QWidget):
         self.set_columns(self._columns)
         self.columnsChanged.emit()
 
+    def _on_batch_paste(self):
+        """批量粘贴字段：打开弹窗 → 匹配可用字段 → 按行序添加"""
+        # 刷新可用字段（从画布卡片获取最新字段列表）
+        if self._sync_available_fn:
+            self._sync_available_fn()
+        dlg = BatchPasteFieldsDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        names = dlg.get_field_names()
+        if not names:
+            return
+
+        # 构建查找索引：label→(api, key) 和 key→(api, label)
+        # _available_fields: [{'api': str, 'name': str, 'fields': [(key, label, ...)]}]
+        label_map = {}   # label_lower → (api, key, label)
+        key_map = {}     # key_lower → (api, key, label)
+        all_labels = set()  # 所有有效 label（用于智能合并判断）
+        for obj in self._available_fields:
+            api = obj.get('api', '')
+            for field_tuple in obj.get('fields', []):
+                key = field_tuple[0] if len(field_tuple) > 0 else ''
+                label = field_tuple[1] if len(field_tuple) > 1 else key
+                if label:
+                    label_map[label.lower()] = (api, key, label)
+                    all_labels.add(label.lower())
+                if key:
+                    key_map[key.lower()] = (api, key, label)
+
+        # 智能合并：粘贴源可能因单元格换行把一个字段名拆成多行
+        # 先对 names 做预处理，对未匹配的行尝试和下一行拼接
+        def _try_match(n):
+            return label_map.get(n.lower()) or key_map.get(n.lower())
+
+        merged_names = []
+        i = 0
+        while i < len(names):
+            name = names[i]
+            if _try_match(name):
+                merged_names.append(name)
+                i += 1
+                continue
+            # 尝试与下一行拼接
+            if i + 1 < len(names):
+                combined = name + names[i + 1]
+                if _try_match(combined):
+                    merged_names.append(combined)
+                    i += 2
+                    continue
+                # 也尝试加空格拼接
+                combined_sp = name + ' ' + names[i + 1]
+                if _try_match(combined_sp):
+                    merged_names.append(combined_sp)
+                    i += 2
+                    continue
+            merged_names.append(name)
+            i += 1
+
+        # 已有列的 (api, key) 集合，避免重复添加
+        self._sync_columns_from_table()
+        existing = set()
+        for c in self._columns:
+            existing.add((c.get('source_object', ''), c.get('source_field', '')))
+
+        added = 0
+        unmatched = []
+        for name in merged_names:
+            match = _try_match(name)
+            if not match:
+                unmatched.append(name)
+                continue
+            api, key, label = match
+            # source_field 用中文标签（与画布卡片 f['key'] 一致，确保勾选同步）
+            if (api, label) in existing:
+                continue
+            self.add_column(label, api, label)
+            existing.add((api, label))
+            added += 1
+
+        if added > 0:
+            self.columnsChanged.emit()
+
+        # 反馈
+        parts = []
+        if added > 0:
+            parts.append(f"✅ 已添加 {added} 个字段")
+        if unmatched:
+            parts.append(f"⚠️ 未匹配: {', '.join(unmatched)}")
+        if parts:
+            _light_msgbox(self, QMessageBox.Icon.Information, "批量粘贴结果", "\n".join(parts))
+
 
 def _describe_func_params(func, min_args: int, max_args: int | None) -> str:
     """从函数签名提取可读的参数列表字符串。"""
@@ -15324,6 +17455,77 @@ def _describe_func_params(func, min_args: int, max_args: int | None) -> str:
 _FUNC_PARAM_HINTS: dict[str, str] = {}
 for _name, (_func, _min_a, _max_a) in _EXCEL_FUNC_REGISTRY.items():
     _FUNC_PARAM_HINTS[_name] = _describe_func_params(_func, _min_a, _max_a)
+
+
+class _FlowLayout(QLayout):
+    """简易流式布局：子控件水平排列，超出宽度自动换行。"""
+
+    def __init__(self, parent=None, spacing=4):
+        super().__init__(parent)
+        self.setSpacing(spacing)
+        self._items: list[QLayoutItem] = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, test_only=False) -> int:
+        from PyQt6.QtCore import QSize as _QS
+        m = self.contentsMargins()
+        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = effective.x()
+        y = effective.y()
+        line_h = 0
+        sp = self.spacing()
+        for item in self._items:
+            wid = item.widget()
+            if wid and not wid.isVisible():
+                continue
+            sz = item.sizeHint()
+            next_x = x + sz.width()
+            if next_x - sp > effective.right() and line_h > 0:
+                x = effective.x()
+                y = y + line_h + sp
+                next_x = x + sz.width()
+                line_h = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), sz))
+            x = next_x + sp
+            line_h = max(line_h, sz.height())
+        return y + line_h - rect.y() + m.bottom()
 
 
 # 公式补全弹出列表的样式
@@ -15359,6 +17561,8 @@ class _FormulaEdit(QLineEdit):
         super().__init__(parent)
         self._popup: 'QListWidget | None' = None
         self._suggestion_items: list[str] = []
+        self._dismissed_word: str = ''       # 用户按 Esc 关闭时的单词
+        self._suppress_next: bool = False    # 跳过下一次 _on_text_changed
         self.textChanged.connect(self._on_text_changed)
 
     def _ensure_popup(self):
@@ -15366,26 +17570,36 @@ class _FormulaEdit(QLineEdit):
             from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QAbstractItemView
             self._popup = QListWidget()
             self._popup.setWindowFlags(
-                Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint
+                Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
             )
             self._popup.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
             self._popup.setStyleSheet(_FUNC_POPUP_STYLE)
             self._popup.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self._popup.itemClicked.connect(self._apply_suggestion)
-            self._popup.installEventFilter(self)
-            self.installEventFilter(self)
+            # 应用级事件过滤器：popup 始终不抢焦点，键盘由这里统一处理
+            from PyQt6.QtWidgets import QApplication
+            QApplication.instance().installEventFilter(self)
 
     def _on_text_changed(self, _text: str):
         """文本变化时检测是否处于函数名输入上下文。"""
-        if not self._popup:
+        if self._suppress_next:
+            self._suppress_next = False
             return
+        self._ensure_popup()
         word, start_pos = self._current_word()
-        if word and len(word) >= 2 and start_pos >= 0:
+        if word and len(word) >= 1 and start_pos >= 0:
+            # 用户已按 Esc 关闭过此单词（或此前缀）→ 不再弹出
+            if self._dismissed_word and word.upper().startswith(self._dismissed_word.upper()):
+                self._popup.hide()
+                return
             matches = [n for n in _EXCEL_FUNC_REGISTRY if word.upper() in n.upper()]
             if matches:
                 self._show_suggestions(matches, word)
                 return
-        self._popup.hide()
+        # 单词变了或为空 → 清除 dismissed 标记
+        self._dismissed_word = ''
+        if self._popup:
+            self._popup.hide()
 
     def _current_word(self) -> tuple[str, int]:
         """获取光标前正在输入的单词及其起始位置。
@@ -15405,6 +17619,8 @@ class _FormulaEdit(QLineEdit):
 
     def _show_suggestions(self, names: list[str], _current_word: str):
         """在光标下方弹出函数建议列表。"""
+        from PyQt6.QtGui import QGuiApplication
+
         popup = self._popup
         popup.clear()
         self._suggestion_items = sorted(names)
@@ -15417,81 +17633,681 @@ class _FormulaEdit(QLineEdit):
             popup.addItem(item)
         popup.setCurrentRow(0)
 
-        # 定位到光标下方
-        cursor_rect = self.cursorRect()
-        pos = self.mapToGlobal(cursor_rect.bottomLeft())
-        popup.move(pos)
-
-        # 自适应尺寸
+        # 先 show 让 Qt 完成布局计算，再调整尺寸和位置
         popup.setMinimumWidth(max(260, self.width()))
+        popup.setMaximumWidth(800)
         item_height = 28
         count = min(len(self._suggestion_items), 10)
         popup.setFixedHeight(count * item_height + 6)
+
+        cursor_rect = self.cursorRect()
+        pos = self.mapToGlobal(cursor_rect.bottomLeft())
+        popup.move(pos)
         popup.show()
 
+        # 基于屏幕实际几何尺寸动态调整
+        screen = QGuiApplication.screenAt(pos)
+        if not screen:
+            return
+        sr = screen.availableGeometry()
+        pr = popup.geometry()
+
+        # 限制宽度不超出屏幕右边界
+        avail_w = sr.right() - pr.x() - 4
+        if pr.width() > avail_w:
+            popup.setFixedWidth(avail_w)
+        # 超出右边界则左移
+        if pr.right() > sr.right():
+            new_x = max(sr.left(), sr.right() - popup.width() - 4)
+            popup.move(new_x, pos.y())
+        # 超出下边界则显示在输入框上方
+        if popup.geometry().bottom() > sr.bottom():
+            popup.move(popup.x(), pos.y() - popup.height() - self.height())
+
     def _apply_suggestion(self, item):
-        """选中建议项：替换当前单词为函数名，追加 '('。"""
+        """选中建议项：替换当前单词为函数名，追加 '(' 并自动补全 ')'。"""
         name = item.data(Qt.ItemDataRole.UserRole) or item.text().split('(')[0]
         _, start = self._current_word()
         if start < 0:
             return
         text = self.text()
         pos = self.cursorPosition()
-        # 替换当前单词为函数名
-        new_text = text[:start] + name + '(' + text[pos:]
+        new_text = text[:start] + name + '()' + text[pos:]
+        self._suppress_next = True
         self.setText(new_text)
-        new_cursor = start + len(name) + 1
-        self.setCursorPosition(new_cursor)
-        self.setFocus()
+        self.setCursorPosition(start + len(name) + 1)  # 光标在 () 之间
+        self._dismissed_word = ''
         if self._popup:
             self._popup.hide()
 
+    def focusOutEvent(self, event):
+        """失去焦点时隐藏候选列表。"""
+        if self._popup:
+            self._dismissed_word = ''
+            self._popup.hide()
+        super().focusOutEvent(event)
+
     def eventFilter(self, obj, event):
-        """拦截键盘事件：上下键导航弹出列表，Enter/Tab 确认，Esc 关闭。"""
-        if obj is self and event.type() == QEvent.Type.KeyPress:
-            if self._popup and self._popup.isVisible():
-                key = event.key()
-                if key == Qt.Key.Key_Down:
-                    self._popup.setFocus()
-                    self._popup.setCurrentRow(0)
-                    return True
-                elif key == Qt.Key.Key_Up:
-                    self._popup.setFocus()
-                    self._popup.setCurrentRow(self._popup.count() - 1)
-                    return True
-                elif key == Qt.Key.Key_Escape:
-                    self._popup.hide()
-                    return True
-                elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
-                    current = self._popup.currentItem()
-                    if current:
-                        self._apply_suggestion(current)
-                    else:
-                        self._popup.hide()
-                    return True
-        elif obj is self._popup and event.type() == QEvent.Type.KeyPress:
-            key = event.key()
-            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
-                current = self._popup.currentItem()
+        """应用级事件过滤器：popup 始终不抢焦点，键盘统一在此处理。"""
+        if obj is not self or event.type() != QEvent.Type.KeyPress:
+            return super().eventFilter(obj, event)
+
+        key = event.key()
+        popup = self._popup
+        popup_visible = popup and popup.isVisible()
+
+        # --- 候选列表导航（popup 可见时）---
+        if popup_visible:
+            if key == Qt.Key.Key_Down:
+                row = popup.currentRow()
+                popup.setCurrentRow(min(row + 1, popup.count() - 1))
+                popup.scrollToItem(popup.currentItem())
+                return True
+            elif key == Qt.Key.Key_Up:
+                row = popup.currentRow()
+                popup.setCurrentRow(max(row - 1, 0))
+                popup.scrollToItem(popup.currentItem())
+                return True
+            elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                current = popup.currentItem()
                 if current:
                     self._apply_suggestion(current)
+                else:
+                    popup.hide()
+                self._dismissed_word = ''
                 return True
             elif key == Qt.Key.Key_Escape:
-                self._popup.hide()
-                self.setFocus()
+                word, _ = self._current_word()
+                self._dismissed_word = word
+                popup.hide()
                 return True
-            elif key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
-                # 让列表自己处理上下键
-                return False
+
+        # --- '(' 自动配对 '()' ---
+        if event.text() == '(':
+            pos = self.cursorPosition()
+            text = self.text()
+            self.setText(text[:pos] + '()' + text[pos:])
+            self.setCursorPosition(pos + 1)
+            if popup_visible:
+                popup.hide()
+            return True
+
+        # --- ')' 跳过已有右括号 ---
+        if event.text() == ')':
+            pos = self.cursorPosition()
+            text = self.text()
+            if pos < len(text) and text[pos] == ')':
+                self.setCursorPosition(pos + 1)
+                if popup_visible:
+                    popup.hide()
+                return True
+
+        # 其他按键正常交给 QLineEdit
         return super().eventFilter(obj, event)
+
+
+class _AddComputedColumnDialog(QDialog):
+    """统一添加计算列对话框，包含公式/地址提取/时间成分三个标签页。"""
+
+    TAB_FORMULA = 0
+    TAB_ADDRESS = 1
+    TAB_DATE_PART = 2
+
+    _saved_size = None  # 记忆窗口大小
+
+    _TIME_UNITS = [
+        ('year', '年'),
+        ('month', '月'),
+        ('week', '周'),
+        ('quarter', '季度'),
+    ]
+
+    def __init__(self, parent=None, candidate_cols: list[str] = None):
+        super().__init__(parent)
+        self.setWindowTitle("添加计算列")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setMinimumWidth(460)
+        self.setMinimumHeight(420)
+        self._candidate_cols = candidate_cols or []
+        self._formula_field_buttons: list[QPushButton] = []
+        self.setStyleSheet("""
+            QDialog { background-color: #FFFFFF; color: #333333; }
+            QLabel { color: #333333; font-size: 13px; }
+            QLineEdit {
+                border: 1px solid #D9D9D9; border-radius: 3px;
+                padding: 6px 8px; font-size: 13px; color: #333333; background: #FFFFFF;
+            }
+            QLineEdit:focus { border-color: #FF8C00; }
+            QComboBox {
+                border: 1px solid #D9D9D9; border-radius: 3px;
+                padding: 4px 8px; font-size: 13px; color: #333333; background: #FFFFFF;
+            }
+            QPushButton {
+                border: 1px solid #D9D9D9; border-radius: 4px;
+                padding: 6px 20px; font-size: 13px; background: #FFFFFF; color: #333333;
+            }
+            QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
+            QRadioButton { color: #333333; font-size: 13px; }
+            QCheckBox { color: #333333; font-size: 13px; }
+            QCheckBox::indicator { width: 16px; height: 16px; }
+        """)
+        self._setup_ui()
+        if _AddComputedColumnDialog._saved_size:
+            self.resize(_AddComputedColumnDialog._saved_size)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        _AddComputedColumnDialog._saved_size = event.size()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._build_formula_tab(), "计算字段")
+        self._tabs.addTab(self._build_address_tab(), "地址提取")
+        self._tabs.addTab(self._build_date_part_tab(), "时间成分")
+        layout.addWidget(self._tabs, 1)
+
+        # 共享的确定/取消按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        ok_btn = QPushButton("确定")
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                border: none; border-radius: 4px;
+                background: #FF8C00; color: #FFF; font-size: 13px; font-weight: 500;
+            }
+            QPushButton:hover { background: #E67A00; }
+        """)
+        ok_btn.clicked.connect(self._on_confirm)
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+    # ------------------------------------------------------------------ #
+    #  Tab 1: 计算字段
+    # ------------------------------------------------------------------ #
+    def _build_formula_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        form = QFormLayout()
+
+        self._formula_name_edit = QLineEdit()
+        self._formula_name_edit.setPlaceholderText("如: 合计金额、计算结果")
+        form.addRow("字段显示名:", self._formula_name_edit)
+
+        self._formula_edit = _FormulaEdit()
+        self._formula_edit.setPlaceholderText(
+            "如: =YEAR(日期列), =IF(金额>1000, '大额', '小额'), =单价*数量"
+        )
+        self._formula_edit.textChanged.connect(self._on_formula_text_changed)
+        form.addRow("公式表达式:", self._formula_edit)
+
+        self._formula_param_hint = QLabel("")
+        self._formula_param_hint.setStyleSheet(
+            "font-size: 11px; color: #1890FF; padding-left: 4px; min-height: 16px;"
+        )
+        form.addRow("", self._formula_param_hint)
+
+        hint = QLabel("公式以 = 开头，列名用 [列显示名] 引用，支持 +-*/ 运算")
+        hint.setStyleSheet("font-size: 11px; color: #999999;")
+        form.addRow("", hint)
+
+        layout.addLayout(form)
+
+        # 快捷公式按钮行
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(4)
+        quick_label = QLabel("快捷公式:")
+        quick_label.setStyleSheet("font-size: 12px; color: #666;")
+        quick_row.addWidget(quick_label)
+
+        for label, template in [("年", "YEAR("), ("月", "MONTH("), ("季度", "QUARTER("), ("周", "WEEKNUM(")]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(24)
+            btn.setStyleSheet("""
+                QPushButton { border: 1px solid #B0D9FF; border-radius: 3px;
+                              padding: 2px 8px; font-size: 11px; background: #F0F7FF; color: #1890FF; }
+                QPushButton:hover { background: #E6F2FF; border-color: #1890FF; }
+            """)
+            btn.clicked.connect(lambda checked, t=template: self._insert_formula_template(t))
+            quick_row.addWidget(btn)
+
+        quick_row.addStretch()
+        layout.addLayout(quick_row)
+
+        # 快捷字段按钮（流式布局，自动换行）
+        if self._candidate_cols:
+            field_label = QLabel("快捷字段:")
+            field_label.setStyleSheet("font-size: 12px; color: #666;")
+            layout.addWidget(field_label)
+
+            self._formula_field_search = QLineEdit()
+            self._formula_field_search.setPlaceholderText("🔍 搜索字段...")
+            self._formula_field_search.setClearButtonEnabled(True)
+            self._formula_field_search.setFixedHeight(26)
+            self._formula_field_search.setStyleSheet(
+                "QLineEdit { border: 1px solid #D9D9D9; border-radius: 3px; "
+                "padding: 4px 8px; font-size: 12px; }"
+                "QLineEdit:focus { border-color: #FF8C00; }"
+            )
+            self._formula_field_search.textChanged.connect(self._filter_formula_fields)
+            layout.addWidget(self._formula_field_search)
+
+            self._formula_field_flow = _FlowLayout(spacing=4)
+            self._formula_field_buttons = []
+            for col_name in self._candidate_cols:
+                btn = QPushButton(col_name)
+                btn.setFixedHeight(24)
+                btn.setStyleSheet("""
+                    QPushButton { border: 1px solid #B7EB8F; border-radius: 3px;
+                                  padding: 2px 8px; font-size: 11px; background: #F6FFED; color: #52C41A; }
+                    QPushButton:hover { background: #E6FFDB; border-color: #52C41A; }
+                """)
+                btn.clicked.connect(lambda checked, n=col_name: self._insert_field_ref(n))
+                self._formula_field_flow.addWidget(btn)
+                self._formula_field_buttons.append(btn)
+            layout.addLayout(self._formula_field_flow)
+
+        layout.addStretch()
+        return widget
+
+    def _on_formula_text_changed(self, text: str):
+        """更新参数提示。"""
+        if not hasattr(self, '_formula_param_hint'):
+            return
+        edit = self._formula_edit
+        word, _ = edit._current_word()
+        if word and len(word) >= 1:
+            upper = word.upper()
+            if upper in _FUNC_PARAM_HINTS:
+                params = _FUNC_PARAM_HINTS[upper]
+                if params:
+                    self._formula_param_hint.setText(f"{upper}({params})")
+                else:
+                    self._formula_param_hint.setText(f"{upper}")
+            else:
+                matches = [n for n in _EXCEL_FUNC_REGISTRY if upper in n.upper()]
+                if matches and len(matches) <= 3:
+                    names = "/".join(matches[:3])
+                    self._formula_param_hint.setText(f"→ {names}")
+                elif matches:
+                    self._formula_param_hint.setText(f"→ {len(matches)} 个匹配函数")
+                else:
+                    self._formula_param_hint.setText("")
+        else:
+            self._formula_param_hint.setText("")
+
+    def _insert_formula_template(self, template: str):
+        current = self._formula_edit.text()
+        if not current.startswith("="):
+            current = "=" + current
+        self._formula_edit.setText(current + template)
+        self._formula_edit.setFocus()
+
+    def _insert_field_ref(self, col_name: str):
+        """将 [列名] 插入到公式光标位置。"""
+        ref = f"[{col_name}]"
+        edit = self._formula_edit
+        pos = edit.cursorPosition()
+        text = edit.text()
+        edit.setText(text[:pos] + ref + text[pos:])
+        edit.setCursorPosition(pos + len(ref))
+        edit.setFocus()
+
+    def _filter_formula_fields(self, text: str):
+        """根据搜索文本过滤快捷字段按钮。"""
+        keyword = text.strip().lower()
+        for btn in self._formula_field_buttons:
+            btn.setVisible(not keyword or keyword in btn.text().lower())
+        if hasattr(self, '_formula_field_flow'):
+            self._formula_field_flow.invalidate()
+
+    def _install_column_completer(self, combo: QComboBox):
+        """为字段选择下拉框安装搜索补全器。"""
+        completer = QCompleter(self._candidate_cols, self)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.setCompleter(completer)
+
+    # ------------------------------------------------------------------ #
+    #  Tab 2: 地址提取
+    # ------------------------------------------------------------------ #
+    def _build_address_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        # 名称格式 + 显示名称（并排）
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        fmt_label = QLabel("名称格式:")
+        fmt_label.setStyleSheet("font-size: 13px; color: #333333;")
+        name_row.addWidget(fmt_label)
+        self._addr_name_format = QComboBox()
+        self._addr_name_format.addItem("全称", "full")
+        self._addr_name_format.addItem("简称", "short")
+        self._addr_name_format.currentIndexChanged.connect(self._update_addr_previews)
+        name_row.addWidget(self._addr_name_format)
+        name_row.addSpacing(12)
+        disp_label = QLabel("显示名称:")
+        disp_label.setStyleSheet("font-size: 13px; color: #333333;")
+        name_row.addWidget(disp_label)
+        self._addr_name_edit = QLineEdit()
+        self._addr_name_edit.setPlaceholderText("不填则以省、市为表头")
+        self._addr_name_edit.textChanged.connect(self._update_addr_previews)
+        name_row.addWidget(self._addr_name_edit, 1)
+        layout.addLayout(name_row)
+
+        # 选择提取层级（多选）
+        level_label = QLabel("选择提取层级:")
+        level_label.setStyleSheet("font-size: 13px; color: #333333; font-weight: 500; margin-top: 4px;")
+        layout.addWidget(level_label)
+
+        levels_frame = QFrame()
+        levels_frame.setStyleSheet(
+            "QFrame { border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA; padding: 6px; }"
+        )
+        levels_layout = QVBoxLayout(levels_frame)
+        levels_layout.setSpacing(4)
+
+        self._addr_checkboxes: dict[str, QCheckBox] = {}
+        self._addr_preview_labels: dict[str, QLabel] = {}
+
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(8)
+
+            cb = QCheckBox(level_name)
+            cb.setChecked(True)
+            cb.toggled.connect(lambda checked, lk=level_key: self._on_addr_level_toggled(lk, checked))
+            row_layout.addWidget(cb)
+            self._addr_checkboxes[level_key] = cb
+
+            row_layout.addStretch()
+
+            preview_label = QLabel(f"预览: {level_name}")
+            preview_label.setStyleSheet("font-size: 12px; color: #999;")
+            row_layout.addWidget(preview_label)
+            self._addr_preview_labels[level_key] = preview_label
+
+            levels_layout.addLayout(row_layout)
+
+        layout.addWidget(levels_frame)
+
+        # 候选列选择（最多 5 个）
+        cand_label = QLabel("候选列（按顺序尝试匹配，取第一个匹配成功的结果）:")
+        cand_label.setStyleSheet("font-size: 13px; color: #333333; font-weight: 500; margin-top: 8px;")
+        layout.addWidget(cand_label)
+
+        self._addr_combo_widgets: list[QComboBox] = []
+        for i in range(5):
+            row_layout = QHBoxLayout()
+            lbl = QLabel(f"  {i + 1}.")
+            lbl.setFixedWidth(24)
+            lbl.setStyleSheet("color: #999; font-size: 12px;")
+            row_layout.addWidget(lbl)
+
+            combo = QComboBox()
+            combo.addItem("(无)", "")
+            for cn in self._candidate_cols:
+                combo.addItem(cn, cn)
+            self._install_column_completer(combo)
+            combo.setCurrentIndex(0)
+            if combo.lineEdit():
+                combo.lineEdit().setText("(无)")
+            row_layout.addWidget(combo, 1)
+            layout.addLayout(row_layout)
+            self._addr_combo_widgets.append(combo)
+
+        hint = QLabel("💡 提示：从候选列的值中按顺序匹配省/市名称，取第一个匹配成功的结果。未匹配到则留空。")
+        hint.setStyleSheet("font-size: 11px; color: #999; margin-top: 8px;")
+        layout.addWidget(hint)
+
+        layout.addStretch()
+        self._update_addr_previews()
+        return widget
+
+    def _update_addr_previews(self):
+        prefix = self._addr_name_edit.text().strip()
+        name_format = self._addr_name_format.currentData()
+        suffix = "（简称）" if name_format == "short" else ""
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
+            if level_key in self._addr_preview_labels:
+                display = f"{prefix}{level_name}{suffix}" if prefix else f"{level_name}{suffix}"
+                cb = self._addr_checkboxes.get(level_key)
+                if cb and cb.isChecked():
+                    self._addr_preview_labels[level_key].setText(f"预览: {display}")
+                    self._addr_preview_labels[level_key].setStyleSheet(
+                        "font-size: 12px; color: #FF8C00; font-weight: 500;"
+                    )
+                else:
+                    self._addr_preview_labels[level_key].setText(f"预览: {display}")
+                    self._addr_preview_labels[level_key].setStyleSheet("font-size: 12px; color: #999;")
+
+    def _on_addr_level_toggled(self, level_key, checked):
+        self._update_addr_previews()
+
+    def _get_address_field_data_list(self) -> list[dict]:
+        """返回勾选的地址提取列配置列表。"""
+        prefix = self._addr_name_edit.text().strip()
+        name_format = self._addr_name_format.currentData()
+        suffix = "（简称）" if name_format == "short" else ""
+        level_map = {
+            'province': 'province_short' if name_format == 'short' else 'province',
+            'city': 'city_short' if name_format == 'short' else 'city_full',
+        }
+        source_cols = []
+        seen = set()
+        for combo in self._addr_combo_widgets:
+            data = combo.currentData()
+            if data and data not in seen:
+                source_cols.append(data)
+                seen.add(data)
+
+        result = []
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
+            cb = self._addr_checkboxes.get(level_key)
+            if cb and cb.isChecked():
+                display = f"{prefix}{level_name}{suffix}" if prefix else f"{level_name}{suffix}"
+                result.append({
+                    'display_name': display,
+                    'source_object': '',
+                    'source_field': '',
+                    'visible': True,
+                    'computation_type': 'address_extract',
+                    'aggregate_func': '',
+                    'formula_expression': '',
+                    'address_source_fields': list(source_cols),
+                    'address_target_level': level_map.get(level_key, level_key),
+                    'field_format': 'text',
+                })
+        return result
+
+    # ------------------------------------------------------------------ #
+    #  Tab 3: 时间成分
+    # ------------------------------------------------------------------ #
+    def _build_date_part_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        form = QFormLayout()
+
+        self._dp_source_combo = QComboBox()
+        self._dp_source_combo.addItem("(请选择)", "")
+        for cn in self._candidate_cols:
+            self._dp_source_combo.addItem(cn, cn)
+        self._install_column_completer(self._dp_source_combo)
+        self._dp_source_combo.setCurrentIndex(0)
+        if self._dp_source_combo.lineEdit():
+            self._dp_source_combo.lineEdit().setText("(请选择)")
+        form.addRow("提取源字段:", self._dp_source_combo)
+
+        self._dp_name_edit = QLineEdit()
+        self._dp_name_edit.setPlaceholderText('用*代表时间单位，如"创建日期（*）"或"创建*"')
+        self._dp_name_edit.textChanged.connect(self._update_dp_previews)
+        form.addRow("显示名称:", self._dp_name_edit)
+
+        layout.addLayout(form)
+
+        # 选择时间单位
+        unit_label = QLabel("选择时间单位:")
+        unit_label.setStyleSheet("font-size: 13px; color: #333333; font-weight: 500; margin-top: 4px;")
+        layout.addWidget(unit_label)
+
+        units_frame = QFrame()
+        units_frame.setStyleSheet(
+            "QFrame { border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA; padding: 6px; }"
+        )
+        units_layout = QVBoxLayout(units_frame)
+        units_layout.setSpacing(4)
+
+        self._dp_checkboxes: dict[str, QCheckBox] = {}
+        self._dp_preview_labels: dict[str, QLabel] = {}
+
+        for unit_key, unit_name in self._TIME_UNITS:
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(8)
+
+            cb = QCheckBox(unit_name)
+            cb.setChecked(True)
+            cb.toggled.connect(lambda checked, uk=unit_key: self._on_dp_unit_toggled(uk, checked))
+            row_layout.addWidget(cb)
+            self._dp_checkboxes[unit_key] = cb
+
+            row_layout.addStretch()
+
+            preview_label = QLabel(f"预览: {unit_name}")
+            preview_label.setStyleSheet("font-size: 12px; color: #999;")
+            row_layout.addWidget(preview_label)
+            self._dp_preview_labels[unit_key] = preview_label
+
+            units_layout.addLayout(row_layout)
+
+        layout.addWidget(units_frame)
+        layout.addStretch()
+        self._update_dp_previews()
+        return widget
+
+    def _update_dp_previews(self):
+        prefix = self._dp_name_edit.text().strip()
+        for unit_key, unit_name in self._TIME_UNITS:
+            if unit_key in self._dp_preview_labels:
+                if '*' in prefix:
+                    display = prefix.replace('*', unit_name)
+                else:
+                    display = f"{prefix}{unit_name}" if prefix else unit_name
+                cb = self._dp_checkboxes.get(unit_key)
+                if cb and cb.isChecked():
+                    self._dp_preview_labels[unit_key].setText(f"预览: {display}")
+                    self._dp_preview_labels[unit_key].setStyleSheet(
+                        "font-size: 12px; color: #FF8C00; font-weight: 500;"
+                    )
+                else:
+                    self._dp_preview_labels[unit_key].setText(f"预览: {display}")
+                    self._dp_preview_labels[unit_key].setStyleSheet("font-size: 12px; color: #999;")
+
+    def _on_dp_unit_toggled(self, unit_key, checked):
+        self._update_dp_previews()
+
+    def _get_date_part_field_data_list(self) -> list[dict]:
+        """返回勾选的时间成分列配置列表。"""
+        prefix = self._dp_name_edit.text().strip()
+        source_field = self._dp_source_combo.currentData() or ''
+        result = []
+        for unit_key, unit_name in self._TIME_UNITS:
+            cb = self._dp_checkboxes.get(unit_key)
+            if cb and cb.isChecked():
+                if '*' in prefix:
+                    display = prefix.replace('*', unit_name)
+                else:
+                    display = f"{prefix}{unit_name}" if prefix else unit_name
+                result.append({
+                    'display_name': display,
+                    'source_object': '',
+                    'source_field': '',
+                    'visible': True,
+                    'computation_type': 'date_part',
+                    'aggregate_func': '',
+                    'formula_expression': '',
+                    'date_part_source_field': source_field,
+                    'date_part_unit': unit_key,
+                    'field_format': 'text',
+                })
+        return result
+
+    # ------------------------------------------------------------------ #
+    #  确认 & 数据收集
+    # ------------------------------------------------------------------ #
+    def _on_confirm(self):
+        tab_index = self._tabs.currentIndex()
+        if tab_index == self.TAB_FORMULA:
+            name = self._formula_name_edit.text().strip()
+            expr = self._formula_edit.text().strip()
+            if not name:
+                frameless_message_box(self, "提示", "请输入字段显示名")
+                return
+            if not expr:
+                frameless_message_box(self, "提示", "请输入公式表达式")
+                return
+        elif tab_index == self.TAB_ADDRESS:
+            selected = [d for combo in self._addr_combo_widgets if (d := combo.currentData())]
+            if not selected:
+                frameless_message_box(self, "提示", "请至少选择一个候选列")
+                return
+            if not any(cb.isChecked() for cb in self._addr_checkboxes.values()):
+                frameless_message_box(self, "提示", "请至少勾选一个提取层级")
+                return
+        elif tab_index == self.TAB_DATE_PART:
+            source_field = self._dp_source_combo.currentData() or ''
+            if not source_field:
+                frameless_message_box(self, "提示", "请选择提取源字段。")
+                return
+            if not any(cb.isChecked() for cb in self._dp_checkboxes.values()):
+                frameless_message_box(self, "提示", "请至少勾选一个时间单位。")
+                return
+        self.accept()
+
+    def get_field_data(self):
+        """根据当前活动标签页返回字段数据。
+        计算字段返回单个 dict，地址提取/时间成分返回 list[dict]。
+        """
+        tab_index = self._tabs.currentIndex()
+        if tab_index == self.TAB_FORMULA:
+            expr = self._formula_edit.text().strip()
+            return {
+                'display_name': self._formula_name_edit.text().strip(),
+                'source_object': '',
+                'source_field': '',
+                'visible': True,
+                'computation_type': 'formula',
+                'aggregate_func': '',
+                'formula_expression': expr,
+                'field_format': 'text',
+            }
+        elif tab_index == self.TAB_ADDRESS:
+            return self._get_address_field_data_list()
+        elif tab_index == self.TAB_DATE_PART:
+            return self._get_date_part_field_data_list()
+        return {}
 
 
 class _ComputedFieldDialog(QDialog):
     """添加计算字段对话框"""
 
+    _saved_size = None
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("添加计算字段")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumWidth(420)
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; color: #333333; }
@@ -15513,6 +18329,12 @@ class _ComputedFieldDialog(QDialog):
             QRadioButton { color: #333333; font-size: 13px; }
         """)
         self._setup_ui()
+        if _ComputedFieldDialog._saved_size:
+            self.resize(_ComputedFieldDialog._saved_size)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        _ComputedFieldDialog._saved_size = event.size()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -15533,13 +18355,7 @@ class _ComputedFieldDialog(QDialog):
         self._param_hint_label.setStyleSheet("font-size: 11px; color: #1890FF; padding-left: 4px; min-height: 16px;")
         form.addRow("", self._param_hint_label)
 
-        hint = QLabel("日期: YEAR/MONTH/QUARTER/DAY/HOUR/MINUTE/SECOND/WEEKDAY/WEEKNUM/DATEDIF/DATE/TODAY/NOW/EDATE/EOMONTH/TIME/YEARFRAC/ISOWEEKNUM\n"
-                      "逻辑: IF/IFS/AND/OR/NOT/IFERROR/TRUE/FALSE/XOR/SWITCH\n"
-                      "数学: ROUND/ROUNDUP/ROUNDDOWN/INT/ABS/MOD/SQRT/POWER/SUM/AVERAGE/COUNT/MAX/MIN/CEILING/FLOOR/LN/LOG/EXP/EVEN/ODD/TRUNC/PI/RADIANS/DEGREES/SIGN/FACT/PRODUCT/QUOTIENT\n"
-                      "文本: LEFT/RIGHT/MID/LEN/UPPER/LOWER/TRIM/CONCAT/CONCATENATE/TEXTJOIN/REPLACE/SUBSTITUTE/FIND/TEXT/PROPER/SEARCH/EXACT/REPT/VALUE/FIXED/CHAR/CODE/CLEAN\n"
-                      "统计: COUNTIF/SUMIF/AVERAGEIF/MEDIAN/STDEV/STDEVP/VAR/VARP/LARGE/SMALL/RANK/MODE\n"
-                      "判断: ISNUMBER/ISTEXT/ISBLANK/ISNA\n"
-                      "公式以 = 开头，列名用 [列显示名] 引用，支持 +-*/ 运算")
+        hint = QLabel("公式以 = 开头，列名用 [列显示名] 引用，支持 +-*/ 运算")
         hint.setStyleSheet("font-size: 11px; color: #999999;")
         form.addRow("", hint)
 
@@ -15583,7 +18399,7 @@ class _ComputedFieldDialog(QDialog):
             return
         edit = self._formula_edit
         word, _ = edit._current_word()
-        if word and len(word) >= 2:
+        if word and len(word) >= 1:
             upper = word.upper()
             # 精确匹配函数名：显示签名
             if upper in _FUNC_PARAM_HINTS:
@@ -15618,10 +18434,10 @@ class _ComputedFieldDialog(QDialog):
         name = self._name_edit.text().strip()
         expr = self._formula_edit.text().strip()
         if not name:
-            QMessageBox.warning(self, "提示", "请输入字段显示名")
+            frameless_message_box(self, "提示", "请输入字段显示名")
             return
         if not expr:
-            QMessageBox.warning(self, "提示", "请输入公式表达式")
+            frameless_message_box(self, "提示", "请输入公式表达式")
             return
         self.accept()
 
@@ -15642,16 +18458,12 @@ class _ComputedFieldDialog(QDialog):
 class _AddressExtractDialog(QDialog):
     """添加地址提取列对话框（多选层级，对齐时间成分交互）"""
 
-    _LEVEL_LABELS = [
-        ('province', '省（全称）'),
-        ('province_short', '省（简称）'),
-        ('city', '市'),
-        ('area', '区/县'),
-    ]
+    _saved_size = None
 
     def __init__(self, parent=None, candidate_cols: list[str] = None):
         super().__init__(parent)
         self.setWindowTitle("添加地址提取列")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumWidth(440)
         self._candidate_cols = candidate_cols or []
         self._checkboxes: dict[str, QCheckBox] = {}
@@ -15677,18 +18489,37 @@ class _AddressExtractDialog(QDialog):
             QCheckBox::indicator { width: 16px; height: 16px; }
         """)
         self._setup_ui()
+        if _AddressExtractDialog._saved_size:
+            self.resize(_AddressExtractDialog._saved_size)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        _AddressExtractDialog._saved_size = event.size()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
-        # 显示名称前缀
-        form = QFormLayout()
+        # 名称格式 + 显示名称（并排）
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        fmt_label = QLabel("名称格式:")
+        fmt_label.setStyleSheet("font-size: 13px; color: #333333;")
+        name_row.addWidget(fmt_label)
+        self._name_format = QComboBox()
+        self._name_format.addItem("全称", "full")
+        self._name_format.addItem("简称", "short")
+        self._name_format.currentIndexChanged.connect(self._update_previews)
+        name_row.addWidget(self._name_format)
+        name_row.addSpacing(12)
+        disp_label = QLabel("显示名称:")
+        disp_label.setStyleSheet("font-size: 13px; color: #333333;")
+        name_row.addWidget(disp_label)
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText('输入前缀，如"客户" → "客户省"、"客户市"')
+        self._name_edit.setPlaceholderText("不填则以省、市为表头")
         self._name_edit.textChanged.connect(self._update_previews)
-        form.addRow("显示名称前缀:", self._name_edit)
-        layout.addLayout(form)
+        name_row.addWidget(self._name_edit, 1)
+        layout.addLayout(name_row)
 
         # 选择提取层级（多选）
         level_label = QLabel("选择提取层级:")
@@ -15700,7 +18531,7 @@ class _AddressExtractDialog(QDialog):
         levels_layout = QVBoxLayout(levels_frame)
         levels_layout.setSpacing(4)
 
-        for level_key, level_name in self._LEVEL_LABELS:
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
             row_layout = QHBoxLayout()
             row_layout.setSpacing(8)
 
@@ -15743,7 +18574,7 @@ class _AddressExtractDialog(QDialog):
             layout.addLayout(row_layout)
             self._combo_widgets.append(combo)
 
-        hint = QLabel("💡 提示：从候选列的值中按顺序匹配省/市/区名称，取第一个匹配成功的结果。未匹配到则留空。")
+        hint = QLabel("💡 提示：从候选列的值中按顺序匹配省/市名称，取第一个匹配成功的结果。未匹配到则留空。")
         hint.setStyleSheet("font-size: 11px; color: #999; margin-top: 8px;")
         layout.addWidget(hint)
 
@@ -15769,9 +18600,11 @@ class _AddressExtractDialog(QDialog):
 
     def _update_previews(self):
         prefix = self._name_edit.text().strip()
-        for level_key, level_name in self._LEVEL_LABELS:
+        name_format = self._name_format.currentData()
+        suffix = "（简称）" if name_format == "short" else ""
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
             if level_key in self._preview_labels:
-                display = f"{prefix}{level_name}" if prefix else level_name
+                display = f"{prefix}{level_name}{suffix}" if prefix else f"{level_name}{suffix}"
                 cb = self._checkboxes.get(level_key)
                 if cb and cb.isChecked():
                     self._preview_labels[level_key].setText(f"预览: {display}")
@@ -15787,12 +18620,12 @@ class _AddressExtractDialog(QDialog):
         # 检查是否至少选了一个候选列
         selected = [data for combo in self._combo_widgets if (data := combo.currentData())]
         if not selected:
-            QMessageBox.warning(self, "提示", "请至少选择一个候选列")
+            frameless_message_box(self, "提示", "请至少选择一个候选列")
             return
 
         has_checked = any(cb.isChecked() for cb in self._checkboxes.values())
         if not has_checked:
-            QMessageBox.warning(self, "提示", "请至少勾选一个提取层级")
+            frameless_message_box(self, "提示", "请至少勾选一个提取层级")
             return
 
         self.accept()
@@ -15800,6 +18633,12 @@ class _AddressExtractDialog(QDialog):
     def get_field_data_list(self) -> list[dict]:
         """返回勾选的地址提取列配置列表。"""
         prefix = self._name_edit.text().strip()
+        name_format = self._name_format.currentData()
+        suffix = "（简称）" if name_format == "short" else ""
+        level_map = {
+            'province': 'province_short' if name_format == 'short' else 'province',
+            'city': 'city_short' if name_format == 'short' else 'city_full',
+        }
         # 获取候选列（去重、去空）
         source_cols = []
         seen = set()
@@ -15810,10 +18649,10 @@ class _AddressExtractDialog(QDialog):
                 seen.add(data)
 
         result = []
-        for level_key, level_name in self._LEVEL_LABELS:
+        for level_key, level_name in [('province', '省'), ('city', '市')]:
             cb = self._checkboxes.get(level_key)
             if cb and cb.isChecked():
-                display = f"{prefix}{level_name}" if prefix else level_name
+                display = f"{prefix}{level_name}{suffix}" if prefix else f"{level_name}{suffix}"
                 result.append({
                     'display_name': display,
                     'source_object': '',
@@ -15823,7 +18662,7 @@ class _AddressExtractDialog(QDialog):
                     'aggregate_func': '',
                     'formula_expression': '',
                     'address_source_fields': list(source_cols),
-                    'address_target_level': level_key,
+                    'address_target_level': level_map.get(level_key, level_key),
                     'field_format': 'text',
                 })
         return result
@@ -15831,6 +18670,8 @@ class _AddressExtractDialog(QDialog):
 
 class _DatePartExtractDialog(QDialog):
     """添加时间成分列对话框（年/月/周/季度提取）"""
+
+    _saved_size = None
 
     TIME_UNITS = [
         ('year', '年'),
@@ -15842,6 +18683,7 @@ class _DatePartExtractDialog(QDialog):
     def __init__(self, parent=None, candidate_cols: list[str] = None):
         super().__init__(parent)
         self.setWindowTitle("添加时间成分")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumWidth(440)
         self._candidate_cols = candidate_cols or []
         self._checkboxes = {}
@@ -15867,6 +18709,12 @@ class _DatePartExtractDialog(QDialog):
             QCheckBox::indicator { width: 16px; height: 16px; }
         """)
         self._setup_ui()
+        if _DatePartExtractDialog._saved_size:
+            self.resize(_DatePartExtractDialog._saved_size)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        _DatePartExtractDialog._saved_size = event.size()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -15880,9 +18728,9 @@ class _DatePartExtractDialog(QDialog):
             self._source_combo.addItem(cn, cn)
         form.addRow("提取源字段:", self._source_combo)
 
-        # 显示名称前缀
+        # 显示名称（支持*通配符）
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText('输入前缀，如"创建" → "创建年"')
+        self._name_edit.setPlaceholderText('用*代表时间单位，如"创建日期（*）"或"创建*"')
         self._name_edit.textChanged.connect(self._update_previews)
         form.addRow("显示名称:", self._name_edit)
 
@@ -15945,7 +18793,10 @@ class _DatePartExtractDialog(QDialog):
         prefix = self._name_edit.text().strip()
         for unit_key, unit_name in self.TIME_UNITS:
             if unit_key in self._preview_labels:
-                display = f"{prefix}{unit_name}" if prefix else unit_name
+                if '*' in prefix:
+                    display = prefix.replace('*', unit_name)
+                else:
+                    display = f"{prefix}{unit_name}" if prefix else unit_name
                 cb = self._checkboxes.get(unit_key)
                 if cb and cb.isChecked():
                     self._preview_labels[unit_key].setText(f"预览: {display}")
@@ -15960,12 +18811,12 @@ class _DatePartExtractDialog(QDialog):
     def _on_confirm(self):
         source_field = self._source_combo.currentData() or ''
         if not source_field:
-            QMessageBox.warning(self, "提示", "请选择提取源字段。")
+            frameless_message_box(self, "提示", "请选择提取源字段。")
             return
 
         has_checked = any(cb.isChecked() for cb in self._checkboxes.values())
         if not has_checked:
-            QMessageBox.warning(self, "提示", "请至少勾选一个时间单位。")
+            frameless_message_box(self, "提示", "请至少勾选一个时间单位。")
             return
 
         self.accept()
@@ -15978,7 +18829,10 @@ class _DatePartExtractDialog(QDialog):
         for unit_key, unit_name in self.TIME_UNITS:
             cb = self._checkboxes.get(unit_key)
             if cb and cb.isChecked():
-                display = f"{prefix}{unit_name}" if prefix else unit_name
+                if '*' in prefix:
+                    display = prefix.replace('*', unit_name)
+                else:
+                    display = f"{prefix}{unit_name}" if prefix else unit_name
                 result.append({
                     'display_name': display,
                     'source_object': '',
@@ -16127,7 +18981,7 @@ class _ClickOutsideFilter(QObject):
         panel_top_left_global = panel.parentWidget().mapToGlobal(panel_geo.topLeft()) if panel.parentWidget() else panel.mapToGlobal(panel_geo.topLeft())
         panel_global_rect = panel_top_left_global.x(), panel_top_left_global.y(), panel_geo.width(), panel_geo.height()
         if panel_global_rect[0] <= gp.x() <= panel_global_rect[0] + panel_global_rect[2] and \
-           panel_global_rect[1] <= gp.y() <= panel_global_rect[1] + panel_global_rect[3]:
+            panel_global_rect[1] <= gp.y() <= panel_global_rect[1] + panel_global_rect[3]:
             return False
         # 检查是否在切换按钮内
         btn = getattr(bar, '_filter_toggle_btn', None)
@@ -16135,7 +18989,7 @@ class _ClickOutsideFilter(QObject):
             btn_top_left = btn.mapToGlobal(QPoint(0, 0))
             btn_size = btn.size()
             if btn_top_left.x() <= gp.x() <= btn_top_left.x() + btn_size.width() and \
-               btn_top_left.y() <= gp.y() <= btn_top_left.y() + btn_size.height():
+                btn_top_left.y() <= gp.y() <= btn_top_left.y() + btn_size.height():
                 return False
         # 检查是否在追踪的子弹窗内
         if bar._outside_dialog_contains(gp):
@@ -16186,6 +19040,7 @@ class FilterBar(QWidget):
         self._filter_active_dialogs: list = []  # 子弹窗追踪
 
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def set_database(self, db):
         """设置数据库连接，用于「属于」/「不属于」无配置字段时查询去重值。"""
@@ -16482,6 +19337,7 @@ class FilterBar(QWidget):
             QPushButton { font-weight: bold; color: #FF4D4F; border: 1px solid #FFCCC7;
                           border-radius: 10px; font-size: 10px; background: #FFF2F0; }
             QPushButton:hover { background: #FF4D4F; color: #FFF; border-color: #FF4D4F; }
+            QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }
         """)
         row_layout.addWidget(remove_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -16536,10 +19392,6 @@ class FilterBar(QWidget):
         # 判断字段类型，选择操作符
         field_label = field_combo.currentText().strip()
         is_date = self._is_date_field(field_label)
-        import sys
-        print(f"[FilterDebug] _add_condition_row: field_label={field_label!r}, is_date={is_date}, "
-              f"available_fields sample={self._available_fields[:3] if self._available_fields else 'EMPTY'}",
-              file=sys.stderr, flush=True)
         if sel_op in _N_TYPE_OPS:
             is_date = True
         operators = _date_operators() if is_date else _text_operators()
@@ -16821,6 +19673,7 @@ class FilterBar(QWidget):
         from PyQt6.QtWidgets import QDialog, QDialogButtonBox
         dlg = QDialog(self.window() or self)
         dlg.setWindowTitle("选择日期范围")
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dlg.resize(360, 160)
         dlg.setStyleSheet("QDialog { background: #FAFAFA; }")
 
@@ -17089,6 +19942,7 @@ class FilterBar(QWidget):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QDialogButtonBox, QHBoxLayout
         dlg = QDialog(self.window() or self)
         dlg.setWindowTitle("选择值")
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dlg.setMinimumSize(260, 320)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -17425,7 +20279,7 @@ from PyQt6.QtGui import QColor
 
 # 浅色 QMessageBox 样式（覆盖系统深色主题）
 _MSGBOX_STYLE = """
-    QMessageBox { background-color: #FAFAFA; color: #333333; }
+    QMessageBox { background-color: #FFFFFF; color: #333333; }
     QLabel { color: #333333; font-size: 13px; }
     QPushButton {
         background-color: #FFFFFF; color: #333333;
@@ -17435,6 +20289,184 @@ _MSGBOX_STYLE = """
     QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
 """
 
+def _show_sync_toast(parent, stats: dict = None):
+    """同步 MySQL 成功后的 Toast 提示——3 秒自动关闭或点击外部关闭。"""
+    from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+    from PyQt6.QtCore import QTimer, QPropertyAnimation, QEasingCurve
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QGraphicsOpacityEffect, QGraphicsDropShadowEffect
+
+    # 安全关闭 toast：先停止动画和定时器，再关闭窗口
+    def _safe_close_toast(toast, timer, outer_filter):
+        try:
+            timer.stop()
+        except Exception:
+            pass
+        try:
+            app = QApplication.instance()
+            if app:
+                app.removeEventFilter(outer_filter)
+        except Exception:
+            pass
+        try:
+            if toast.isVisible():
+                toast.close()
+        except RuntimeError:
+            pass
+
+    # 构建统计信息
+    parts = []
+    if stats:
+        inserted = 0
+        updated = 0
+        total = 0
+        if isinstance(stats, list):
+            for s in stats:
+                if isinstance(s, dict):
+                    inserted += int(s.get('inserted', 0))
+                    updated += int(s.get('updated', 0))
+                    total += int(s.get('total', 0))
+        elif isinstance(stats, dict):
+            inserted = int(stats.get('inserted', 0))
+            updated = int(stats.get('updated', 0))
+            total = int(stats.get('total', 0))
+        if total > 0:
+            parts.append(f"总 {total} 行")
+        if inserted > 0:
+            parts.append(f"新增 {inserted}")
+        if updated > 0:
+            parts.append(f"更新 {updated}")
+    summary = "  ".join(parts) if parts else "同步完成"
+
+    toast = QFrame(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+    toast.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    # ✅ 不使用 WA_DeleteOnClose，手动管理生命周期，避免动画/定时器
+    # 在 C++ 对象已销毁后仍触发回调导致闪退。
+    toast.setObjectName("_syncToast")
+    toast.setStyleSheet("""
+        QFrame#_syncToast {
+            background: #FFFFFF;
+            border: 1px solid #D9D9D9;
+            border-radius: 8px;
+        }
+    """)
+
+    shadow = QGraphicsDropShadowEffect(toast)
+    shadow.setBlurRadius(24)
+    shadow.setOffset(0, 4)
+    shadow.setColor(QColor(0, 0, 0, 40))
+    toast.setGraphicsEffect(shadow)
+
+    layout = QVBoxLayout(toast)
+    layout.setContentsMargins(24, 18, 24, 18)
+    layout.setSpacing(10)
+
+    title_row = QHBoxLayout()
+    icon_label = QLabel("✅")
+    icon_label.setStyleSheet("font-size: 22px; border: none; background: transparent;")
+    icon_label.setFixedWidth(30)
+    title_row.addWidget(icon_label)
+
+    title_label = QLabel("同步 MySQL 成功")
+    title_label.setStyleSheet(
+        "font-size: 14px; font-weight: 600; color: #333333; border: none; background: transparent;"
+    )
+    title_row.addWidget(title_label)
+    title_row.addStretch()
+    layout.addLayout(title_row)
+
+    detail = QLabel(summary)
+    detail.setStyleSheet(
+        "font-size: 13px; color: #666666; padding-left: 30px; border: none; background: transparent;"
+    )
+    detail.setWordWrap(True)
+    layout.addWidget(detail)
+
+    btn_row = QHBoxLayout()
+    btn_row.addStretch()
+    close_btn = QPushButton("知道了")
+    close_btn.setObjectName("_sync_toast_close")
+    close_btn.setStyleSheet("""
+        QPushButton#_sync_toast_close {
+            background: #FFFFFF; color: #333333;
+            border: 1px solid #D9D9D9; border-radius: 4px;
+            padding: 4px 16px; font-size: 12px;
+        }
+        QPushButton#_sync_toast_close:hover { border-color: #1890FF; color: #1890FF; }
+    """)
+    close_btn.clicked.connect(lambda: _safe_close_toast(toast, timer, outer_filter))
+    btn_row.addWidget(close_btn)
+    layout.addLayout(btn_row)
+
+    toast.adjustSize()
+    toast.setFixedWidth(max(280, toast.width()))
+
+    # 居中于父窗口
+    if parent and parent.isVisible():
+        parent_center = parent.geometry().center()
+        toast.move(parent_center.x() - toast.width() // 2,
+                   parent_center.y() - toast.height() // 2)
+    else:
+        screen = QApplication.primaryScreen()
+        if screen:
+            sg = screen.availableGeometry()
+            toast.move(sg.center().x() - toast.width() // 2,
+                       sg.center().y() - toast.height() // 2)
+
+    # 点击外部区域关闭
+    outer_filter = _DialogOutsideCloseFilter(toast)
+    # QFrame 没有 reject() 方法（不像 QDialog），patch 一个委托到 close
+    if not hasattr(toast, 'reject'):
+        toast.reject = lambda: _safe_close_toast(toast, timer, outer_filter)
+    if not hasattr(toast, '_outside_close_armed'):
+        toast._outside_close_armed = True  # 始终允许外部点击关闭
+    toast._outer_filter = outer_filter
+    app = QApplication.instance()
+    if app:
+        app.installEventFilter(outer_filter)
+    _orig_hide = toast.hideEvent
+    def _on_hide(event):
+        # 停止定时器，防止在 hide 后再次触发 close
+        try:
+            timer.stop()
+        except Exception:
+            pass
+        try:
+            app2 = QApplication.instance()
+            if app2:
+                app2.removeEventFilter(outer_filter)
+        except Exception:
+            pass
+        _orig_hide(event)
+    toast.hideEvent = _on_hide
+
+    # 3 秒定时自动关闭
+    timer = QTimer(toast)
+    timer.setSingleShot(True)
+    timer.timeout.connect(lambda: _safe_close_toast(toast, timer, outer_filter))
+    timer.start(3000)
+
+    # 淡入动画
+    opacity_effect = QGraphicsOpacityEffect(toast)
+    toast.setGraphicsEffect(opacity_effect)
+    opacity_effect.setOpacity(0.0)
+    anim = QPropertyAnimation(opacity_effect, b"opacity", toast)
+    anim.setDuration(180)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    def _swap_shadow():
+        try:
+            toast.setGraphicsEffect(shadow)
+        except RuntimeError:
+            pass
+    anim.finished.connect(_swap_shadow)
+    anim.start()
+
+    toast.show()
+    toast.raise_()
+
+
 def _light_msgbox(parent, icon, title, text):
     """显示浅色背景的消息弹窗。"""
     msg = QMessageBox(parent)
@@ -17442,6 +20474,7 @@ def _light_msgbox(parent, icon, title, text):
     msg.setText(text)
     msg.setIcon(icon)
     msg.setStyleSheet(_MSGBOX_STYLE)
+    msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     return msg.exec()
 
 def _light_question(parent, title, text):
@@ -17452,7 +20485,280 @@ def _light_question(parent, title, text):
     msg.setIcon(QMessageBox.Icon.Question)
     msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     msg.setStyleSheet(_MSGBOX_STYLE)
+    msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     return msg.exec()
+
+
+# ============================================================
+# 排序配置对话框
+# ============================================================
+
+class SortConfigDialog(CenteredPopupDialog):
+    """自定义报表排序配置对话框（多字段排序）。"""
+
+    def __init__(self, columns: list[str], current_config: list = None, parent=None):
+        super().__init__(parent, close_on_outside=True)
+        self._columns = columns
+        self._current_config = current_config or []
+        self._rows: list[tuple[QComboBox, QComboBox, QHBoxLayout]] = []
+        self._rows_layout = QVBoxLayout()
+        self._outside_armed = False
+        self._loop = None
+        self._build_ui()
+        self._restore_config()
+
+    # ── 模态 + 点外部关闭 ──────────────────────────────────────────
+
+    def exec(self):
+        """重写 exec：非模态 show + 本地事件循环，使父窗口事件过滤器生效。"""
+        from PyQt6.QtCore import QEventLoop
+        self._dialog_closed = False
+        self._outside_armed = False
+        self.show()
+        parent = self.parentWidget()
+        if parent is not None:
+            parent.installEventFilter(self)
+        QTimer.singleShot(150, self._arm_outside)
+        self._loop = QEventLoop(self)
+        self.accepted.connect(self._loop.quit)
+        self.rejected.connect(self._loop.quit)
+        self._loop.exec()
+        self._loop = None
+        return self.result()
+
+    def _arm_outside(self):
+        if self.isVisible():
+            self._outside_armed = True
+
+    def eventFilter(self, watched, event):
+        """拦截父窗口上的鼠标按下事件 → 关闭本对话框。"""
+        if (
+            self._dialog_closed
+            or not self._outside_armed
+            or not self.isVisible()
+        ):
+            return super().eventFilter(watched, event)
+        parent = self.parentWidget()
+        if watched is not parent or parent is None:
+            return super().eventFilter(watched, event)
+        if event.type() != QEvent.Type.MouseButtonPress:
+            return super().eventFilter(watched, event)
+        # 点击位置在对话框内 → 不关闭
+        if hasattr(event, 'globalPosition'):
+            global_pos = event.globalPosition().toPoint()
+        elif hasattr(event, 'globalPos'):
+            global_pos = event.globalPos()
+        else:
+            return super().eventFilter(watched, event)
+        if self.frameGeometry().contains(global_pos):
+            return False
+        self._dialog_closed = True
+        self.reject()
+        return True
+
+    def closeEvent(self, event):
+        """关闭时清理事件过滤器和事件循环。"""
+        parent = self.parentWidget()
+        if parent is not None:
+            try:
+                parent.removeEventFilter(self)
+            except RuntimeError:
+                pass
+        if self._loop is not None:
+            self._loop.quit()
+        super().closeEvent(event)
+
+    # ── UI ──────────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 12)
+        layout.setSpacing(8)
+        self.setMinimumWidth(300)
+
+        # 标题栏
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_label = QLabel("排序设置")
+        title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #333; background: transparent;")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(20, 20)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton { background: transparent; border: none; font-size: 13px; color: #999; }
+            QPushButton:hover { color: #FF4D4F; }
+        """)
+        close_btn.clicked.connect(self.reject)
+        title_row.addWidget(close_btn)
+        layout.addLayout(title_row)
+
+        layout.addLayout(self._rows_layout)
+
+        # 添加排序条件按钮
+        add_btn = QPushButton("+ 添加排序条件")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet("""
+            QPushButton { border: 1px dashed #D9D9D9; border-radius: 4px;
+                          padding: 6px; font-size: 12px; color: #666; background: transparent; }
+            QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
+        """)
+        add_btn.clicked.connect(self._add_sort_row)
+        layout.addWidget(add_btn)
+
+        # 底部按钮行
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        clear_btn = QPushButton("清空")
+        clear_btn.setFixedSize(60, 28)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setStyleSheet("""
+            QPushButton { background: #FFFFFF; border: 1px solid #D9D9D9; border-radius: 4px;
+                          font-size: 12px; color: #333; }
+            QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
+        """)
+        clear_btn.clicked.connect(self._on_clear)
+        btn_row.addWidget(clear_btn)
+
+        btn_row.addStretch()
+
+        confirm_btn = QPushButton("确定")
+        confirm_btn.setFixedSize(60, 28)
+        confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        confirm_btn.setStyleSheet("""
+            QPushButton { background: #FF8C00; border: none; border-radius: 4px;
+                          font-size: 12px; color: #FFFFFF; font-weight: bold; }
+            QPushButton:hover { background: #E07B00; }
+        """)
+        confirm_btn.clicked.connect(self._on_confirm)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+        # 至少一行
+        if not self._rows:
+            self._add_sort_row()
+
+    def _add_sort_row(self):
+        from PyQt6.QtWidgets import QCompleter as _QCompleter
+        from PyQt6.QtCore import Qt as _Qt
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.setFixedHeight(28)
+        combo.setStyleSheet("""
+            QComboBox { background: #FFFFFF; border: 1px solid #D9D9D9; border-radius: 4px;
+                        padding: 4px 8px; font-size: 12px; }
+            QComboBox:hover { border-color: #FF8C00; }
+            QComboBox QAbstractItemView {
+                background: #FFFFFF; color: #333; selection-background-color: #FFF7E6;
+            }
+        """)
+        for col in self._columns:
+            combo.addItem(col)
+        # 安装模糊搜索补全器（支持输入中间文字匹配）
+        completer = _QCompleter(self._columns, combo)
+        completer.setCaseSensitivity(_Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(_Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(_QCompleter.CompletionMode.PopupCompletion)
+        combo.setCompleter(completer)
+        row.addWidget(combo, 1)
+
+        direction = QComboBox()
+        direction.setFixedHeight(28)
+        direction.setFixedWidth(70)
+        direction.addItems(["正序", "倒序"])
+        direction.setStyleSheet("""
+            QComboBox { background: #FFFFFF; border: 1px solid #D9D9D9; border-radius: 4px;
+                        padding: 4px 8px; font-size: 12px; }
+            QComboBox:hover { border-color: #FF8C00; }
+            QComboBox QAbstractItemView {
+                background: #FFFFFF; color: #333; selection-background-color: #FFF7E6;
+            }
+        """)
+        row.addWidget(direction)
+
+        del_btn = QPushButton("✕")
+        del_btn.setObjectName("sortDelBtn")
+        del_btn.setFixedSize(28, 28)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet("""
+            QPushButton#sortDelBtn { background: #FFF; border: 1px solid #D9D9D9; border-radius: 4px;
+                          padding: 0px; font-size: 14px; color: #999; }
+            QPushButton#sortDelBtn:hover { border-color: #FF4D4F; color: #FF4D4F; background: #FFF1F0; }
+        """)
+        row.addWidget(del_btn)
+
+        self._rows_layout.addLayout(row)
+        self._rows.append((combo, direction, row))
+        del_btn.clicked.connect(lambda: self._remove_sort_row(combo, direction, row))
+
+    def _remove_sort_row(self, combo, direction, row):
+        if len(self._rows) <= 1:
+            return
+        self._rows = [(c, d, r) for c, d, r in self._rows if c is not combo]
+        while row.count():
+            item = row.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._rows_layout.removeItem(row)
+
+    def _restore_config(self):
+        if not self._current_config:
+            return
+        # 第一行已默认添加，用第一条配置填充
+        first = self._current_config[0]
+        field = first.get('field', '')
+        idx = self._columns.index(field) if field in self._columns else -1
+        if self._rows:
+            if idx >= 0:
+                self._rows[0][0].setCurrentIndex(idx)
+            elif field:
+                self._rows[0][0].setCurrentText(field)
+        if first.get('direction') == 'desc' and self._rows:
+            self._rows[0][1].setCurrentIndex(1)
+        # 剩余配置追加行
+        for cfg in self._current_config[1:]:
+            self._add_sort_row()
+            field = cfg.get('field', '')
+            idx = self._columns.index(field) if field in self._columns else -1
+            if idx >= 0:
+                self._rows[-1][0].setCurrentIndex(idx)
+            elif field:
+                self._rows[-1][0].setCurrentText(field)
+            if cfg.get('direction') == 'desc':
+                self._rows[-1][1].setCurrentIndex(1)
+
+    def _on_clear(self):
+        # 删除所有行，再添加一个空行
+        for combo, direction, row in list(self._rows):
+            while row.count():
+                item = row.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            self._rows_layout.removeItem(row)
+        self._rows.clear()
+        self._add_sort_row()
+
+    def _on_confirm(self):
+        if not self._dialog_closed:
+            self._dialog_closed = True
+            self.accept()
+
+    def get_sort_config(self) -> list:
+        """返回排序配置列表。"""
+        result = []
+        for combo, direction, _ in self._rows:
+            field = combo.currentText()
+            if field:
+                d = 'asc' if direction.currentText() == '正序' else 'desc'
+                result.append({"field": field, "direction": d})
+        return result
 
 
 class PreviewTable(QWidget):
@@ -17461,6 +20767,7 @@ class PreviewTable(QWidget):
     pageInfoChanged = pyqtSignal()  # 分页信息变更
     columnOrderChanged = pyqtSignal(list)  # 用户拖拽列顺序变更，参数为列名列表
     filterToggleRequested = pyqtSignal()  # 筛选按钮点击
+    refreshDataReady = pyqtSignal(object, int)  # 后台线程数据就绪 (rows, total)
 
     def __init__(self, db: ReportDatabase = None, parent=None,
                  show_search=True, show_pagination=True):
@@ -17480,10 +20787,16 @@ class PreviewTable(QWidget):
         self._save_config_fn = None
         self._load_config_fn = None
         self._col_widths_loaded = False
+        self._editor_mode = False  # 编辑器模式：忽略个人保存的列顺序，始终用报表定义排序
+        self._preferred_column_order: list[str] = []  # 字段面板同步的期望列顺序
         self._filter_conditions: list[dict] = []
+        self._header_filter_conditions: list[dict] = []
         self._show_search = show_search
         self._show_pagination = show_pagination
+        self._bg_processing = False  # 后台数据加载标志
+        self.refreshDataReady.connect(self._on_refresh_data_ready)
         self._report_def = None  # ReportDefinition，用于公式列和汇总行
+        self._sort_config: list = []  # 排序配置
 
         self._setup_ui()
 
@@ -17491,15 +20804,26 @@ class PreviewTable(QWidget):
         self._db = db
 
     def set_config_callbacks(self, save_fn, load_fn):
-        """设置个人配置文件读写回调，用于持久化列宽。"""
+        """设置个人配置文件读写回调，用于持久化列宽和每页条数。"""
         self._save_config_fn = save_fn
         self._load_config_fn = load_fn
+        # 恢复已保存的每页条数
+        self._load_page_size()
 
-    def set_report(self, report_id: str):
+    def set_report(self, report_id: str, _defer: bool = False):
+        # 仅当 report_id 改变时才重置列宽状态（重新打开报表 vs 刷新数据后重新关联同一个报表）
+        if self._report_id != report_id:
+            self._col_widths_loaded = False
         self._report_id = report_id
         self._current_page = 1
-        self._col_widths_loaded = False
-        self.refresh()
+        self._col_values_cache = {}  # 清除列头筛选缓存
+        self._header_filter_conditions = []  # 清除列头筛选条件
+        # 重置列头筛选状态
+        header = getattr(self, '_autofilter_header', None)
+        if header:
+            header.clear_filter()
+        if not _defer:
+            self.refresh()
 
     def set_report_definition(self, report_def):
         """设置报表定义，用于启用公式列计算和汇总行显示。"""
@@ -17517,14 +20841,18 @@ class PreviewTable(QWidget):
     def set_visible_fields(self, fields: set):
         """设置可见字段集合（None=显示全部，set=仅显示指定字段名）。
         调用后自动刷新表格列显示。"""
+        # 可见字段集合未变时跳过刷新，避免列顺序调整触发不必要的表格重建
+        if self._visible_fields == fields:
+            return
         self._visible_fields = fields
         self.refresh()
 
-    def set_filter_conditions(self, conditions: list[dict]):
+    def set_filter_conditions(self, conditions: list[dict], _defer: bool = False):
         """设置筛选条件并刷新显示"""
         self._filter_conditions = list(conditions or [])
         self._current_page = 1
-        self.refresh()
+        if not _defer:
+            self.refresh()
 
     def get_result_columns(self) -> list[str]:
         """获取当前结果表的列名列表"""
@@ -17658,6 +20986,12 @@ class PreviewTable(QWidget):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.verticalHeader().setVisible(False)
+        install_autofilter_header(self._table, data_provider=self._provide_column_values)
+        # 连接列头筛选信号 → 全局 SQL 筛选
+        header = self._table.horizontalHeader()
+        if hasattr(header, 'filter_changed'):
+            header.filter_changed.connect(self._on_header_filter_changed)
+            self._autofilter_header = header
         self._table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #F0F0F0; background-color: #FFFFFF;
@@ -17665,7 +20999,7 @@ class PreviewTable(QWidget):
             }
             QTableWidget::item:selected { background-color: #FFF7E6; color: #333; }
             QHeaderView::section {
-                background-color: #FAFAFA; border-bottom: 2px solid #E0E0E0;
+                background-color: #FFFFFF; border-bottom: 2px solid #E0E0E0;
                 font-weight: 500; padding: 8px; font-size: 12px;
             }
         """)
@@ -17711,36 +21045,101 @@ class PreviewTable(QWidget):
         self._next_btn.clicked.connect(self._next_page)
         page_row.addWidget(self._next_btn)
 
+        page_row.addSpacing(16)
+
         # 分页栏 — 包装为 QWidget 以支持隐藏
         page_widget = QWidget()
         page_widget.setLayout(page_row)
         page_widget.setVisible(self._show_pagination)
         layout.addWidget(page_widget)
 
+    # ==================== 排序配置 ====================
+
+    def set_sort_config(self, config: list):
+        """设置排序配置（由外部调用）。"""
+        self._sort_config = list(config or [])
+
     # ==================== 数据 ====================
 
     def refresh(self):
-        """重新加载数据"""
+        """重新加载数据（小数据同步，大数据后台线程）"""
         if not self._db or not self._report_id:
             self._clear()
             return
+        if self._bg_processing:
+            return
+
+        snap_order_by = None
+        if self._sort_config:
+            parts = []
+            for sc in self._sort_config:
+                field = sc.get("field", "")
+                direction = 'ASC' if sc.get('direction', 'asc') == 'asc' else 'DESC'
+                if field:
+                    parts.append(f"{field} {direction}")
+            if parts:
+                snap_order_by = ', '.join(parts)
+
+        snap_filters = list(self._filter_conditions or [])
+        header_fc = getattr(self, '_header_filter_conditions', None)
+        if header_fc:
+            snap_filters.extend(header_fc)
+
+        snap_page = self._current_page
+        snap_page_size = self._page_size
+        snap_search = self._search_text or None
+        snap_search_cols = self._search_columns or None
+        snap_report_id = self._report_id
+
+        self._bg_processing = True
+        self._record_label.setText("加载中...")
+
+        import threading
+        t = threading.Thread(target=self._do_refresh_bg,
+            args=(snap_report_id, snap_page, snap_page_size,
+                  snap_search, snap_search_cols,
+                  snap_filters, snap_order_by),
+            daemon=True)
+        t.start()
+
+    def _do_refresh_bg(self, report_id, page, page_size,
+                        search, search_cols, filters, order_by):
+        """后台线程执行数据查询"""
         try:
             rows, total = self._db.query_result(
-                self._report_id,
-                page=self._current_page,
-                page_size=self._page_size,
-                search=self._search_text or None,
-                search_columns=self._search_columns or None,
-                filters=self._filter_conditions or None,
+                report_id, page=page, page_size=page_size,
+                search=search, search_columns=search_cols,
+                filters=filters or None, order_by=order_by,
             )
+            self.refreshDataReady.emit(rows, total)
+        except Exception:
+            self.refreshDataReady.emit(None, -1)
+
+    def _on_refresh_data_ready(self, rows, total):
+        """后台数据就绪，在主线程更新 UI"""
+        if not self._bg_processing:
+            return
+        self._bg_processing = False
+        if rows is None:
+            self._clear()
+            self._record_label.setText("查询失败")
+            return
+        try:
             self._total_rows = total
             self._populate_table(rows)
             self._update_pager()
         except Exception as e:
             self._clear()
-            self._record_label.setText(f"查询失败: {str(e)[:80]}")
-
+            self._record_label.setText("查询失败: " + str(e)[:80])
     def _populate_table(self, rows: list[dict]):
+        """填充数据到表格。
+
+        性能优化点：
+        1. 列结构相同时跳过 setColumnCount + setHorizontalHeaderLabels 避免 Qt 内
+            容重排
+        2. 复用已有 QTableWidgetItem 的 setData 减少 Python↔C++ 跨边界调用
+        3. 刷新数据后不再重置 _col_widths_loaded（由调用方 set_report 决定）
+        """
         if not rows:
             self._table.setRowCount(0)
             self._table.setColumnCount(0)
@@ -17763,45 +21162,138 @@ class PreviewTable(QWidget):
 
         if self._visible_fields is not None:
             cols = [c for c in all_cols if c in self._visible_fields]
-            if not cols:
-                cols = all_cols
         else:
             cols = all_cols
+
+        # 无可显示列时清空表格
+        if not cols:
+            self._table.setRowCount(0)
+            self._table.setColumnCount(0)
+            self._display_cols = []
+            return
+
+        # 按字段面板同步的期望顺序排列列
+        if self._preferred_column_order:
+            rank = {name: i for i, name in enumerate(self._preferred_column_order)}
+            try:
+                cols.sort(key=lambda c: rank.get(c, len(rank)))
+            except Exception:
+                pass
 
         # 保存 cols 供 _add_summary_row 使用
         self._display_cols = cols
 
-        self._table.setColumnCount(len(cols))
-        self._table.setHorizontalHeaderLabels(cols)
-        for c in range(len(cols)):
-            header_item = self._table.horizontalHeaderItem(c)
-            if header_item:
-                header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 记录上一次列集合（不关心顺序），用于判断列结构是否真正变化
+        prev_col_set = getattr(self, '_prev_populate_col_set', None)
+        cur_col_set = frozenset(cols)
+        cols_changed = (prev_col_set != cur_col_set) or (self._table.columnCount() != len(cols))
+        self._prev_populate_col_set = cur_col_set
+
+        header = self._table.horizontalHeader()
+
+        # --- 表头重建（仅在列结构变化时） ---
+        if cols_changed:
+            # 保存当前视觉列顺序和列宽（仅在列结构变化时需要重建）
+            saved_visual_order = []
+            saved_col_widths = {}
+            for vis in range(self._table.columnCount()):
+                logical = header.logicalIndex(vis)
+                item = self._table.horizontalHeaderItem(logical)
+                if item:
+                    name = item.text().strip()
+                    if name:
+                        saved_visual_order.append(name)
+                        saved_col_widths[name] = header.sectionSize(logical)
+
+            header.blockSignals(True)
+            try:
+                self._table.setColumnCount(len(cols))
+                self._table.setHorizontalHeaderLabels(cols)
+            finally:
+                header.blockSignals(False)
+            for c in range(len(cols)):
+                header_item = self._table.horizontalHeaderItem(c)
+                if header_item:
+                    header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # 确保所有列处于 Interactive 模式
+            for c in range(len(cols)):
+                if header.sectionResizeMode(c) != QHeaderView.ResizeMode.Interactive:
+                    header.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+            # 列宽：表头重建时始终恢复已保存的列宽（含搜索清空等场景）
+            self._load_column_widths()
+            if not self._col_widths_loaded:
+                if not self._preferred_column_order:
+                    if not self._editor_mode:
+                        self._load_column_order()
+                if not self._has_saved_column_widths():
+                    self._table.resizeColumnsToContents()
+                if not self._preferred_column_order:
+                    if self._editor_mode or not self._has_saved_column_order():
+                        self._apply_definition_column_order()
+                self._col_widths_loaded = True
+        else:
+            saved_visual_order = []
+            saved_col_widths = {}
 
         # 转为 dict 列表以便填充
         row_dicts = df.to_dict('records')
-        self._table.setRowCount(len(row_dicts))
+        n_rows = len(row_dicts)
+        n_cols = len(cols)
+        old_row_count = self._table.rowCount()
 
-        for r, row in enumerate(row_dicts):
-            for c, col_name in enumerate(cols):
-                val = row.get(col_name, '')
-                if val is None or (isinstance(val, float) and pd.isna(val)):
-                    val = ''
-                item = QTableWidgetItem(str(val) if val != '' else '')
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self._table.setItem(r, c, item)
+        self._table.setUpdatesEnabled(False)
+        self._table.setSortingEnabled(False)
+        try:
+            # 行数变化时才调用 setRowCount（避免 Qt 内部重新分配行空间）
+            if n_rows != old_row_count:
+                self._table.setRowCount(n_rows)
 
-        # 追加汇总行
-        if self._report_def and getattr(self._report_def, 'show_summary_row', False):
-            self._add_summary_row(df, cols)
+            # 批量填充单元格：优先复用已有 item 的 setData，避免 Python↔C++ 跨边界创建大量新对象
+            # 构建列名→逻辑索引映射，确保表头移动后数据写入正确的逻辑列
+            name_to_logical = {}
+            for c_idx in range(self._table.columnCount()):
+                item = self._table.horizontalHeaderItem(c_idx)
+                if item:
+                    name_to_logical[item.text().strip()] = c_idx
+            for r, row in enumerate(row_dicts):
+                for c, col_name in enumerate(cols):
+                    val = row.get(col_name, '')
+                    if val is None or (isinstance(val, float) and pd.isna(val)):
+                        val = ''
+                    text_val = str(val) if val != '' else ''
+                    # 使用 logical_c 确保数据写入与列名对应的逻辑列（而非按 cols 索引）
+                    logical_c = name_to_logical.get(col_name, c)
+                    existing = self._table.item(r, logical_c)
+                    if existing is not None:
+                        # 关键优化：setTableItem 已存在的 item 不会触发 Qt 内部重排，
+                        # 直接用 setData 只更新显示文本和排序用的用户角色。
+                        # 但要避免同文本重复赋值（setData 即使值相同也会触发 notify）
+                        if existing.text() != text_val:
+                            existing.setText(text_val)
+                    else:
+                        item = QTableWidgetItem(text_val)
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                        self._table.setItem(r, logical_c, item)
 
-        # 自适应列宽（首次加载）或恢复已保存的列宽和列顺序
-        self._table.resizeColumnsToContents()
-        if not self._col_widths_loaded:
-            self._load_column_widths()
-            self._load_column_order()
-            # 用 report_def.columns 的 sort_order 覆盖，确保详情页列顺序与编辑界面一致
-            self._apply_definition_column_order()
+            # 旧行超出新行数的行清空（避免残留数据）
+            if n_rows < old_row_count:
+                for r in range(n_rows, old_row_count):
+                    for c in range(n_cols):
+                        existing = self._table.item(r, c)
+                        if existing and existing.text():
+                            existing.setText('')
+
+            # 追加汇总行
+            if self._report_def and getattr(self._report_def, 'show_summary_row', False):
+                self._add_summary_row(df, cols)
+        finally:
+            self._table.setSortingEnabled(True)
+            self._table.setUpdatesEnabled(True)
+
+        # 仅首次打开（_col_widths_loaded=False）或列结构变化时恢复/适配列宽列序
+        # 刷新数据时（_col_widths_loaded=True 且 cols_changed=False）跳过整个块
+        if not self._col_widths_loaded or cols_changed:
             self._col_widths_loaded = True
 
     def _add_summary_row(self, df, cols: list[str]):
@@ -17815,6 +21307,15 @@ class PreviewTable(QWidget):
         self._table.insertRow(row_idx)
 
         for c, col_name in enumerate(cols):
+            # 从表头获取正确的逻辑索引（应对列顺序移动）
+            log_c = None
+            for ci in range(self._table.columnCount()):
+                hi = self._table.horizontalHeaderItem(ci)
+                if hi and hi.text().strip() == col_name:
+                    log_c = ci
+                    break
+            if log_c is None:
+                log_c = c
             val = summary.get(col_name, '')
             if val is None:
                 val = ''
@@ -17826,7 +21327,7 @@ class PreviewTable(QWidget):
             font.setBold(True)
             item.setFont(font)
             item.setBackground(QColor("#F5F5F5"))
-            self._table.setItem(row_idx, c, item)
+            self._table.setItem(row_idx, log_c, item)
 
     def _clear(self):
         self._table.setRowCount(0)
@@ -17845,6 +21346,8 @@ class PreviewTable(QWidget):
 
     def _on_column_resized(self, col_idx: int, old_width: int, new_width: int):
         """用户拖拽列宽后保存到个人配置文件"""
+        if getattr(self, '_setting_column_order', False):
+            return
         if not self._save_config_fn or not self._report_id:
             return
         QTimer.singleShot(300, self._save_column_widths)
@@ -17911,6 +21414,24 @@ class PreviewTable(QWidget):
         except Exception:
             pass
 
+    def _has_saved_column_widths(self) -> bool:
+        """检查当前报表是否有已保存的列宽配置"""
+        if not self._load_config_fn or not self._report_id:
+            return False
+        try:
+            cfg = self._load_config_fn()
+            if not isinstance(cfg, dict):
+                return False
+            cr = cfg.get('custom_reports', {})
+            if not isinstance(cr, dict):
+                return False
+            all_widths = cr.get('column_widths', {})
+            if not isinstance(all_widths, dict):
+                return False
+            return bool(all_widths.get(self._report_id))
+        except Exception:
+            return False
+
     # ==================== 列顺序持久化 ====================
 
     def _on_column_moved(self, logical_index, old_visual_index, new_visual_index):
@@ -17919,7 +21440,15 @@ class PreviewTable(QWidget):
             return
         if not self._save_config_fn or not self._report_id:
             return
-        QTimer.singleShot(300, self._save_column_order)
+        # 取消上一次未执行的保存，防止快速拖拽时中间位置的顺序被反复同步
+        timer = getattr(self, '_save_order_timer', None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._save_column_order)
+            self._save_order_timer = timer
+        timer.stop()
+        timer.start(300)
 
     def _save_column_order(self):
         """将当前列顺序写入个人配置文件"""
@@ -17934,6 +21463,9 @@ class PreviewTable(QWidget):
                     order.append(name)
         if not order:
             return
+        # 同步更新 _preferred_column_order，防止下次 _populate_table
+        # 用旧的顺序重排列导致「拖拽后列立刻弹回」
+        self._preferred_column_order = list(order)
         if self._save_config_fn and self._report_id:
             try:
                 cfg = None
@@ -17962,6 +21494,15 @@ class PreviewTable(QWidget):
         self._setting_column_order = True
         try:
             header = self._table.horizontalHeader()
+            # 先检查当前顺序是否已正确，避免不必要的 moveSection 引发列宽信号
+            current = []
+            for vis in range(self._table.columnCount()):
+                logical = header.logicalIndex(vis)
+                item = self._table.horizontalHeaderItem(logical)
+                if item:
+                    current.append(item.text().strip())
+            if current == order:
+                return
             name_to_logical = {}
             for c in range(self._table.columnCount()):
                 item = self._table.horizontalHeaderItem(c)
@@ -18007,20 +21548,24 @@ class PreviewTable(QWidget):
         order = [name for _, name in ordered]
 
         # 应用列顺序（只移动实际存在于表格中的列）
-        header = self._table.horizontalHeader()
-        name_to_logical = {}
-        for c in range(self._table.columnCount()):
-            item = self._table.horizontalHeaderItem(c)
-            if item:
-                name_to_logical[item.text().strip()] = c
-        target_visual = 0
-        for name in order:
-            logical = name_to_logical.get(name)
-            if logical is not None:
-                current_visual = header.visualIndex(logical)
-                if current_visual != target_visual:
-                    header.moveSection(current_visual, target_visual)
-                target_visual += 1
+        self._setting_column_order = True
+        try:
+            header = self._table.horizontalHeader()
+            name_to_logical = {}
+            for c in range(self._table.columnCount()):
+                item = self._table.horizontalHeaderItem(c)
+                if item:
+                    name_to_logical[item.text().strip()] = c
+            target_visual = 0
+            for name in order:
+                logical = name_to_logical.get(name)
+                if logical is not None:
+                    current_visual = header.visualIndex(logical)
+                    if current_visual != target_visual:
+                        header.moveSection(current_visual, target_visual)
+                    target_visual += 1
+        finally:
+            self._setting_column_order = False
 
     def _load_column_order(self):
         """从个人配置文件恢复已保存的列顺序"""
@@ -18039,29 +21584,82 @@ class PreviewTable(QWidget):
             saved_order = all_orders.get(self._report_id, [])
             if not saved_order:
                 return
-            header = self._table.horizontalHeader()
-            # 构建当前列名 → 逻辑索引映射
-            name_to_logical = {}
-            for c in range(self._table.columnCount()):
-                item = self._table.horizontalHeaderItem(c)
-                if item:
-                    name_to_logical[item.text().strip()] = c
-            # 按保存的顺序移动列
-            target_visual = 0
-            for name in saved_order:
-                logical = name_to_logical.get(name)
-                if logical is not None:
-                    current_visual = header.visualIndex(logical)
-                    if current_visual != target_visual:
-                        header.moveSection(current_visual, target_visual)
-                    target_visual += 1
+            # moveSection 期间阻断 sectionMoved 信号，防止触发 _save_column_order
+            self._setting_column_order = True
+            try:
+                header = self._table.horizontalHeader()
+                # 构建当前列名 → 逻辑索引映射
+                name_to_logical = {}
+                for c in range(self._table.columnCount()):
+                    item = self._table.horizontalHeaderItem(c)
+                    if item:
+                        name_to_logical[item.text().strip()] = c
+                # 按保存的顺序移动列
+                target_visual = 0
+                for name in saved_order:
+                    logical = name_to_logical.get(name)
+                    if logical is not None:
+                        current_visual = header.visualIndex(logical)
+                        if current_visual != target_visual:
+                            header.moveSection(current_visual, target_visual)
+                        target_visual += 1
+            finally:
+                self._setting_column_order = False
+        except Exception:
+            self._setting_column_order = False
+
+    def _has_saved_column_order(self) -> bool:
+        """检查当前报表是否有用户个人保存的列顺序"""
+        if not self._load_config_fn or not self._report_id:
+            return False
+        try:
+            cfg = self._load_config_fn()
+            if not isinstance(cfg, dict):
+                return False
+            cr = cfg.get('custom_reports', {})
+            if not isinstance(cr, dict):
+                return False
+            all_orders = cr.get('column_order', {})
+            if not isinstance(all_orders, dict):
+                return False
+            saved_order = all_orders.get(self._report_id, [])
+            return bool(saved_order)
+        except Exception:
+            return False
+
+    def set_editor_mode(self, enabled: bool):
+        """编辑器模式：忽略个人保存的列顺序，始终按报表定义排序。"""
+        self._editor_mode = enabled
+
+    def _clear_saved_column_order(self):
+        """清除当前报表的个人保存列顺序（编辑器打开时调用，避免旧顺序覆盖定义排序）。"""
+        if not self._save_config_fn or not self._report_id:
+            return
+        try:
+            cfg = self._load_config_fn() if self._load_config_fn else None
+            if not isinstance(cfg, dict):
+                return
+            cr = cfg.get('custom_reports', {})
+            if not isinstance(cr, dict):
+                return
+            all_orders = cr.get('column_order', {})
+            if not isinstance(all_orders, dict):
+                return
+            if self._report_id in all_orders:
+                del all_orders[self._report_id]
+                cr['column_order'] = all_orders
+                self._save_config_fn(cfg)
         except Exception:
             pass
 
     # ==================== 交互 ====================
 
+
+
     def _on_search_text_changed(self, text):
         self._search_text = text
+        if not text:
+            self._search_columns = None
         self._search_timer.start()
 
     def _do_search(self):
@@ -18073,8 +21671,87 @@ class PreviewTable(QWidget):
             self._page_size = int(text)
         except ValueError:
             self._page_size = 50
-        self._current_page = 1
         self.refresh()
+
+    def _save_page_size(self):
+        """保存每页条数到个人配置文件"""
+        if not self._save_config_fn or not self._report_id:
+            return
+        try:
+            cfg = None
+            if self._load_config_fn:
+                try:
+                    cfg = self._load_config_fn()
+                except Exception:
+                    pass
+            if not isinstance(cfg, dict):
+                cfg = {}
+            cr = cfg.setdefault('custom_reports', {})
+            cr['page_size'] = self._page_size
+            self._save_config_fn(cfg)
+        except Exception:
+            pass
+
+    def _load_page_size(self):
+        """从个人配置文件恢复每页条数"""
+        if not self._load_config_fn:
+            return
+        try:
+            cfg = self._load_config_fn()
+            if not isinstance(cfg, dict):
+                return
+            cr = cfg.get('custom_reports', {})
+            ps = cr.get('page_size')
+            if ps and isinstance(ps, int) and ps > 0:
+                self._page_size = ps
+                combo = getattr(self, '_page_size_combo', None)
+                if combo:
+                    combo.blockSignals(True)
+                    idx = combo.findText(str(ps))
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+                    else:
+                        combo.setCurrentText(str(ps))
+                    combo.blockSignals(False)
+        except Exception:
+            pass
+
+    def _on_header_filter_changed(self):
+        pass
+        # 仅视觉筛选（apply_autofilter_to_table 已处理），不重新查询 SQL
+
+    def _provide_column_values(self, col_idx: int) -> list:
+        """为列头筛选下拉框提供全量去重值（带缓存，避免重复查询 MySQL）。"""
+        if not self._db or not self._report_id:
+            return []
+        item = self._table.horizontalHeaderItem(col_idx)
+        if not item:
+            return []
+        col_name = item.text().strip()
+        if not col_name:
+            return []
+
+        # 缓存检查
+        cache = getattr(self, '_col_values_cache', None)
+        if cache is None:
+            self._col_values_cache = {}
+            cache = self._col_values_cache
+        cache_key = (self._report_id, col_name)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        try:
+            table = ReportDatabase.result_table_name(self._report_id)
+            sql = f"SELECT DISTINCT `{col_name}` FROM `{table}` ORDER BY `{col_name}` LIMIT 10000"
+            rows = self._db.execute(sql)
+            values = []
+            if rows:
+                values = [str(r.get(col_name, "")) if r.get(col_name) is not None else "" for r in rows]
+            cache[cache_key] = values
+            return values
+        except Exception:
+            pass
+        return []
 
     def _prev_page(self):
         if self._current_page > 1:
@@ -18162,7 +21839,9 @@ class ReportDetailPage(QWidget):
     backRequested = pyqtSignal()
     editRequested = pyqtSignal(str)
     refreshDataRequested = pyqtSignal(str)
+    syncDone = pyqtSignal(bool, str, object)  # (ok, msg, stats)
 
+    refreshDataReady = pyqtSignal(object, object, object)  # (folder_data, all_reports, search)
     def __init__(self, db: ReportDatabase = None, parent=None,
                  save_config_fn=None, load_config_fn=None,
                  app_config: dict = None,
@@ -18176,8 +21855,12 @@ class ReportDetailPage(QWidget):
         self._load_config_fn = load_config_fn
         self._app_config = app_config or {}
         self._save_filters_fn = save_filters_fn
+        self._bg_processing = False  # 后台数据加载标志
 
+        self.refreshDataReady.connect(self._on_refresh_data_ready)
+        self.syncDone.connect(self._on_sync_done)
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def set_database(self, db: ReportDatabase):
         self._db = db
@@ -18191,9 +21874,11 @@ class ReportDetailPage(QWidget):
         self._id_column = id_column  # 主表 _id 对应的中文列名，用于同步 MySQL 时做 PK
         self._report_def = report_def  # 保存报表定义，用于同步 MySQL 时读取 write_mode
         self._title_label.setText(f"📊 {self._report_name}")
-        self._preview.set_report(report_id)
         if report_def is not None:
             self._preview.set_report_definition(report_def)
+        self._preview.set_report(report_id)
+        if report_def is not None:
+            self._preview.set_sort_config(getattr(report_def, 'sort_config', []))
         # 设置筛选栏的结果表，用于「属于」/「不属于」查询去重值
         if self._db:
             self._filter_bar.set_result_table(self._db.result_table_name(report_id))
@@ -18202,6 +21887,10 @@ class ReportDetailPage(QWidget):
             self._filter_bar.set_conditions(filters)
             # set_conditions 不触发 filtersChanged，需手动应用到表格
             self._preview.set_filter_conditions(self._filter_bar.get_conditions())
+
+        # \u6570\u636e\u65b0\u9c9c\u5ea6\u68c0\u67e5
+        QTimer.singleShot(200, self._check_data_freshness)
+
 
     # ==================== UI ====================
 
@@ -18341,6 +22030,49 @@ class ReportDetailPage(QWidget):
         tool_row.addWidget(edit_btn)
 
         main_layout.addLayout(tool_row)
+
+        # ---- 数据新鲜度指示器 ----
+        freshness_frame = QFrame()
+        freshness_frame.setStyleSheet("QFrame { background-color: #FFFBE6; border: 1px solid #FFE58F; border-radius: 4px; padding: 4px 10px; }")
+        freshness_layout = QHBoxLayout(freshness_frame)
+        freshness_layout.setContentsMargins(10, 4, 10, 4)
+        freshness_layout.setSpacing(8)
+        self._freshness_icon = QLabel("")
+        self._freshness_icon.setFixedWidth(20)
+        freshness_layout.addWidget(self._freshness_icon)
+        self._freshness_label = QLabel("")
+        self._freshness_label.setStyleSheet("font-size: 11px; color: #8C6E00;")
+        self._freshness_label.setWordWrap(True)
+        freshness_layout.addWidget(self._freshness_label, 1)
+        self._freshness_refresh_btn = QPushButton("\u5237\u65b0\u6570\u636e")
+        self._freshness_refresh_btn.setFixedSize(70, 22)
+        self._freshness_refresh_btn.setStyleSheet("QPushButton { background:#1890FF; color:#FFF; border:none; border-radius:3px; font-size:11px; } QPushButton:hover { background:#1472C8; }")
+        self._freshness_refresh_btn.clicked.connect(lambda: self._refresh_btn.click() if hasattr(self, '_refresh_btn') else None)
+        self._freshness_refresh_btn.setVisible(False)
+        freshness_layout.addWidget(self._freshness_refresh_btn)
+        self._freshness_frame = freshness_frame
+        freshness_frame.setVisible(False)
+        main_layout.addWidget(freshness_frame)
+
+        # ---- 后台任务进度条 ----
+
+        self._bg_progress = QProgressBar()
+        self._bg_progress.setTextVisible(False)
+        self._bg_progress.setFixedHeight(6)
+        self._bg_progress.setRange(0, 0)
+        self._bg_progress.setStyleSheet("""
+            QProgressBar { border: none; background: #F0F0F0; border-radius: 3px; }
+            QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #1890FF, stop:1 #40A9FF); border-radius: 3px; }
+        """)
+        self._bg_progress.setVisible(False)
+        main_layout.addWidget(self._bg_progress)
+
+        self._bg_progress_timer = QTimer()
+        self._bg_progress_timer.setInterval(300)
+        self._bg_progress_timer.timeout.connect(self._update_bg_progress)
+        self._bg_progress_timer.start()
+
 
         # ========== 数据明细 GroupBox ==========
         data_group = QGroupBox("数据明细")
@@ -18483,85 +22215,110 @@ class ReportDetailPage(QWidget):
         if self._save_filters_fn:
             self._save_filters_fn(self._report_id, conditions)
 
+    def _check_data_freshness(self):
+        """\u68c0\u67e5\u6570\u636e\u65b0\u9c9c\u5ea6\u5e76\u66f4\u65b0UI\u6307\u793a\u5668"""
+        if not self._db or not self._report_id:
+            self._freshness_frame.setVisible(False)
+            return
+        try:
+            info = self._db.get_data_freshness_info(self._report_id, self._report_def)
+        except Exception:
+            self._freshness_frame.setVisible(False)
+            return
+        parts = []
+        src_info = []
+        for st in info.get("source_tables", []):
+            src_info.append(f"{st['name']}({st['row_count']}\u6761)")
+        src_str = ", ".join(src_info) if src_info else "\u65e0\u6e90\u8868"
+        parts.append(f"\u6e90\u8868: {src_str}")
+        if info["result_exists"]:
+            parts.append(f"\u7ed3\u679c\u8868 cr_{self._report_id}({info['result_row_count']}\u6761)")
+        else:
+            parts.append("\u7ed3\u679c\u8868: \u4e0d\u5b58\u5728")
+        if info["last_refresh_time"]:
+            parts.append(f"\u4e0a\u6b21\u5237\u65b0: {info['last_refresh_time']}")
+        text = " | ".join(parts)
+        if info["needs_refresh"]:
+            self._freshness_icon.setText("\u26a0\ufe0f")
+            if info["result_exists"] and info["result_row_count"] > 0:
+                msg = "\u6570\u636e\u53ef\u80fd\u8fc7\u671f\uff01\u6e90\u8868\u4e0e\u7ed3\u679c\u8868\u884c\u6570\u4e0d\u4e00\u81f4\uff0c\u5efa\u8bae\u70b9\u51fb\u5237\u65b0\u6570\u636e"
+                self._freshness_frame.setStyleSheet("QFrame { background-color: #FFF2E8; border: 1px solid #FFCCC7; border-radius: 4px; padding: 4px 10px; }")
+                self._freshness_label.setStyleSheet("font-size: 11px; color: #CF1322;")
+            else:
+                msg = "\u6570\u636e\u672a\u52a0\u8f7d\uff01\u8bf7\u70b9\u51fb\u5237\u65b0\u6570\u636e\u751f\u6210\u7ed3\u679c\u8868"
+                self._freshness_frame.setStyleSheet("QFrame { background-color: #FFFBE6; border: 1px solid #FFE58F; border-radius: 4px; padding: 4px 10px; }")
+                self._freshness_label.setStyleSheet("font-size: 11px; color: #8C6E00;")
+            self._freshness_refresh_btn.setVisible(True)
+            full_text = msg + "  " + text
+        else:
+            self._freshness_icon.setText("\u2705")
+            self._freshness_frame.setStyleSheet("QFrame { background-color: #F6FFED; border: 1px solid #B7EB8F; border-radius: 4px; padding: 4px 10px; }")
+            self._freshness_label.setStyleSheet("font-size: 11px; color: #389E0D;")
+            self._freshness_refresh_btn.setVisible(False)
+            full_text = "\u6570\u636e\u6700\u65b0  " + text
+        self._freshness_label.setText(full_text)
+        self._freshness_frame.setVisible(True)
+
     def _on_sync_mysql(self):
-        """将当前结果表数据同步到展示用的 MySQL 表（带中文表头）。
-
-        写入方式与编辑界面保持一致：读取报表定义中保存的 write_mode，
-        - 覆盖: DROP+CREATE 目标表，全量插入
-        - 增量: INSERT ... ON DUPLICATE KEY UPDATE
-        """
         from PyQt6.QtWidgets import QMessageBox
-
         if not self._db or not self._report_id:
             _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", "数据库未连接")
             return
-
         filters = self._filter_bar.get_conditions()
-        # 排除「生命状态」筛选条件：作废数据也要写入 MySQL
         filters = [f for f in filters
-                   if '生命状态' not in str(f.get('field_label', '') or f.get('field', ''))]
+           if "生命状态" not in str(f.get("field_label","") or f.get("field",""))]
         search = self._search_input.text().strip() or None
         search_col = self._search_field_combo.currentData()
         search_columns = [search_col] if search_col else None
-
         table_name = f"报表-{self._report_name}"
-
-        # 从报表定义读取 write_mode，与编辑界面保持一致
         write_mode = "incremental"
         if self._report_def is not None:
             wm = getattr(self._report_def, 'write_mode', None)
             if wm in ('overwrite', 'incremental'):
                 write_mode = wm
-
         self._sync_btn.setEnabled(False)
         self._sync_btn.setText("⏳ 同步中...")
+        sync_id_fields = getattr(self._report_def, "sync_id_fields", None) or None
+        cols = getattr(self._report_def, "columns", None) or []
+        column_order = [
+            (c.display_name if hasattr(c, 'display_name') else c.get('display_name', ''))
+            for c in sorted(cols, key=lambda x: x.sort_order if hasattr(x, 'sort_order') else x.get('sort_order', 0))
+            if (c.display_name if hasattr(c, 'display_name') else c.get('display_name', ''))
+        ]
+        import threading
+        t = threading.Thread(
+            target=self._do_sync_bg, args=(
+                self._report_id, table_name, filters, search, search_columns,
+                column_order, write_mode, sync_id_fields,
+                getattr(self._report_def, 'sync_id_separator', '_') or '_'),
+            daemon=True)
+        t.start()
 
-        # sync_id_fields 存的是字段中文标签 = 结果表列名，可直接使用
-        sync_id_fields = getattr(self._report_def, 'sync_id_fields', None) or None
-
+    def _do_sync_bg(self, report_id, table_name, filters, search, search_columns,
+                    column_order, write_mode, sync_id_fields, sync_id_separator):
         try:
-            # 从报表定义取列顺序（按 sort_order）
-            cols = getattr(self._report_def, 'columns', None) or []
-            column_order = [
-                (c.display_name if hasattr(c, 'display_name') else c.get('display_name', ''))
-                for c in sorted(cols, key=lambda x: x.sort_order if hasattr(x, 'sort_order') else x.get('sort_order', 0))
-                if (c.display_name if hasattr(c, 'display_name') else c.get('display_name', ''))
-            ]
             ok, msg, stats = self._db.sync_filtered_to_mysql(
-                self._report_id, table_name,
+                report_id, table_name,
                 filters=filters, search=search, search_columns=search_columns,
                 id_column='_id',
                 column_order=column_order,
                 write_mode=write_mode,
                 sync_id_fields=sync_id_fields if sync_id_fields else None,
-                sync_id_separator=getattr(self._report_def, 'sync_id_separator', '_') or '_',
+                sync_id_separator=sync_id_separator,
             )
-            if ok:
-                _light_msgbox(self, QMessageBox.Icon.Information,
-                              "同步完成", f"已同步到 MySQL 表: {table_name}\n{msg}")
-            else:
-                _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", msg)
+            self.syncDone.emit(ok, msg or '', stats)
         except Exception as e:
-            _light_msgbox(self, QMessageBox.Icon.Warning, "同步异常", str(e))
-        finally:
-            self._sync_btn.setText("同步MySQL")
-            self._sync_btn.setEnabled(True)
+            self.syncDone.emit(False, str(e), None)
 
-
-# -- custom_report/views/report_editor_page.py --
+    def _on_sync_done(self, ok, msg, stats):
+        self._sync_btn.setText("同步MySQL")
+        self._sync_btn.setEnabled(True)
+        if not ok:
+            from PyQt6.QtWidgets import QMessageBox
+            _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", msg)
+        else:
+            _show_sync_toast(self, stats)
 """
-报表编辑器主页面
-
-组装表选择器、画布、字段面板、筛选栏、预览面板为完整的编辑器界面。
-
-布局:
-  ┌──────────────────────────────────────────────────────────┐
-  │ [←返回] 报表名称: [____]  [保存] [刷新数据]               │
-  ├────────┬───────────────────────────┬─────────────────────┤
-  │ ① 表   │   ② 画布区域              │  ③ 字段配置 (右上)   │
-  │   选择 │   (QGraphicsView)        ├─────────────────────┤
-  │   面板 │                          │  ④ 筛选栏            │
-  │        │                          ├─────────────────────┤
   │        │                          │  ⑤ 预览 (右下)       │
   └────────┴───────────────────────────┴─────────────────────┘
 """
@@ -18584,7 +22341,7 @@ from PyQt6.QtGui import QColor
 
 # 浅色 QMessageBox 样式（覆盖系统深色主题）
 _MSGBOX_STYLE = """
-    QMessageBox { background-color: #FAFAFA; color: #333333; }
+    QMessageBox { background-color: #FFFFFF; color: #333333; }
     QLabel { color: #333333; font-size: 13px; }
     QPushButton {
         background-color: #FFFFFF; color: #333333;
@@ -18601,8 +22358,18 @@ def _light_msgbox(parent, icon, title, text):
     msg.setText(text)
     msg.setIcon(icon)
     msg.setStyleSheet(_MSGBOX_STYLE)
+    msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     return msg.exec()
 
+
+
+    def _update_bg_progress(self):
+        bg_active = False
+        if hasattr(self, '_preview') and hasattr(self._preview, '_bg_processing'):
+            bg_active = self._preview._bg_processing
+        if hasattr(self, '_sync_btn') and not self._sync_btn.isEnabled():
+            bg_active = True
+        self._bg_progress.setVisible(bg_active)
 
 class RefreshThread(QThread):
     """后台刷新线程"""
@@ -18615,11 +22382,23 @@ class RefreshThread(QThread):
         self._report = report
 
     def run(self):
-        result = self._worker.refresh(
-            self._report,
-            progress_callback=lambda p, m, pc: self.progress.emit(p, m, pc),
-        )
-        self.finished.emit(result)
+        try:
+            result = self._worker.refresh(
+                self._report,
+                progress_callback=lambda p, m, pc: self.progress.emit(p, m, pc),
+            )
+        except Exception as e:
+            import logging, traceback
+            logging.exception(f"[RefreshThread] 刷新异常: {e}\n{traceback.format_exc()}")
+            result = {
+                'success': False, 'row_count': 0,
+                'error': f'刷新线程异常: {e}', 'duration': 0,
+            }
+        try:
+            self.finished.emit(result)
+        except Exception:
+            # 防御性：即使 emit 失败也不让线程崩溃
+            pass
 
 
 class ReportEditorPage(QWidget):
@@ -18628,6 +22407,7 @@ class ReportEditorPage(QWidget):
     # 信号
     backRequested = pyqtSignal()                        # 返回列表
     reportSaved = pyqtSignal(str)                       # report_id
+    syncDone = pyqtSignal(bool, str, object)  # (ok, msg, stats)
 
     def __init__(self, repo: ReportRepository = None,
                  db: ReportDatabase = None,
@@ -18659,8 +22439,20 @@ class ReportEditorPage(QWidget):
         self._filter_change_timer.setSingleShot(True)
         self._filter_change_timer.setInterval(300)
         self._filter_change_timer.timeout.connect(self._apply_filter_to_preview)
+        # MySQL 查询结果缓存（避免连续查询同一表）
+        self._resolve_name_cache: dict[str, str | None] = {}
+        self._cleaned_fields_cache: dict[str, list[str]] = {}
+
+        # AI 助手相关
+        self._ai_assistant = None
+        self._ai_panel_visible = False
+        self._ai_panel_widget = None
+        self._ai_conversations: list[dict] = []  # [{id, title, created_at, messages, context_texts}]
+        self._ai_active_conv_id: str = ""
+        self._ai_worker = None
 
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def set_object_meta(self, meta: dict[str, dict]):
         """
@@ -18683,6 +22475,8 @@ class ReportEditorPage(QWidget):
             self._table_selector.refresh()
         # 同步更新筛选栏可用字段
         self._update_filter_bar_fields()
+        # 同步可用字段到字段面板（供批量粘贴使用）
+        self._sync_available_fields_to_panel()
 
     # ==================== UI 构建 ====================
 
@@ -18731,7 +22525,7 @@ class ReportEditorPage(QWidget):
                 gridline-color: #F0F0F0; border: 1px solid #E0E0E0;
             }
             QHeaderView::section {
-                background-color: #FAFAFA; color: #333333;
+                background-color: #FFFFFF; color: #333333;
                 border: none; border-bottom: 2px solid #E0E0E0;
                 padding: 8px; font-weight: 500;
             }
@@ -18762,19 +22556,31 @@ class ReportEditorPage(QWidget):
                 border: 1px solid #D9D9D9; border-radius: 3px;
             }
             QToolTip {
-                background-color: #FFFFFF; color: #333333;
-                border: 1px solid #D9D9D9; padding: 4px;
+                background-color: #FFF7E6;
+                color: #333333;
+                border: 1px solid #D9D9D9;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 12px;
             }
         """)
 
         # ---- 顶部操作栏 ----
         toolbar = QFrame()
         toolbar.setStyleSheet("""
-            QFrame { background-color: #FAFAFA; border-bottom: 1px solid #E0E0E0; padding: 10px 16px; }
+            QFrame { background-color: #FFFFFF; border-bottom: 1px solid #E0E0E0; padding: 10px 16px; }
         """)
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(16, 10, 16, 10)
-        toolbar_layout.setSpacing(12)
+        toolbar_layout.setSpacing(8)
+
+        # 工具栏分隔线
+        def _toolbar_sep():
+            sep = QFrame()
+            sep.setFixedWidth(1)
+            sep.setStyleSheet("background-color: #E0E0E0;")
+            sep.setFixedHeight(24)
+            return sep
 
         back_btn = QPushButton("← 返回列表")
         back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -18828,6 +22634,23 @@ class ReportEditorPage(QWidget):
         sql_edit_btn.clicked.connect(self._show_sql_editor)
         toolbar_layout.addWidget(sql_edit_btn)
 
+        # AI 助手切换按钮
+        self._ai_toggle_btn = QPushButton("🤖 AI助手")
+        self._ai_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ai_toggle_btn.setMinimumWidth(100)
+        self._ai_toggle_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_CLAUDE_TERMINAL_THEME['bg_input']}; "
+            f"color: {_CLAUDE_TERMINAL_THEME['accent_blue']}; "
+            f"border: 1px solid {_CLAUDE_TERMINAL_THEME['accent_blue']}; "
+            f"border-radius: 4px; padding: 6px 14px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: {_CLAUDE_TERMINAL_THEME['bg_hover']}; }}"
+        )
+        self._ai_toggle_btn.clicked.connect(self._toggle_ai_panel)
+        self._ai_toggle_btn.setVisible(False)  # 未配置 AI 时隐藏
+        toolbar_layout.addWidget(self._ai_toggle_btn)
+
+        toolbar_layout.addWidget(_toolbar_sep())  # ---- 分隔 ----
+
         import_btn = QPushButton("📥 导入")
         import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         import_btn.setMinimumWidth(80)
@@ -18860,6 +22683,8 @@ class ReportEditorPage(QWidget):
         """)
         save_btn.clicked.connect(self._save_report)
         toolbar_layout.addWidget(save_btn)
+
+        toolbar_layout.addWidget(_toolbar_sep())  # ---- 分隔 ----
 
         # 写入方式选择
         self._write_mode_combo = QComboBox()
@@ -18896,7 +22721,10 @@ class ReportEditorPage(QWidget):
         self._sync_mysql_btn.setToolTip("将当前结果表数据同步到展示用 MySQL 表\n"
                                         "写入方式来自左侧下拉选择：覆盖=删表重建 | 增量=按ID插入/更新")
         self._sync_mysql_btn.clicked.connect(self._on_sync_mysql)
+        self.syncDone.connect(self._on_sync_done)
         toolbar_layout.addWidget(self._sync_mysql_btn)
+
+        toolbar_layout.addWidget(_toolbar_sep())  # ---- 分隔 ----
 
         self._refresh_btn = QPushButton("🔄 刷新数据")
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -18911,6 +22739,25 @@ class ReportEditorPage(QWidget):
         toolbar_layout.addWidget(self._refresh_btn)
 
         layout.addWidget(toolbar)
+
+        # ---- 后台任务进度条 ----
+        self._bg_progress = QProgressBar()
+        self._bg_progress.setTextVisible(False)
+        self._bg_progress.setFixedHeight(4)
+        self._bg_progress.setRange(0, 0)
+        self._bg_progress.setStyleSheet("""
+            QProgressBar { border: none; background: #F0F0F0; border-radius: 2px; }
+            QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #1890FF, stop:1 #40A9FF); border-radius: 2px; }
+        """)
+        self._bg_progress.setVisible(False)
+        layout.addWidget(self._bg_progress)
+
+        self._bg_progress_timer = QTimer()
+        self._bg_progress_timer.setInterval(300)
+        self._bg_progress_timer.timeout.connect(self._update_bg_progress)
+        self._bg_progress_timer.start()
+
 
         # ---- 主区域 (水平分割，三栏) ----
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -18945,6 +22792,7 @@ class ReportEditorPage(QWidget):
         # 字段配置面板
         self._field_panel = FieldConfigPanel()
         self._field_panel.set_config_callbacks(self._save_config_fn, self._load_config_fn)
+        self._field_panel._sync_available_fn = self._sync_available_fields_to_panel
         right_layout.addWidget(self._field_panel, 1)
 
         # 筛选栏
@@ -18963,26 +22811,51 @@ class ReportEditorPage(QWidget):
         if filter_btn:
             self._filter_bar.set_toggle_button(filter_btn)
         self._preview.filterToggleRequested.connect(self._filter_bar.toggle_filter_panel)
+        self._field_panel.sortConfigChanged.connect(self._on_sort_config_changed)
 
         self._splitter.addWidget(right_panel)
         self._splitter.setStretchFactor(2, 2)
 
+        # ④ AI 助手面板（初始隐藏）
+        self._ai_panel_widget = ReportEditorAIPanel(self)
+        self._ai_panel_widget.sendMessage.connect(self._on_ai_message)
+        self._ai_panel_widget.applyChanges.connect(self._on_ai_apply)
+        self._ai_panel_widget.newConversation.connect(self._on_new_conversation)
+        self._ai_panel_widget.switchConversation.connect(self._on_switch_conversation)
+        self._ai_panel_widget.setVisible(False)
+        self._splitter.addWidget(self._ai_panel_widget)
+        self._splitter.setStretchFactor(3, 0)
+
         # 恢复用户之前保存的画布宽度（个人配置），无保存记录时使用默认值
         saved_sizes = self._load_splitter_sizes()
         if saved_sizes and len(saved_sizes) == 3:
-            self._splitter.setSizes(saved_sizes)
+            self._splitter.setSizes(saved_sizes + [0])  # 第 4 列(AI面板)初始宽度 0
         else:
-            self._splitter.setSizes([220, 650, 500])
+            self._splitter.setSizes([220, 650, 500, 0])
 
         # 用户拖动分割条后自动保存到个人配置文件
         self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
-        layout.addWidget(self._splitter, 1)
+        # 用 QStackedWidget 包装分割器，加载期间显示“加载中”页面，避免闪烁
+        from PyQt6.QtWidgets import QStackedWidget
+        self._canvas_container = QStackedWidget()
+        # Page 0: 加载中
+        loading_page = QWidget()
+        loading_layout = QVBoxLayout(loading_page)
+        loading_label = QLabel("正在加载报表...")
+        loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_label.setStyleSheet("font-size: 18px; color: #999999; background: #FAFAFA;")
+        loading_layout.addWidget(loading_label)
+        self._canvas_container.addWidget(loading_page)  # index 0
+        # Page 1: 实际内容
+        self._canvas_container.addWidget(self._splitter)  # index 1
+        self._canvas_container.setCurrentIndex(0)
+        layout.addWidget(self._canvas_container, 1)
 
         # 底部状态
         status_bar = QFrame()
         status_bar.setStyleSheet("""
-            QFrame { background-color: #FAFAFA; border-top: 1px solid #E0E0E0; padding: 4px 12px; }
+            QFrame { background-color: #FFFFFF; border-top: 1px solid #E0E0E0; padding: 4px 12px; }
         """)
         status_layout = QHBoxLayout(status_bar)
         status_layout.setContentsMargins(12, 4, 12, 4)
@@ -19075,8 +22948,10 @@ class ReportEditorPage(QWidget):
         """执行分割条宽度保存（使用最新配置避免覆盖并发修改）。"""
         try:
             sizes = self._splitter.sizes()
-            if len(sizes) != 3:
+            if len(sizes) not in (3, 4):
                 return
+            # 保存前 3 列（AI 面板宽度不持久化，下次打开时根据 toggle 状态决定）
+            save_sizes = sizes[:3]
             # 优先使用 load_config_fn 获取最新配置，避免覆盖其他模块的并发修改
             cfg = None
             if self._load_config_fn:
@@ -19090,9 +22965,9 @@ class ReportEditorPage(QWidget):
                 return
             cfg.setdefault('custom_reports', {})
             old_sizes = cfg['custom_reports'].get('editor_splitter_sizes')
-            if old_sizes == sizes:
+            if old_sizes == save_sizes:
                 return  # 未变化，跳过写入
-            cfg['custom_reports']['editor_splitter_sizes'] = list(sizes)
+            cfg['custom_reports']['editor_splitter_sizes'] = save_sizes
             self._save_config_fn(cfg)
         except Exception:
             pass
@@ -19105,23 +22980,45 @@ class ReportEditorPage(QWidget):
         self._name_input.setText("")
         # 新报表：如果指定了主表则只显示该表，否则显示所有可用对象
         self._load_to_ui(show_all=not bool(main_object_api))
+        # 初始化 AI 助手（如果配置了 LLM 提供商）—— 与编辑报表保持一致
+        self._init_ai_assistant()
 
     def load_report(self, report: ReportDefinition):
         """加载已有报表"""
         self._report = report
+        # 编辑器模式：清除个人保存的列顺序，避免旧顺序覆盖报表定义排序
+        self._preview.set_editor_mode(True)
+        self._preview._clear_saved_column_order()
         self._name_input.setText(report.name)
         self._load_to_ui()
+        # 初始化 AI 助手（如果配置了 LLM 提供商）
+        self._init_ai_assistant()
+
+        # 恢复 AI 对话历史
+        if report.ai_conversations and self._ai_panel_widget:
+            self._ai_conversations = list(report.ai_conversations)
+            self._ai_active_conv_id = report.ai_active_conversation_id
+            if not self._get_active_conversation() and self._ai_conversations:
+                self._ai_active_conv_id = self._ai_conversations[-1].get('id', '')
+            conv = self._get_active_conversation()
+            if conv:
+                self._ai_panel_widget.set_title(conv.get('title', 'AI 助手'))
+                self._ai_panel_widget.replay_messages(conv.get('messages', []))
+            self._ai_panel_widget.update_history_menu(self._ai_conversations, self._ai_active_conv_id)
 
     def _load_to_ui(self, show_all: bool = False):
         """将 ReportDefinition 加载到 UI
 
         Args:
             show_all: True = 新建空白报表（画布保持空白），
-                      False = 只显示已关联的对象（编辑已有报表时）
+                     False = 只显示已关联的对象（编辑已有报表时）
         """
         if not self._report:
             return
+        # 清除字段缓存，确保加载报表时从 MySQL 获取最新字段数据
+        # self._cleaned_fields_cache.clear()  # keep cache to avoid blank fields on restart
 
+        # 冻结页面重绘，加载完成后再统一显示
         # 画布：创建卡片
         scene = self._canvas.canvas_scene
         # 清除现有
@@ -19150,7 +23047,7 @@ class ReportEditorPage(QWidget):
                 if isinstance(c, FieldColumn):
                     src_api = c.source_object_api
                 elif isinstance(c, dict):
-                    src_api = c.get('source_object_api', '')
+                    src_api = c.get('source_object_api', '') or c.get('source_object', '')
                 else:
                     continue
                 # 指定对象匹配 或 未指定对象时全匹配
@@ -19193,7 +23090,7 @@ class ReportEditorPage(QWidget):
             self._report.columns,
             key=lambda c: c.sort_order if isinstance(c, FieldColumn) else (c.get('sort_order', 0) if isinstance(c, dict) else 0)
         )
-        for col in sorted_cols:
+        for i, col in enumerate(sorted_cols):
             if isinstance(col, FieldColumn):
                 src_field = self._normalize_field_key(col.source_object_api, col.source_field)
                 columns.append({
@@ -19209,9 +23106,10 @@ class ReportEditorPage(QWidget):
                     'date_part_source_field': getattr(col, 'date_part_source_field', '') or '',
                     'date_part_unit': getattr(col, 'date_part_unit', '') or '',
                     'field_format': getattr(col, 'field_format', 'text') or 'text',
+                    'sort_order': col.sort_order,
                 })
             elif isinstance(col, dict):
-                src_api = col.get('source_object_api', '')
+                src_api = col.get('source_object_api', '') or col.get('source_object', '')
                 src_field = self._normalize_field_key(src_api, col.get('source_field', ''))
                 columns.append({
                     'display_name': col.get('display_name', ''),
@@ -19226,8 +23124,15 @@ class ReportEditorPage(QWidget):
                     'date_part_source_field': col.get('date_part_source_field', '') or '',
                     'date_part_unit': col.get('date_part_unit', '') or '',
                     'field_format': col.get('field_format', 'text') or 'text',
+                    'sort_order': col.get('sort_order', i),
                 })
         self._field_panel.set_columns(columns)
+
+        # 同步可见字段到预览（set_columns 不触发 columnsChanged，需手动同步）
+        visible_fields = {c['display_name'] for c in columns if c.get('visible', True)}
+        # 修复：先同步列顺序，再 set_visible_fields（会触发 refresh → _populate_table）
+        self._sync_field_order_to_preview()
+        self._preview.set_visible_fields(visible_fields)
 
         # 恢复分组与汇总设置
         self._field_panel.set_group_by_fields(
@@ -19274,18 +23179,23 @@ class ReportEditorPage(QWidget):
             })
         self._filter_bar.set_conditions(restored_conditions)
 
-        # 预览
+        # 预览：UI 框架优先 — 延迟到事件循环空闲后触发，让编辑器先显示出来
         if self._db:
             self._filter_bar.set_database(self._db)
         if self._db and self._db.result_table_exists(self._report.id):
-            self._preview.set_report(self._report.id)
             self._preview.set_report_definition(self._report)
+            sort_cfg = getattr(self._report, 'sort_config', [])
+            self._preview.set_sort_config(sort_cfg)
+            self._field_panel.set_sort_config(sort_cfg)
             self._filter_bar.set_result_table(ReportDatabase.result_table_name(self._report.id))
-            self._sync_field_order_to_preview()
-            # 加载时立即应用已保存的筛选条件（修复重启后筛选不生效）
+            if not self._preview._has_saved_column_order():
+                self._sync_field_order_to_preview()
+            # 延迟刷新：让 UI 先渲染，避免 load_report 阶段阻塞
+            self._preview.set_report(self._report.id, _defer=True)
             conditions = self._filter_bar.get_conditions()
             if conditions:
-                self._preview.set_filter_conditions(conditions)
+                self._preview.set_filter_conditions(conditions, _defer=True)
+            QTimer.singleShot(10, self._preview.refresh)
         elif self._db:
             self._preview.show_status("暂无数据 — 请配置字段后点击「🔄 刷新数据」")
         else:
@@ -19316,6 +23226,9 @@ class ReportEditorPage(QWidget):
         wm = getattr(self._report, 'write_mode', 'overwrite')
         self._write_mode_combo.setCurrentIndex(0 if wm == 'overwrite' else 1)
 
+        # 切换到已加载的内容页面（避免显示空的中间状态）
+        if hasattr(self, '_canvas_container'):
+            self._canvas_container.setCurrentIndex(1)
         self._update_status()
         self._update_refresh_button_state()
 
@@ -19333,6 +23246,13 @@ class ReportEditorPage(QWidget):
 
         # 从 UI 收集配置
         self._collect_from_ui()
+
+        # 保存 AI 对话历史（多对话）
+        if hasattr(self, '_ai_conversations'):
+            self._report.ai_conversations = list(self._ai_conversations)
+            self._report.ai_active_conversation_id = self._ai_active_conv_id
+            # 清空旧字段
+            self._report.ai_chat_messages = []
 
         # 应用待定的文件夹路径（从列表页新建时传入）
         pending_folder = getattr(self, '_pending_folder_path', '')
@@ -19436,8 +23356,8 @@ class ReportEditorPage(QWidget):
         """导入 Excel/CSV 文件为数据源"""
         from PyQt6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
-            self, "导入 Excel/CSV 文件", "",
-            "表格文件 (*.xlsx *.xls *.csv);;所有文件 (*)"
+            self, "导入数据文件", "",
+            "数据文件 (*.xlsx *.xls *.csv *.json);;所有文件 (*)"
         )
         if not path:
             return
@@ -19644,6 +23564,7 @@ class ReportEditorPage(QWidget):
         for i, c in enumerate(columns):
             comp_type = c.get('computation_type', 'direct')
             src_field = c.get('source_field', '')
+            so = c.get('sort_order', i)  # 保留已有顺序，回退到行号
 
             # 安全检查：如果 source_field 以 = 开头，自动识别为公式列
             if comp_type == 'direct' and src_field and str(src_field).startswith('='):
@@ -19659,7 +23580,7 @@ class ReportEditorPage(QWidget):
                     source_object_api='',
                     source_field='',
                     visible=c['visible'],
-                    sort_order=i,
+                    sort_order=so,
                     computation_type='formula',
                     formula_expression=c.get('formula_expression', ''),
                     field_format=c.get('field_format', 'text') or 'text',
@@ -19674,7 +23595,7 @@ class ReportEditorPage(QWidget):
                     source_object_api='',
                     source_field='',
                     visible=c['visible'],
-                    sort_order=i,
+                    sort_order=so,
                     computation_type='address_extract',
                     address_source_fields=c.get('address_source_fields', []),
                     address_target_level=c.get('address_target_level', 'city'),
@@ -19690,7 +23611,7 @@ class ReportEditorPage(QWidget):
                     source_object_api='',
                     source_field='',
                     visible=c['visible'],
-                    sort_order=i,
+                    sort_order=so,
                     computation_type='date_part',
                     date_part_source_field=c.get('date_part_source_field', ''),
                     date_part_unit=c.get('date_part_unit', 'year'),
@@ -19707,7 +23628,7 @@ class ReportEditorPage(QWidget):
                 source_object_api=src_api,
                 source_field=src_field_normalized,
                 visible=c['visible'],
-                sort_order=i,
+                sort_order=so,
                 computation_type=c.get('computation_type', 'direct'),
                 aggregate_func=c.get('aggregate_func', ''),
                 formula_expression=c.get('formula_expression', ''),
@@ -19752,6 +23673,12 @@ class ReportEditorPage(QWidget):
         db_connected = self._db and self._db.available
         if db_connected:
             self._refresh_btn.setEnabled(True)
+            self._refresh_btn.setStyleSheet("""
+                QPushButton { background-color: #1890FF; color: #FFFFFF; border: none;
+                              border-radius: 4px; padding: 8px 20px; font-size: 14px; font-weight: 600; }
+                QPushButton:hover { background-color: #1472C8; }
+                QPushButton:disabled { background-color: #B0B0B0; }
+            """)
             self._refresh_btn.setToolTip("从 CRM 拉取数据并执行拼表，结果写入 MySQL")
             self._sync_mysql_btn.setEnabled(True)
             self._sync_mysql_btn.setToolTip("将当前结果表数据同步到展示用 MySQL 表\n"
@@ -19831,9 +23758,9 @@ class ReportEditorPage(QWidget):
             self._collect_from_ui()
             sync_after = self._report.sync_id_fields
             if sync_before != sync_after:
-                print(f"[SyncConfig] ⚠ _collect_from_ui 清空了 sync_id_fields! {sync_before} → {sync_after}", file=sys.stderr, flush=True)
+                logger.warning(f"[SyncConfig] _collect_from_ui 清空了 sync_id_fields! {sync_before} → {sync_after}")
             self._repo.save(self._report)
-            print(f"[SyncConfig] 保存后: sync_id_fields={self._report.sync_id_fields}", file=sys.stderr, flush=True)
+            logger.debug(f"[SyncConfig] 保存后: sync_id_fields={self._report.sync_id_fields}")
 
     def _resolve_table_display_name(self, object_api: str) -> str:
         """解析表的中文显示名（优先使用 MySQL 实际表名，回退到 _object_meta）"""
@@ -19846,81 +23773,84 @@ class ReportEditorPage(QWidget):
         return self._extract_display_name(object_api)
 
     def _on_sync_mysql(self):
-        """将当前结果表数据同步到展示用的 MySQL 表（带中文表头）。
-
-        写入方式来自左侧下拉选择：
-          - 覆盖: DROP+CREATE 目标表，全量插入
-          - 增量: INSERT ... ON DUPLICATE KEY UPDATE
-        """
+        from PyQt6.QtWidgets import QMessageBox
         if not self._report:
             _light_msgbox(self, QMessageBox.Icon.Warning, "提示", "请先创建或打开报表。")
             return
-
         if not self._db or not self._db.available:
-            _light_msgbox(self, QMessageBox.Icon.Warning, "数据库未连接",
-                         "无法同步：MySQL 数据库未连接。")
+            _light_msgbox(self, QMessageBox.Icon.Warning, "数据库未连接", "无法同步。")
             return
-
         if not self._db.result_table_exists(self._report.id):
-            _light_msgbox(self, QMessageBox.Icon.Warning, "无数据",
-                         "结果表不存在，请先点击「刷新数据」生成报表数据。")
+            _light_msgbox(self, QMessageBox.Icon.Warning, "无数据", "请先点击刷新数据生成报表。")
             return
-
         write_mode = "overwrite" if self._write_mode_combo.currentIndex() == 0 else "incremental"
-
         report_name = self._report.name or self._name_input.text().strip() or "未命名报表"
         table_name = f"报表-{report_name}"
-
         filters = self._filter_bar.get_conditions()
-        # 从字段面板取列顺序（比从预览表取更可靠，不受数据加载状态影响）
         field_cols = self._field_panel.get_columns()
-        column_order = [c['display_name'] for c in field_cols if c.get('display_name', '').strip()]
-
-        # 收集字段格式配置
+        column_order = [c["display_name"] for c in field_cols if c.get("display_name", "").strip()]
         columns = self._field_panel.get_columns()
         field_formats = {}
         if columns:
             for c in columns:
-                name = c.get('display_name', '')
-                fmt = c.get('field_format', 'text') or 'text'
+                name = c.get("display_name", "")
+                fmt = c.get("field_format", "text") or "text"
                 if name:
                     field_formats[name] = fmt
-
-        # sync_id_fields 存的是字段中文标签 = 结果表列名，可直接使用
-        sync_id_fields = getattr(self._report, 'sync_id_fields', None) or None
-
+        sync_id_fields = getattr(self._report, "sync_id_fields", None) or None
         self._sync_mysql_btn.setEnabled(False)
-        self._sync_mysql_btn.setText("⏳ 同步中...")
+        self._sync_mysql_btn.setText("同步中...")
+        import threading
+        t = threading.Thread(
+            target=self._do_sync_bg, args=(
+                self._report.id, table_name, filters, column_order,
+                write_mode, sync_id_fields, field_formats,
+                getattr(self._report, "sync_id_separator", "_") or "_"),
+            daemon=True)
+        t.start()
 
+    def _do_sync_bg(self, report_id, table_name, filters, column_order,
+                    write_mode, sync_id_fields, field_formats, sync_id_separator):
         try:
             ok, msg, stats = self._db.sync_filtered_to_mysql(
-                self._report.id, table_name,
+                report_id, table_name,
                 filters=filters, search=None, search_columns=None,
-                id_column='_id',
+                id_column="_id",
                 column_order=column_order,
                 write_mode=write_mode,
                 field_formats=field_formats,
                 sync_id_fields=sync_id_fields if sync_id_fields else None,
-                sync_id_separator=getattr(self._report, 'sync_id_separator', '_') or '_',
+                sync_id_separator=sync_id_separator,
             )
-            if ok:
-                _light_msgbox(self, QMessageBox.Icon.Information,
-                             "同步完成", f"已同步到 MySQL 表:\n{table_name}\n\n{msg}")
-            else:
-                _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", msg)
+            self.syncDone.emit(ok, msg or "", stats)
         except Exception as e:
-            _light_msgbox(self, QMessageBox.Icon.Warning, "同步异常", str(e))
-        finally:
-            self._sync_mysql_btn.setText("📤 同步MySQL")
-            self._sync_mysql_btn.setEnabled(True)
+            self.syncDone.emit(False, str(e), None)
+
+    def _on_sync_done(self, ok, msg, stats):
+        self._sync_mysql_btn.setText("同步MySQL")
+        self._sync_mysql_btn.setEnabled(True)
+        if not ok:
+            from PyQt6.QtWidgets import QMessageBox
+            _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", msg)
+        else:
+            _show_sync_toast(self, stats)
 
     def _refresh_data(self):
         """执行完整的数据刷新流程（不带筛选条件，筛选仅用于预览过滤）"""
         if not self._report:
+            _light_msgbox(self, QMessageBox.Icon.Warning, "提示",
+                "请先创建或打开报表后再刷新数据。")
             return
 
         # 先保存配置
-        self._collect_from_ui()
+        try:
+            self._collect_from_ui()
+        except Exception as e:
+            import logging
+            logging.exception(f"[刷新] 采集 UI 配置异常: {e}")
+            _light_msgbox(self, QMessageBox.Icon.Warning, "刷新失败",
+                f"采集报表配置时出错：\n{e}")
+            return
 
         # 检查主表是否设置
         if not self._report.main_object_api:
@@ -19951,28 +23881,44 @@ class ReportEditorPage(QWidget):
                 "配置完成后，刷新按钮将变为可用状态。")
             return
 
-        # 检测是否已在刷新中，防止快速连续点击导致 _pending_filters 被覆盖
+        # 检测是否已在刷新中，防止重复刷新
         if self._refresh_thread is not None and self._refresh_thread.isRunning():
             _light_msgbox(self, QMessageBox.Icon.Information, "刷新中",
                           "数据刷新正在进行中，请等待完成后再试。")
             return
 
-        # 暂存筛选条件，刷新时清空以拉取全量数据（筛选仅对最终预览做过滤）
-        # 注意：此处只清空内存中的 filters，不写入磁盘，避免刷新期间程序退出导致筛选条件永久丢失
-        saved_filters = list(self._report.filters)
-        self._report.filters = []
+        # 筛选条件保留在 report.filters 中，由 JoinSQLBuilder 在拼表 SQL 中应用
+        # （不再清空筛选条件，实现"先筛选再计算"的流程）
 
         self._refresh_btn.setEnabled(False)
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText("正在同步...")
 
-        # 将暂存的筛选条件挂到线程上，刷新完成后恢复
-        self._pending_filters = saved_filters
+        # 清理旧线程信号，防止泄漏
+        if self._refresh_thread is not None:
+            try:
+                self._refresh_thread.progress.disconnect(self._on_refresh_progress)
+                self._refresh_thread.finished.disconnect(self._on_refresh_finished)
+            except Exception:
+                pass
+            self._refresh_thread.deleteLater()
+            self._refresh_thread = None
 
         # deepcopy 报告对象传给后台线程，避免主线程和后台线程共享可变对象导致竞态
         import copy
-        report_copy = copy.deepcopy(self._report)
+        try:
+            report_copy = copy.deepcopy(self._report)
+        except Exception as e:
+            import logging
+            logging.exception(f"[刷新] deepcopy 报表失败: {e}")
+            self._refresh_btn.setEnabled(True)
+            self._progress_bar.setVisible(False)
+            self._status_label.setText("")
+            _light_msgbox(self, QMessageBox.Icon.Warning, "刷新失败",
+                          f"复制报表配置时出错：\n{e}")
+            return
+
         self._refresh_thread = RefreshThread(self._refresh_worker, report_copy)
         self._refresh_thread.progress.connect(self._on_refresh_progress)
         self._refresh_thread.finished.connect(self._on_refresh_finished)
@@ -19988,45 +23934,55 @@ class ReportEditorPage(QWidget):
         self._progress_bar.setVisible(False)
         self._status_label.setText("")
 
-        # 恢复刷新前暂存的筛选条件
-        saved_filters = getattr(self, '_pending_filters', None)
-        self._pending_filters = None
+        # 防御性取值：后台线程异常时 result 可能缺少部分字段
+        if not isinstance(result, dict):
+            self._bottom_status.setText(f"❌ 刷新失败: 返回值异常 ({type(result).__name__})")
+            return
 
-        if result['success']:
-            # 恢复筛选条件 + 写入结果元数据
-            if saved_filters:
-                self._report.filters = saved_filters
-            self._report.result_row_count = result['row_count']
+        if result.get('success'):
+            self._report.result_row_count = result.get('row_count', 0)
             self._report.last_refresh_time = result.get('refresh_time', '')
             self._report.result_table_name = ReportDatabase.result_table_name(self._report.id)
-            self._repo.save(self._report)
+            self._repo.update_refresh_meta(self._report.id, result.get('row_count', 0), self._report.last_refresh_time)
 
+            duration = result.get('duration', 0)
             self._bottom_status.setText(
-                f"✅ 刷新完成: {result['row_count']} 条记录 (耗时 {result['duration']:.1f}s)")
-            import sys
-            print(f"[刷新完成] 结果表: {self._report.result_table_name} | "
-                  f"记录数: {result['row_count']} | 耗时: {result['duration']:.1f}s",
-                  file=sys.stderr, flush=True)
+                f"✅ 刷新完成: {result.get('row_count', 0)} 条记录 (耗时 {duration:.1f}s)")
 
             # 预览 + 重新应用筛选条件
-            self._preview.set_report(self._report.id)
-            self._preview.set_report_definition(self._report)
-            self._filter_bar.set_result_table(ReportDatabase.result_table_name(self._report.id))
-            self._sync_field_order_to_preview()
-            conditions = self._filter_bar.get_conditions()
-            self._preview.set_filter_conditions(conditions)
+            # 优化：defer=True 延迟 set_report/set_filter_conditions 内部的 refresh()，
+            # 最后统一调用一次 refresh() 避免重复查询。
+            try:
+                self._preview.set_report_definition(self._report)
+                sort_cfg = getattr(self._report, 'sort_config', [])
+                self._preview.set_sort_config(sort_cfg)
+                self._field_panel.set_sort_config(sort_cfg)
+                self._filter_bar.set_result_table(ReportDatabase.result_table_name(self._report.id))
+                self._sync_field_order_to_preview()
+                # 优化：如果已经是同一个 report_id，_col_widths_loaded 会保持 True，
+                # set_report 内部跳过 reset，后续 refresh → _populate_table 走增量路径
+                self._preview.set_report(self._report.id, _defer=True)
+                conditions = self._filter_bar.get_conditions()
+                self._preview.set_filter_conditions(conditions, _defer=True)
+                self._preview.refresh()  # 单次刷新
+            except Exception as e:
+                import logging
+                logging.exception(f"[刷新] 预览更新异常: {e}")
+                self._bottom_status.setText(f"⚠ 刷新完成但预览更新失败: {e}")
         else:
-            if saved_filters:
-                self._report.filters = saved_filters
-                self._repo.save(self._report)
-            self._bottom_status.setText(f"❌ 刷新失败: {result.get('error', '')}")
-            import sys
-            print(f"[刷新失败] {result.get('error', '未知错误')}", file=sys.stderr, flush=True)
+            _err = result.get('error', '未知错误')
+            self._bottom_status.setText(f"❌ 刷新失败: {_err}")
+            if hasattr(self, '_append_output_fn') and self._append_output_fn:
+                try:
+                    self._append_output_fn(f"[刷新] 刷新失败: {_err}")
+                except Exception:
+                    pass
+            _light_msgbox(self, QMessageBox.Icon.Warning, "刷新失败", _err)
 
     # ==================== SQL 编辑 ====================
 
     def _show_sql_editor(self):
-        """打开 MySQL SQL 代码编辑界面。"""
+        """打开 MySQL SQL 代码编辑界面（集成 AI 助手）。"""
         if not self._report:
             _light_msgbox(self, QMessageBox.Icon.Warning, "提示", "请先配置报表对象和字段。")
             return
@@ -20050,16 +24006,61 @@ class ReportEditorPage(QWidget):
         except Exception as e:
             full_sql = f"-- SQL 生成失败: {e}\n\n-- 请检查报表配置"
 
-        # 显示编辑对话框
-        dialog = SQLEditorDialog(self, full_sql, self._report, self._db, self._repo)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            # 用户保存了自定义 SQL
-            custom_sql = dialog.get_sql()
-            if custom_sql:
-                self._execute_custom_sql(custom_sql)
+        # 创建 AI 助手（如果已配置）
+        ai_assistant = None
+        try:
+            ai_cfg = self._app_config.get('llm_providers', {})
+            # 检查是否有启用的提供商
+            has_enabled = False
+            if 'providers' in ai_cfg:
+                for p in ai_cfg.get('providers', []):
+                    if isinstance(p, dict) and p.get('enabled') and p.get('api_key', '').strip():
+                        has_enabled = True
+                        break
+            else:
+                for pid, cfg in ai_cfg.items():
+                    if pid != 'active' and isinstance(cfg, dict) and cfg.get('enabled') and cfg.get('api_key'):
+                        has_enabled = True
+                        break
+            if has_enabled:
+                ai_assistant = AIAssistant(ai_cfg)
+        except Exception:
+            pass  # AI 配置异常时不影响 SQL 编辑器打开
+
+        # 显示编辑对话框（SQL 执行在对话框内部完成）
+        try:
+            dialog = SQLEditorDialog(self, full_sql, self._report, self._db, self._repo,
+                                     ai_assistant=ai_assistant)
+            result = dialog.exec()
+
+            if result == QDialog.DialogCode.Accepted:
+                # SQL 执行成功，刷新预览
+                self._refresh_preview_after_sql()
+        except Exception as e:
+            _light_msgbox(self, QMessageBox.Icon.Critical, "SQL 编辑器错误",
+                         f"打开 SQL 编辑器时出错:\n{e}")
+
+    def _refresh_preview_after_sql(self):
+        """SQL 执行成功后刷新预览表和状态栏"""
+        if not self._report:
+            return
+        try:
+            self._preview.set_report_definition(self._report)
+            sort_cfg = getattr(self._report, 'sort_config', [])
+            self._preview.set_sort_config(sort_cfg)
+            self._field_panel.set_sort_config(sort_cfg)
+            self._sync_field_order_to_preview()
+            self._preview.set_report(self._report.id)
+            row_count = self._report.result_row_count or 0
+            table_name = self._report.result_table_name or ''
+            self._bottom_status.setText(f"✅ SQL 已执行: {row_count} 条记录")
+            _light_msgbox(self, QMessageBox.Icon.Information, "执行成功",
+                         f"SQL 已成功执行。\n结果表: {table_name}\n记录数: {row_count}")
+        except Exception as e:
+            _light_msgbox(self, QMessageBox.Icon.Warning, "刷新预览失败", str(e))
 
     def _execute_custom_sql(self, sql: str):
-        """在 MySQL 中执行用户编辑的 SQL。"""
+        """在 MySQL 中执行用户编辑的 SQL（兼容旧调用路径）。"""
         if not self._db or not self._db.available:
             _light_msgbox(self, QMessageBox.Icon.Warning, "数据库未连接",
                          "请先在设置中配置 MySQL 连接。")
@@ -20077,9 +24078,12 @@ class ReportEditorPage(QWidget):
             self._report.last_refresh_time = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self._repo.save(self._report)
             # 刷新预览
-            self._preview.set_report(self._report.id)
             self._preview.set_report_definition(self._report)
+            sort_cfg = getattr(self._report, 'sort_config', [])
+            self._preview.set_sort_config(sort_cfg)
+            self._field_panel.set_sort_config(sort_cfg)
             self._sync_field_order_to_preview()
+            self._preview.set_report(self._report.id)
             self._bottom_status.setText(f"✅ SQL 已执行: {row_count} 条记录")
             _light_msgbox(self, QMessageBox.Icon.Information, "执行成功",
                          f"SQL 已成功执行。\n结果表: {table_name}\n记录数: {row_count}")
@@ -20189,7 +24193,7 @@ class ReportEditorPage(QWidget):
             return display_name, [(f, f, False) for f in fields]
 
         meta = self._object_meta.get(api)
-        if meta:
+        if meta and meta.get("fields", []):
             # _object_meta 中的 name 可能因配置错误而不可信。
             # 优先使用 MySQL 中实际存在的表名推断中文名，确保与用户看到的表一致。
             meta_name = meta.get('name', api)
@@ -20227,18 +24231,26 @@ class ReportEditorPage(QWidget):
 
         例如 api='NewOpportunityObj' → MySQL 表 '对象-商机' → 返回 '商机'
         """
+        # 从缓存读取
+        cached = self._resolve_name_cache.get(api)
+        if cached is not None:
+            return cached
+        result: str | None = None
         if not self._db or not self._db.available:
-            return None
+            self._resolve_name_cache[api] = result
+            return result
         try:
             if hasattr(self._db, 'resolve_existing_table'):
                 table_name = self._db.resolve_existing_table(api)
             else:
-                return None
+                self._resolve_name_cache[api] = result
+                return result
             if table_name and table_name.startswith('对象-'):
-                return table_name[3:]
+                result = table_name[3:]
         except Exception:
             pass
-        return None
+        self._resolve_name_cache[api] = result
+        return result
 
     @staticmethod
     def _extract_display_name(table_name: str) -> str:
@@ -20249,6 +24261,10 @@ class ReportEditorPage(QWidget):
 
     def _get_cleaned_table_fields(self, table_name: str) -> list[str]:
         """获取清洗表的列名列表（排除 _id）"""
+        # 从本地缓存读取
+        cached = self._cleaned_fields_cache.get(table_name)
+        if cached is not None:
+            return cached
         # 优先从 TableSelectorPanel 缓存获取
         if self._table_selector:
             cached = self._table_selector.get_cached_fields(table_name)
@@ -20256,14 +24272,20 @@ class ReportEditorPage(QWidget):
                 return cached
 
         # 回退：直接查 MySQL
+        result: list[str] = []
         if self._db and self._db.available:
             try:
                 cols = self._db.execute(f"SHOW COLUMNS FROM `{table_name}`")
                 if cols:
-                    return [r['Field'] for r in cols if r['Field'] != '_id']
+                   result = [r['Field'] for r in cols if r['Field'] != '_id']
             except Exception:
                 pass
-        return []
+        self._cleaned_fields_cache[table_name] = result
+        return result
+
+    def _on_table_selector_refreshed(self):
+        """TableSelectorPanel 刷新完成后回调：清除本地字段缓存。"""
+        self._cleaned_fields_cache.clear()
 
     # ==================== 回调 ====================
 
@@ -20312,14 +24334,61 @@ class ReportEditorPage(QWidget):
             self._canvas.auto_layout()
 
         self._update_status()
+        self._sync_available_fields_to_panel()
+
+    def _sync_available_fields_to_panel(self):
+        """将画布上已添加表的字段信息同步到 FieldConfigPanel，供批量粘贴使用。"""
+        if not hasattr(self, '_field_panel') or not self._field_panel:
+            return
+        available = []
+        scene = self._canvas.canvas_scene if self._canvas else None
+        if not scene:
+            return
+        for card in scene.get_all_cards():
+            api = card.object_api
+            meta = self._object_meta.get(api)
+            if meta:
+                available.append({
+                    'api': api,
+                    'name': meta.get('name', api),
+                    'fields': meta.get('fields', []),
+                })
+            else:
+                # 非 CRM 表（Excel/MySQL）：从卡片字段列表构建
+                fields = [(f['key'], f['label']) for f in card.get_all_fields()]
+                available.append({'api': api, 'name': card.display_name, 'fields': fields})
+        self._field_panel._available_fields = available
 
     def _on_card_field_toggled(self, object_api: str, field_key: str, checked: bool):
         """画布上字段勾选状态变化 → 同步到字段面板"""
         field_label = self._resolve_field_label(object_api, field_key)
         if checked:
-            self._field_panel.add_column(field_label, object_api, field_key)
+            # 先检查字段面板中是否已有此字段（之前设为隐藏的），有则恢复可见，避免追加到末尾破坏顺序
+            existing_idx = None
+            for i, c in enumerate(self._field_panel._columns):
+                if c.get('source_field') == field_key and c.get('source_object', '') == object_api:
+                    existing_idx = i
+                    break
+            if existing_idx is not None:
+                # 字段已存在（之前隐藏的），恢复可见，保留原位
+                self._field_panel._columns[existing_idx]['visible'] = True
+                self._field_panel.set_columns(self._field_panel._columns)
+                self._field_panel.columnsChanged.emit()
+            else:
+                self._field_panel.add_column(field_label, object_api, field_key)
         else:
-            self._field_panel.remove_column_by_field(field_key, object_api)
+            # 编辑器模式：不删除列，只设为隐藏，保留原始顺序位置
+            found = False
+            for c in self._field_panel._columns:
+                if c.get('source_field') == field_key and c.get('source_object', '') == object_api:
+                    c['visible'] = False
+                    found = True
+                    break
+            if found:
+                self._field_panel.set_columns(self._field_panel._columns)
+                self._field_panel.columnsChanged.emit()
+            else:
+                self._field_panel.remove_column_by_field(field_key, object_api)
 
     def _on_canvas_modified(self):
         self._update_status()
@@ -20347,6 +24416,9 @@ class ReportEditorPage(QWidget):
         selected_with_api = set()
         selected_no_api = set()
         for col in columns:
+            # 只同步可见字段到画布卡片勾选状态，隐藏的字段在画布上显示为未勾选
+            if not col.get('visible', True):
+                continue
             api = col.get('source_object', '')
             sf = col.get('source_field', '')
             if not sf:
@@ -20367,21 +24439,59 @@ class ReportEditorPage(QWidget):
                 if f['checked'] != is_selected:
                     card.update_field_checked(f['key'], is_selected)
 
+        # 先同步 _report.columns 到字段面板最新状态（含新增公式列）
+        # 必须在 set_visible_fields 之前，因为 set_visible_fields 会触发 refresh()
+        # → _apply_definition_column_order()，需要读取最新的 sort_order
+        if self._report:
+            synced_cols = []
+            for i, d in enumerate(columns):
+                fc = FieldColumn(
+                    display_name=d.get('display_name', ''),
+                    source_object_api=d.get('source_object', ''),
+                    source_field=d.get('source_field', ''),
+                    visible=d.get('visible', True),
+                    sort_order=d.get('sort_order', i),
+                    computation_type=d.get('computation_type', 'direct'),
+                    aggregate_func=d.get('aggregate_func', ''),
+                    formula_expression=d.get('formula_expression', ''),
+                    address_source_fields=d.get('address_source_fields', []) or [],
+                    address_target_level=d.get('address_target_level', ''),
+                    date_part_source_field=d.get('date_part_source_field', ''),
+                    date_part_unit=d.get('date_part_unit', ''),
+                    field_format=d.get('field_format', 'text') or 'text',
+                )
+                synced_cols.append(fc)
+            self._report.columns = synced_cols
+            self._preview.set_report_definition(self._report)
+
         # 同步预览表格可见字段（仅显示「显示」勾选的列）
         # 使用 display_name 匹配，因为数据库结果表的列名是中文标签
         visible_fields = {col['display_name'] for col in columns if col.get('visible', True)}
-        self._preview.set_visible_fields(visible_fields if visible_fields else None)
-        # 同步列顺序到预览表格（字段面板变更 → 预览表拖着列头同步）
+        # 修复：先同步列顺序，再 set_visible_fields（会触发 refresh → _populate_table），
+        # 确保 _populate_table 使用最新的 _preferred_column_order
         self._sync_field_order_to_preview()
+        self._preview.set_visible_fields(visible_fields)
         # 同步筛选栏字段（只跟随当前报表列）
         self._update_filter_bar_fields()
 
     def _sync_field_order_to_preview(self):
-        """将字段面板当前的列顺序同步到预览表（字段变更 / 刷新数据后均调用）。"""
+        """将字段面板当前的可见列顺序同步到预览表（字段变更 / 刷新数据后均调用）。"""
         columns = self._field_panel.get_columns()
-        field_order = [col['display_name'] for col in columns if col.get('display_name', '').strip()]
+        field_order = [col['display_name'] for col in columns
+                       if col.get('display_name', '').strip() and col.get('visible', True)]
         if field_order:
-            self._preview.set_column_order(field_order)
+            # 存储期望顺序，让 _populate_table 在创建列时直接按此排序
+            self._preview._preferred_column_order = field_order
+            # 跳过 moveSection：若预览表当前顺序已与字段面板一致，则无需移动
+            header = self._preview._table.horizontalHeader()
+            current_order = []
+            for vis in range(self._preview._table.columnCount()):
+                logical = header.logicalIndex(vis)
+                item = self._preview._table.horizontalHeaderItem(logical)
+                if item:
+                    current_order.append(item.text().strip())
+            if current_order != field_order:
+                self._preview.set_column_order(field_order)
 
     def _update_filter_bar_fields(self):
         """筛选栏可选字段：仅包含已加入报表列中的字段。"""
@@ -20448,6 +24558,18 @@ class ReportEditorPage(QWidget):
 
         self._filter_bar.set_available_fields(field_list)
 
+    # ==================== 排序 ====================
+
+    def _on_sort_config_changed(self, config: list):
+        """排序配置变更 → 保存到报表定义并刷新预览"""
+        if self._report:
+            self._report.sort_config = config
+        if self._preview:
+            self._preview.set_sort_config(config)
+            self._preview.refresh()
+
+    # ==================== 筛选 ====================
+
     def _on_filter_changed(self):
         self._update_status()
         # 防抖：避免筛选条件快速变化时频繁触发 DB 刷新（尤其是在 IME 输入过程中）
@@ -20455,12 +24577,15 @@ class ReportEditorPage(QWidget):
 
     def _apply_filter_to_preview(self):
         """将筛选条件同步到预览表格（由防抖定时器触发），并自动持久化到 report。"""
-        if self._preview and self._report:
-            conditions = self._filter_bar.get_conditions()
-            self._preview.set_filter_conditions(conditions)
-            # 自动保存筛选条件，确保重启后不清空，且与详情页同步
-            if self._save_filters_fn:
-                self._save_filters_fn(self._report.id, conditions)
+        try:
+            if self._preview and self._report:
+                conditions = self._filter_bar.get_conditions()
+                self._preview.set_filter_conditions(conditions)
+                if self._save_filters_fn:
+                    self._save_filters_fn(self._report.id, conditions)
+        except Exception as e:
+            import traceback
+            logger.error(f"[筛选] 应用筛选条件异常: {e}\n{traceback.format_exc()}")
 
     def _update_status(self):
         """更新底部状态"""
@@ -20488,6 +24613,493 @@ class ReportEditorPage(QWidget):
         self._table_selector.setVisible(visible)
         self._toggle_canvas_btn.setText("隐藏画布" if visible else "显示画布")
 
+    # ==================== AI 报表助手 ====================
+
+    def _init_ai_assistant(self):
+        """初始化 AI 助手（从配置加载 LLM 提供商）"""
+        if self._ai_assistant:
+            return self._ai_assistant.is_available
+        llm_cfg = self._app_config.get('llm_providers', {})
+        if not llm_cfg:
+            return False
+        self._ai_assistant = AIAssistant(llm_cfg)
+        if self._ai_assistant.is_available:
+            self._ai_toggle_btn.setVisible(True)
+            return True
+        return False
+
+    def _toggle_ai_panel(self):
+        """显示/隐藏 AI 面板"""
+        if not self._init_ai_assistant():
+            _light_msgbox(self, QMessageBox.Icon.Information, "提示",
+                          "未配置 AI 模型，请先在 设置 → API 配置 中启用至少一个提供商。")
+            return
+        self._ai_panel_visible = not self._ai_panel_visible
+        if self._ai_panel_widget:
+            self._ai_panel_widget.setVisible(self._ai_panel_visible)
+            self._ai_toggle_btn.setText("收起助手" if self._ai_panel_visible else "AI 助手")
+            # 显示面板时回放当前活跃对话
+            if self._ai_panel_visible:
+                conv = self._get_active_conversation()
+                if conv:
+                    self._ai_panel_widget.set_title(conv.get('title', 'AI 助手'))
+                    self._ai_panel_widget.replay_messages(conv.get('messages', []))
+                else:
+                    self._ai_panel_widget.set_title("AI 助手")
+                self._ai_panel_widget.update_history_menu(self._ai_conversations, self._ai_active_conv_id)
+            # 调整 splitter 比例
+            if self._ai_panel_visible:
+                sizes = self._splitter.sizes()
+                if len(sizes) >= 3:
+                    self._splitter.setSizes([
+                        max(180, sizes[0] - 60),
+                        max(300, sizes[1] - 60),
+                        sizes[2],
+                        320,
+                    ])
+            else:
+                sizes = self._splitter.sizes()
+                if len(sizes) == 4:
+                    freed = sizes[3]
+                    self._splitter.setSizes([sizes[0] + freed // 2, sizes[1] + freed // 2, sizes[2], 0])
+
+    def _build_ai_tables_catalog(self) -> list[dict]:
+        """构建所有可用表的目录（供 AI system prompt 使用）"""
+        catalog = []
+        seen = set()
+
+        # CRM 对象
+        for api, meta in (self._object_meta or {}).items():
+            fields = []
+            for item in meta.get('fields', []):
+                if isinstance(item, (tuple, list)):
+                    key = item[0] if len(item) >= 1 else ''
+                    label = item[1] if len(item) >= 2 else key
+                    is_time = item[2] if len(item) >= 3 else False
+                elif isinstance(item, dict):
+                    key = item.get('key', '')
+                    label = item.get('label', key)
+                    is_time = item.get('is_time', False)
+                else:
+                    continue
+                fields.append({'api_key': key, 'label': label, 'is_date': bool(is_time)})
+            catalog.append({
+                'object_api': api,
+                'display_name': meta.get('name', api),
+                'source_type': 'crm',
+                'fields': fields,
+            })
+            seen.add(api)
+
+        # Excel / MySQL 表（从 table selector）
+        if self._table_selector and hasattr(self._table_selector, '_table_data'):
+            for table_name, data in self._table_selector._table_data.items():
+                if table_name in seen:
+                    continue
+                fields = []
+                for col in (data.get('fields') or []):
+                    if isinstance(col, dict):
+                        fields.append({'api_key': col.get('key', ''), 'label': col.get('label', col.get('key', '')), 'is_date': False})
+                    elif isinstance(col, str):
+                        fields.append({'api_key': col, 'label': col, 'is_date': False})
+                catalog.append({
+                    'object_api': table_name,
+                    'display_name': data.get('display_name', table_name),
+                    'source_type': data.get('source_type', 'mysql'),
+                    'fields': fields,
+                })
+                seen.add(table_name)
+
+        return catalog
+
+    def _build_ai_report_snapshot(self) -> dict:
+        """序列化当前报表状态（供 AI system prompt 使用）"""
+        if not self._report:
+            return {"status": "empty"}
+
+        # 先从 UI 同步最新状态
+        try:
+            self._collect_from_ui()
+        except Exception:
+            pass
+
+        r = self._report
+        snapshot = {
+            "name": r.name,
+            "main_object_api": r.main_object_api,
+            "joins": [],
+            "columns": [],
+            "filters": [],
+            "group_by_fields": r.group_by_fields or [],
+        }
+        for j in (r.joins or []):
+            snapshot["joins"].append({
+                "left_object_api": j.left_object_api,
+                "right_object_api": j.right_object_api,
+                "match_keys": [{"left_field": m.left_field, "right_field": m.right_field}
+                               for m in (j.match_keys or [])],
+                "join_type": j.join_type,
+                "multi_match": j.multi_match,
+            })
+        for c in (r.columns or []):
+            col = {
+                "display_name": c.display_name,
+                "source_object_api": c.source_object_api,
+                "source_field": c.source_field,
+                "visible": c.visible,
+                "computation_type": c.computation_type,
+                "field_format": c.field_format,
+            }
+            if c.computation_type == 'aggregate' and c.aggregate_func:
+                col["aggregate_func"] = c.aggregate_func
+            if c.computation_type == 'formula' and c.formula_expression:
+                col["formula_expression"] = c.formula_expression
+            snapshot["columns"].append(col)
+        for f in (r.filters or []):
+            snapshot["filters"].append({
+                "field_api": f.field_api,
+                "operator": f.operator,
+                "value": f.value,
+                "target_object_api": f.target_object_api,
+                "is_date_field": f.is_date_field,
+            })
+        return snapshot
+
+    def _build_ai_system_prompt(self) -> str:
+        """构建报表编辑 AI 助手的完整 system prompt"""
+        catalog = self._build_ai_tables_catalog()
+        snapshot = self._build_ai_report_snapshot()
+        provider_name = self._ai_assistant.current_provider.name if self._ai_assistant and self._ai_assistant.current_provider else 'AI'
+        provider_model = self._ai_assistant.current_provider.default_model if self._ai_assistant and self._ai_assistant.current_provider else 'unknown'
+
+        # 构建表目录文本
+        tables_text_parts = []
+        for i, t in enumerate(catalog, 1):
+            field_strs = []
+            for f in t.get('fields', []):
+                suffix = "(日期)" if f.get('is_date') else ""
+                field_strs.append(f"{f['api_key']}({f['label']}){suffix}")
+            fields_line = ", ".join(field_strs[:50])  # 限制字段数避免 prompt 过长
+            if len(t.get('fields', [])) > 50:
+                fields_line += f" ... 共{len(t['fields'])}个字段"
+            tables_text_parts.append(
+                f"{i}. {t['display_name']} ({t['object_api']}) [{t['source_type']}]\n   字段: {fields_line}"
+            )
+        tables_text = "\n\n".join(tables_text_parts) if tables_text_parts else "(暂无可用数据表)"
+
+        # 构建当前报表状态文本
+        import json as _json
+        snapshot_text = _json.dumps(snapshot, ensure_ascii=False, indent=2)
+
+        prompt = f"""你是报表编辑助手，由 **{provider_name}** 的 **{provider_model}** 模型驱动。
+用户通过自然语言描述想要的报表，你根据可用数据表和当前报表状态，返回结构化的操作指令 JSON。
+
+## 可用数据表
+{tables_text}
+
+## 当前报表状态
+```json
+{snapshot_text}
+```
+
+## CRM 对象业务含义
+- 商机(NewOpportunityObj): 销售机会/项目线索
+- 销售订单(SalesOrderObj): 已成交订单记录
+- 发货单(DeliveryNoteObj): 物流发货记录
+- 发货单产品(DeliveryNoteProductObj): 发货单中的产品明细行
+- 客户(AccountObj): 客户主数据
+- 联系人(ContactObj): 客户联系人信息
+- 公立项目授权(public_project_authorizati__c): 公立学校项目授权
+
+## 常见关联模式
+- 商机 → 销售订单: 通过 sales_order_id / order_id 关联
+- 销售订单 → 发货单: 通过 sales_order_id / order_id 关联
+- 发货单 → 发货单产品: 通过 delivery_note_id / id 关联
+- 商机/订单 → 客户: 通过 account_id / id 关联
+
+## 输出格式
+你必须在回复中用 ```json 代码块包裹操作指令。格式如下:
+
+```json
+{{
+  "explanation": "简要说明你做了什么",
+  "actions": [
+    {{"action": "set_main_table", "object_api": "表API名"}},
+    {{"action": "add_join", "left_object_api": "左表API", "right_object_api": "右表API", "match_keys": [{{"left_field": "字段1", "right_field": "字段2"}}], "join_type": "left", "multi_match": "expand"}},
+    {{"action": "add_column", "display_name": "显示名", "source_object_api": "表API", "source_field": "字段API名"}},
+    {{"action": "reorder_columns", "order": ["列名1", "列名2", "列名3"]}},
+    {{"action": "add_filter", "field_api": "字段名", "operator": "操作符", "value": "值", "target_object_api": "表API", "is_date_field": false}},
+    {{"action": "set_sort", "display_name": "列显示名", "direction": "desc"}}
+  ]
+}}
+```
+
+## 支持的 action 类型
+- set_main_table: 设置主表 (object_api)
+- add_table: 添加表到画布 (object_api)
+- remove_table: 移除表 (object_api)
+- add_join: 创建关联 (left_object_api, right_object_api, match_keys[], join_type, multi_match)
+- remove_join: 移除关联 (left_object_api, right_object_api)
+- add_column: 添加显示列 (display_name, source_object_api, source_field, 可选: computation_type, aggregate_func, formula_expression, field_format)
+- remove_column: 移除列 (source_field, source_object_api)
+- reorder_columns: 调整字段顺序 (order: ["列名1", "列名2", ...])，未列出的列自动追加到末尾
+- add_filter: 添加筛选 (field_api, operator, value, target_object_api, 可选: is_date_field)
+- remove_filter: 移除筛选 (field_api, target_object_api)
+- set_sort: 设置排序 (display_name, direction: "asc"/"desc")
+- set_group_by: 设置分组 (fields[])
+- set_report_name: 设置报表名 (name)
+
+## JOIN 类型
+- left: 左连接（保留左表所有行）
+- inner: 内连接（只保留匹配行）
+- one_to_one: 一对一连接
+
+## 多匹配策略 (multi_match)
+- expand: 展开行（默认，一对多时复制左表行）
+- first: 取第一条匹配
+- concat: 拼接所有匹配值
+- count: 计数
+- sum: 求和
+- avg: 平均值
+
+## 筛选操作符
+- 文本: EQ(等于), NOT_EQ(不等于), CONTAINS(包含), NOT_CONTAINS(不包含), STARTS_WITH(开头是), IN(在列表中,逗号分隔)
+- 数值: GT(大于), GTE(大于等于), LT(小于), LTE(小于等于), BETWEEN(区间,逗号分隔两个值)
+- 日期: PAST_N_DAYS_EXCLUSIVE(过去N天), PAST_N_DAYS_INCLUSIVE(过去N天含今天), N_DAYS_AGO(N天前), N_WEEKS_AGO(N周前), N_MONTHS_AGO(N个月前), DATE_BEFORE(早于), DATE_AFTER(晚于), DATE_RANGE(日期范围,逗号分隔)
+
+## 字段格式 (field_format)
+text, integer, float, currency, date_ymd, datetime, time
+
+## 规则
+1. 字段名 source_field 必须使用 API key（英文标识符如 field_l2p3Y__c），不是中文名
+2. 只使用数据表中真实存在的字段（参考上方字段列表）
+3. 如果用户需求不明确，可以在 JSON 之外用自然语言询问澄清
+4. 增量修改时，只返回需要变更的 actions，不要重复已有的配置
+5. add_column 中的 source_object_api 必须是已添加到报表中的表（主表或已 join 的表）
+6. 每次回复必须包含 ```json 代码块，即使是增量修改"""
+
+        # 追加用户自定义上下文
+        context_texts = []
+        if self._get_active_conversation():
+            context_texts = self._get_active_conversation().get('context_texts', [])
+        if context_texts:
+            ctx = "\n".join(f"- {t}" for t in context_texts)
+            prompt += f"\n\n## 用户自定义上下文\n{ctx}"
+        return prompt
+
+    # ---- AI 对话管理 ----
+
+    def _get_active_conversation(self) -> dict | None:
+        """获取当前活跃对话"""
+        for c in self._ai_conversations:
+            if c.get('id') == self._ai_active_conv_id:
+                return c
+        return None
+
+    def _ensure_active_conversation(self) -> dict:
+        """确保有活跃对话，没有则创建"""
+        conv = self._get_active_conversation()
+        if conv:
+            return conv
+        return self._create_new_conversation()
+
+    def _create_new_conversation(self) -> dict:
+        """创建新对话并设为活跃"""
+        import uuid
+        conv_id = uuid.uuid4().hex[:8]
+        now = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        conv = {
+            'id': conv_id,
+            'title': f'对话 {len(self._ai_conversations) + 1}',
+            'created_at': now,
+            'messages': [],
+            'context_texts': [],
+        }
+        self._ai_conversations.append(conv)
+        self._ai_active_conv_id = conv_id
+        return conv
+
+    @staticmethod
+    def _auto_title(text: str) -> str:
+        """从用户首条消息自动生成对话标题（取前 20 字符）"""
+        first_line = text.strip().split('\n')[0].strip()
+        # 去掉常见标点前缀
+        for ch in '「「"\'（(【[':
+            if first_line.startswith(ch):
+                first_line = first_line[1:]
+        if len(first_line) > 20:
+            return first_line[:20] + '…'
+        return first_line or '新对话'
+
+    def _on_new_conversation(self):
+        """处理新对话请求"""
+        self._create_new_conversation()
+        if self._ai_panel_widget:
+            self._ai_panel_widget.replay_messages([])
+            self._ai_panel_widget.set_title("新对话")
+            self._ai_panel_widget.update_history_menu(self._ai_conversations, self._ai_active_conv_id)
+
+    def _on_switch_conversation(self, conv_id: str):
+        """切换到指定对话"""
+        conv = None
+        for c in self._ai_conversations:
+            if c.get('id') == conv_id:
+                conv = c
+                break
+        if not conv:
+            self._ai_conversations = list(getattr(self._report, 'ai_conversations', []) or [])
+            for c in self._ai_conversations:
+                if c.get('id') == conv_id:
+                    conv = c
+                    break
+        if not conv:
+            if self._ai_panel_widget:
+                self._ai_panel_widget.append_chat_message("system", "⚠️ 未找到该对话记录")
+            return
+        self._ai_active_conv_id = conv_id
+        if self._ai_panel_widget:
+            self._ai_panel_widget.set_title(conv.get('title', '对话'))
+            self._ai_panel_widget.replay_messages(conv.get('messages', []))
+            self._ai_panel_widget.update_history_menu(self._ai_conversations, self._ai_active_conv_id)
+
+    def _on_ai_message(self, user_text: str):
+        """处理用户发送的 AI 消息"""
+        if not user_text.strip():
+            return
+        if not self._ai_assistant or not self._ai_assistant.is_available:
+            return
+
+        # 取消仍在运行的旧请求
+        if hasattr(self, '_ai_worker') and self._ai_worker and self._ai_worker.isRunning():
+            self._ai_worker.finished.disconnect(self._on_ai_response)
+            self._ai_worker.error.disconnect(self._on_ai_error)
+            self._ai_worker.quit()
+            self._ai_worker.wait(2000)
+
+        # 确保有活跃对话
+        conv = self._ensure_active_conversation()
+        messages = conv['messages']
+
+        # 追加到对话历史
+        messages.append({"role": "user", "content": user_text})
+
+        # 首条消息自动生成对话标题
+        if conv.get('title', '').startswith('对话') and len(messages) == 1:
+            conv['title'] = self._auto_title(user_text)
+            if self._ai_panel_widget:
+                self._ai_panel_widget.set_title(conv['title'])
+
+        # 显示用户消息
+        if self._ai_panel_widget:
+            self._ai_panel_widget.append_chat_message("user", user_text)
+            self._ai_panel_widget.set_busy(True)
+
+        # 构建 system prompt（每次重新生成，反映最新报表状态 + 用户上下文）
+        system_prompt = self._build_ai_system_prompt()
+
+        # 启动后台线程
+        self._ai_worker = _ReportAIMultiTurnWorker(
+            self._ai_assistant, list(messages), system_prompt
+        )
+        self._ai_worker.finished.connect(self._on_ai_response)
+        self._ai_worker.error.connect(self._on_ai_error)
+        self._ai_worker.start()
+
+    def _on_ai_response(self, reply: str):
+        """处理 AI 回复"""
+        try:
+            if self._ai_panel_widget:
+                self._ai_panel_widget.set_busy(False)
+
+            # 追加到对话历史
+            conv = self._get_active_conversation()
+            if conv:
+                conv['messages'].append({"role": "assistant", "content": reply})
+
+            # 尝试解析 JSON actions
+            parsed = ReportAIActionParser.parse(reply)
+            if parsed and parsed.get('actions'):
+                explanation = parsed.get('explanation', '')
+                actions = parsed['actions']
+
+                # 校验
+                catalog = self._build_ai_tables_catalog()
+                valid_actions, errors = ReportAIActionParser.validate_actions(actions, catalog)
+
+                if errors:
+                    explanation += "\n\n⚠️ 部分操作无法执行:\n" + "\n".join(f"  - {e}" for e in errors)
+
+                if valid_actions:
+                    # 显示预览
+                    preview_text = ReportAIActionParser.describe_actions(valid_actions, catalog)
+                    if self._ai_panel_widget:
+                        self._ai_panel_widget.append_chat_message("assistant", explanation or "已生成操作方案：")
+                        self._ai_panel_widget.show_action_preview(preview_text, valid_actions)
+                else:
+                    if self._ai_panel_widget:
+                        self._ai_panel_widget.append_chat_message("assistant",
+                            explanation + ("\n\n" + "\n".join(errors) if errors else ""))
+            else:
+                # 无 JSON，作为纯文本回复
+                if self._ai_panel_widget:
+                    self._ai_panel_widget.append_chat_message("assistant", reply)
+        except Exception as e:
+            logger.error(f"[AI] _on_ai_response error: {e}", exc_info=True)
+            if self._ai_panel_widget:
+                self._ai_panel_widget.set_busy(False)
+                self._ai_panel_widget.append_chat_message("system", f"❌ 处理回复时出错: {e}")
+
+        # 更新历史菜单（消息数量变化）
+        if self._ai_panel_widget:
+            self._ai_panel_widget.update_history_menu(self._ai_conversations, self._ai_active_conv_id)
+
+    def _on_ai_apply(self, actions: list):
+        """执行 AI 生成的操作"""
+        try:
+            if not actions:
+                return
+            executor = ReportAIActionExecutor(self)
+            success, exec_errors = executor.execute(actions)
+
+            if self._ai_panel_widget:
+                if success:
+                    self._ai_panel_widget.append_chat_message("system", "✅ 变更已应用！")
+                else:
+                    self._ai_panel_widget.append_chat_message("system",
+                        "⚠️ 部分变更应用失败:\n" + "\n".join(f"  - {e}" for e in exec_errors))
+
+            # 同步 UI 状态
+            try:
+                self._collect_from_ui()
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"[AI] _on_ai_apply error: {e}", exc_info=True)
+            if self._ai_panel_widget:
+                self._ai_panel_widget.append_chat_message("system", f"❌ 执行操作时出错: {e}")
+
+    def _on_ai_error(self, error: str):
+        """处理 AI 调用错误"""
+        try:
+            if self._ai_panel_widget:
+                self._ai_panel_widget.set_busy(False)
+                self._ai_panel_widget.append_chat_message("system", f"❌ {error}")
+            # 移除失败的 user 消息
+            conv = self._get_active_conversation()
+            if conv:
+                msgs = conv['messages']
+                if msgs and msgs[-1].get('role') == 'user':
+                    msgs.pop()
+        except Exception as e:
+            logger.error(f"[AI] _on_ai_error error: {e}", exc_info=True)
+
+
+
+    def _update_bg_progress(self):
+        bg_active = False
+        if hasattr(self, '_sync_mysql_btn') and not self._sync_mysql_btn.isEnabled():
+            bg_active = True
+        self._bg_progress.setVisible(bg_active)
 
 class _SyncConfigDialog(QDialog):
     """同步 MySQL 配置对话框 — 选择主键字段 + 写入方式
@@ -20501,14 +25113,15 @@ class _SyncConfigDialog(QDialog):
                  selected_fields=None, separator='_', write_mode='overwrite'):
         super().__init__(parent)
         self.setWindowTitle("同步 MySQL 配置")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumWidth(620)
         self._available_fields = available_fields or []
         self._selected_fields = list(selected_fields or [])
         self._separator = separator
         self._write_mode = write_mode
         self.setStyleSheet("""
-            QDialog { background-color: #FAFAFA; color: #333333; }
-            QGroupBox { background-color: #FAFAFA; color: #333333; font-weight: 500;
+            QDialog { background-color: #FFFFFF; color: #333333; }
+            QGroupBox { background-color: #FFFFFF; color: #333333; font-weight: 500;
                         border: 1px solid #E0E0E0; border-radius: 6px; margin-top: 10px; padding-top: 14px; }
             QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }
             QLabel { color: #333333; font-size: 13px; }
@@ -20762,7 +25375,7 @@ from PyQt6.QtGui import QAction, QDrag, QPainter, QColor, QFont, QPen
 # 浅色弹窗样式（覆盖系统深色主题）
 _LIGHT_DIALOG_STYLE = """
     QMessageBox, QInputDialog, QDialog {
-        background-color: #FAFAFA; color: #333333;
+        background-color: #FFFFFF; color: #333333;
     }
     QLabel { color: #333333; font-size: 13px; }
     QLineEdit {
@@ -20803,6 +25416,7 @@ def _light_msgbox(parent, icon, title, text):
     msg.setText(text)
     msg.setIcon(icon)
     msg.setStyleSheet(_LIGHT_DIALOG_STYLE)
+    msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     return msg.exec()
 
 
@@ -20814,6 +25428,7 @@ def _light_confirm(parent, title, text):
     msg.setIcon(QMessageBox.Icon.Question)
     msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     msg.setStyleSheet(_LIGHT_DIALOG_STYLE)
+    msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     return msg.exec()
 
 
@@ -20821,6 +25436,7 @@ def _light_input(parent, title, label, text=''):
     """显示浅色背景的输入弹窗。"""
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
+    dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
     dlg.setMinimumWidth(360)
     dlg.setStyleSheet(_LIGHT_DIALOG_STYLE)
     layout = QVBoxLayout(dlg)
@@ -20975,6 +25591,1000 @@ class _FolderTree(QTreeWidget):
         event.acceptProposedAction()
 
 
+# ==================== AI 报表助手组件 ====================
+
+class ReportAIActionParser:
+    """从 AI 回复中提取、校验、描述结构化操作指令"""
+
+    VALID_ACTIONS = {
+        'set_main_table', 'add_table', 'remove_table',
+        'add_join', 'remove_join',
+        'add_column', 'remove_column', 'reorder_columns',
+        'add_filter', 'remove_filter',
+        'set_sort', 'set_group_by', 'set_report_name',
+    }
+
+    @staticmethod
+    def parse(response_text: str) -> dict | None:
+        """从 AI 回复中提取 JSON actions，返回 {explanation, actions} 或 None"""
+        import re
+
+        # 1. 尝试 ```json ... ``` 代码块
+        json_blocks = re.findall(r'```json\s*\n?(.*?)\n?\s*```', response_text, re.DOTALL)
+        for block in json_blocks:
+            try:
+                data = json.loads(block.strip())
+                if isinstance(data, dict) and 'actions' in data:
+                    return data
+                if isinstance(data, list):
+                    return {'explanation': '', 'actions': data}
+            except json.JSONDecodeError:
+                continue
+
+        # 2. 尝试 ``` ... ``` 代码块（无 json 标记）
+        code_blocks = re.findall(r'```\s*\n?(.*?)\n?\s*```', response_text, re.DOTALL)
+        for block in code_blocks:
+            try:
+                data = json.loads(block.strip())
+                if isinstance(data, dict) and 'actions' in data:
+                    return data
+                if isinstance(data, list):
+                    return {'explanation': '', 'actions': data}
+            except json.JSONDecodeError:
+                continue
+
+        # 3. 尝试直接匹配顶层 {...}
+        brace_match = re.search(r'\{[^{}]*"actions"\s*:\s*\[', response_text, re.DOTALL)
+        if brace_match:
+            start = brace_match.start()
+            # 找到匹配的闭合括号
+            depth = 0
+            end = start
+            for i in range(start, len(response_text)):
+                if response_text[i] == '{':
+                    depth += 1
+                elif response_text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            try:
+                data = json.loads(response_text[start:end])
+                if isinstance(data, dict) and 'actions' in data:
+                    return data
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
+    @staticmethod
+    def validate_actions(actions: list, catalog: list[dict]) -> tuple[list, list[str]]:
+        """校验 actions，返回 (valid_actions, error_messages)"""
+        valid = []
+        errors = []
+        table_map = {t['object_api']: t for t in catalog}
+        # 同时建立中文名 → api 映射
+        label_map = {}
+        for t in catalog:
+            label_map[t['display_name']] = t['object_api']
+            label_map[t['object_api']] = t['object_api']
+
+        for act in actions:
+            if not isinstance(act, dict):
+                errors.append(f"无效的操作格式: {act}")
+                continue
+            action_type = act.get('action', '')
+            if action_type not in ReportAIActionParser.VALID_ACTIONS:
+                errors.append(f"未知操作类型: {action_type}")
+                continue
+
+            # 校验 action 必填字段
+            if action_type == 'add_column':
+                comp = act.get('computation_type', 'direct')
+                sf = act.get('source_field', '')
+                # 公式列/聚合列不需要 source_field，直接字段需要
+                if comp in ('direct', '') and not sf:
+                    errors.append(f"add_column 缺少必填字段 source_field: {act.get('display_name', '?')}")
+                    continue
+            elif action_type == 'add_filter':
+                if not act.get('field_api'):
+                    errors.append(f"add_filter 缺少必填字段 field_api")
+                    continue
+            elif action_type == 'set_sort':
+                if not act.get('display_name'):
+                    errors.append(f"set_sort 缺少必填字段 display_name")
+                    continue
+            elif action_type == 'reorder_columns':
+                order = act.get('order', [])
+                if not order or not isinstance(order, list):
+                    errors.append(f"reorder_columns 缺少必填字段 order (列表)")
+                    continue
+
+            # 校验表引用
+            for key in ('object_api', 'left_object_api', 'right_object_api', 'target_object_api',
+                         'source_object_api'):
+                val = act.get(key, '')
+                if val and val not in table_map:
+                    # 尝试中文名匹配
+                    resolved = label_map.get(val)
+                    if resolved:
+                        act[key] = resolved
+                    elif action_type in ('set_main_table', 'add_table', 'add_join',
+                                          'remove_table', 'remove_join'):
+                        errors.append(f"找不到数据表: {val}")
+                        break
+            else:
+                valid.append(act)
+
+        return valid, errors
+
+    @staticmethod
+    def describe_actions(actions: list, catalog: list[dict]) -> str:
+        """生成人类可读的变更摘要"""
+        table_map = {t['object_api']: t for t in catalog}
+        lines = ["📋 AI 计划执行以下变更：\n"]
+
+        for act in actions:
+            atype = act.get('action', '')
+
+            if atype == 'set_main_table':
+                api = act.get('object_api', '')
+                name = table_map.get(api, {}).get('display_name', api)
+                lines.append(f"  📊 设置主表: {name} ({api})")
+
+            elif atype == 'add_table':
+                api = act.get('object_api', '')
+                name = table_map.get(api, {}).get('display_name', api)
+                lines.append(f"  📊 添加表: {name} ({api})")
+
+            elif atype == 'remove_table':
+                api = act.get('object_api', '')
+                lines.append(f"  🗑️ 移除表: {api}")
+
+            elif atype == 'add_join':
+                left = act.get('left_object_api', '')
+                right = act.get('right_object_api', '')
+                left_name = table_map.get(left, {}).get('display_name', left)
+                right_name = table_map.get(right, {}).get('display_name', right)
+                jt = act.get('join_type', 'left')
+                jt_cn = {'left': '左连接', 'inner': '内连接', 'one_to_one': '一对一'}.get(jt, jt)
+                keys = act.get('match_keys', [])
+                key_str = ", ".join(f"{k.get('left_field','')}={k.get('right_field','')}" for k in keys)
+                lines.append(f"  🔗 创建关联: {left_name} → {right_name} ({jt_cn}, 通过 {key_str})")
+
+            elif atype == 'remove_join':
+                left = act.get('left_object_api', '')
+                right = act.get('right_object_api', '')
+                lines.append(f"  🗑️ 移除关联: {left} → {right}")
+
+            elif atype == 'add_column':
+                dn = act.get('display_name', '')
+                src = act.get('source_object_api', '')
+                sf = act.get('source_field', '')
+                src_name = table_map.get(src, {}).get('display_name', src)
+                ct = act.get('computation_type', 'direct')
+                if ct == 'formula':
+                    lines.append(f"  📝 添加公式列: {dn} = {act.get('formula_expression', '')}")
+                elif ct == 'aggregate':
+                    lines.append(f"  📝 添加聚合列: {dn} ({act.get('aggregate_func', 'SUM')})")
+                else:
+                    lines.append(f"  📝 添加字段: {dn} (来自 {src_name}.{sf})")
+
+            elif atype == 'remove_column':
+                sf = act.get('source_field', '')
+                dn = act.get('display_name', sf)
+                lines.append(f"  🗑️ 移除字段: {dn}")
+
+            elif atype == 'add_filter':
+                field = act.get('field_api', '')
+                op = act.get('operator', '')
+                val = act.get('value', '')
+                tgt = act.get('target_object_api', '')
+                tgt_name = table_map.get(tgt, {}).get('display_name', tgt)
+                op_cn = {'EQ': '等于', 'CONTAINS': '包含', 'GT': '大于', 'LT': '小于',
+                         'PAST_N_DAYS_EXCLUSIVE': '过去N天', 'PAST_N_DAYS_INCLUSIVE': '过去N天含今天',
+                         'N_MONTHS_AGO': 'N个月前', 'DATE_BEFORE': '早于', 'DATE_AFTER': '晚于',
+                         'IN': '在列表中', 'STARTS_WITH': '开头是'}.get(op, op)
+                lines.append(f"  🔍 添加筛选: {tgt_name}.{field} {op_cn} {val}")
+
+            elif atype == 'remove_filter':
+                field = act.get('field_api', '')
+                lines.append(f"  🗑️ 移除筛选: {field}")
+
+            elif atype == 'set_sort':
+                dn = act.get('display_name', '')
+                direction = act.get('direction', 'asc')
+                dir_cn = '降序' if direction == 'desc' else '升序'
+                lines.append(f"  ↕️ 设置排序: {dn} {dir_cn}")
+
+            elif atype == 'reorder_columns':
+                order = act.get('order', [])
+                preview = ' → '.join(order[:6])
+                if len(order) > 6:
+                    preview += f' → ... 共{len(order)}列'
+                lines.append(f"  🔀 调整字段顺序: {preview}")
+
+            elif atype == 'set_group_by':
+                fields = act.get('fields', [])
+                lines.append(f"  📊 设置分组: {', '.join(fields)}")
+
+            elif atype == 'set_report_name':
+                lines.append(f"  ✏️ 报表名: {act.get('name', '')}")
+
+        return "\n".join(lines)
+
+
+class ReportAIActionExecutor:
+    """执行 AI 生成的操作指令，修改报表编辑器状态"""
+
+    def __init__(self, editor_page):
+        self._page = editor_page
+
+    def execute(self, actions: list) -> tuple[bool, list[str]]:
+        """按顺序执行所有 actions，返回 (success, errors)"""
+        errors = []
+        for act in actions:
+            atype = act.get('action', '')
+            try:
+                handler = getattr(self, f'_exec_{atype}', None)
+                if handler:
+                    handler(act)
+                else:
+                    errors.append(f"不支持的操作: {atype}")
+            except Exception as e:
+                errors.append(f"执行 {atype} 失败: {e}")
+                logger.error(f"[AI-Executor] {atype} failed: {e}")
+
+        return len(errors) == 0, errors
+
+    def _resolve_table_info(self, object_api: str) -> tuple[str, list] | None:
+        """解析表 API 名到 (display_name, fields_list)"""
+        # 从 _object_meta 查
+        meta = self._page._object_meta.get(object_api)
+        if meta:
+            return meta.get('name', object_api), meta.get('fields', [])
+        # 从 table_selector 查
+        if self._page._table_selector and hasattr(self._page._table_selector, '_table_data'):
+            data = self._page._table_selector._table_data.get(object_api)
+            if data:
+                return data.get('display_name', object_api), data.get('fields', [])
+        return None
+
+    def _ensure_field_enabled(self, object_api: str, field_key: str, display_name: str = ''):
+        """在 shared_settings 的 crm_object_fields 中启用指定字段。
+
+        确保后续完整刷新源表时，该字段会被 CRM 拉取并写入 MySQL。
+        """
+        try:
+            import sys, json, os
+            main = sys.modules.get('__main__')
+            cfg = None
+            if main and hasattr(main, 'load_config'):
+                cfg = main.load_config()
+            if not cfg:
+                return
+            fx = cfg.setdefault('fxiaoke', {})
+            fields_cfg = fx.setdefault('crm_object_fields', {})
+            obj_fields = fields_cfg.setdefault(object_api, {})
+            entry = obj_fields.get(field_key)
+            if isinstance(entry, dict):
+                if not entry.get('enabled', False):
+                    entry['enabled'] = True
+                    logger.info(f"[AI-Executor] 已启用字段 {object_api}.{field_key}")
+            else:
+                # 字段不存在于配置中，新增一条
+                obj_fields[field_key] = {
+                    'enabled': True,
+                    'label': display_name or field_key,
+                    'type': '',
+                }
+                logger.info(f"[AI-Executor] 已新增并启用字段 {object_api}.{field_key} ({display_name})")
+            # 持久化
+            if main and hasattr(main, 'save_config'):
+                main.save_config(cfg)
+        except Exception as e:
+            logger.warning(f"[AI-Executor] 启用字段失败 {object_api}.{field_key}: {e}")
+
+    def _ensure_table_on_canvas(self, object_api: str, as_main: bool = False):
+        """确保表已在画布上，若不在则添加"""
+        canvas = self._page._canvas
+        if canvas and hasattr(canvas, '_scene'):
+            scene = canvas._scene if hasattr(canvas, '_scene') else None
+            if not scene:
+                scene = getattr(canvas, 'scene', lambda: None)()
+            if scene:
+                # 检查是否已在画布
+                for item in scene.items():
+                    if hasattr(item, '_object_api') and item._object_api == object_api:
+                        if as_main and hasattr(item, 'set_main'):
+                            item.set_main(True)
+                        return
+
+        # 不在画布，添加
+        info = self._resolve_table_info(object_api)
+        if not info:
+            raise ValueError(f"找不到表: {object_api}")
+
+        display_name, fields = info
+        # 构造 fields 格式
+        field_list = []
+        for f in fields:
+            if isinstance(f, (tuple, list)):
+                field_list.append({'key': f[0], 'label': f[1] if len(f) >= 2 else f[0]})
+            elif isinstance(f, dict):
+                field_list.append(f)
+
+        # 调用已有的添加方法
+        selector = self._page._table_selector
+        if selector:
+            # 发射信号让 editor 处理
+            selector.tableSelected.emit(object_api, display_name, field_list, 'crm')
+
+    def _exec_set_main_table(self, act: dict):
+        object_api = act.get('object_api', '')
+        self._ensure_table_on_canvas(object_api, as_main=True)
+
+    def _exec_add_table(self, act: dict):
+        object_api = act.get('object_api', '')
+        self._ensure_table_on_canvas(object_api)
+
+    def _exec_remove_table(self, act: dict):
+        object_api = act.get('object_api', '')
+        canvas = self._page._canvas
+        if canvas:
+            scene = canvas._scene if hasattr(canvas, '_scene') else canvas.scene()
+            if scene and hasattr(scene, 'remove_card_by_api'):
+                scene.remove_card_by_api(object_api)
+
+    def _exec_add_join(self, act: dict):
+        left_api = act.get('left_object_api', '')
+        right_api = act.get('right_object_api', '')
+        match_keys = act.get('match_keys', [])
+        join_type = act.get('join_type', 'left')
+        multi_match = act.get('multi_match', 'expand')
+
+        # 确保两张表都在画布上
+        self._ensure_table_on_canvas(left_api)
+        self._ensure_table_on_canvas(right_api)
+
+        # 构造 JoinDefinition
+        mk_list = []
+        for mk in match_keys:
+            if isinstance(mk, dict):
+                mk_list.append(MatchKey(left_field=mk.get('left_field', ''),
+                                        right_field=mk.get('right_field', '')))
+
+        join_def = JoinDefinition(
+            left_object_api=left_api,
+            right_object_api=right_api,
+            match_keys=mk_list,
+            join_type=join_type,
+            multi_match=multi_match,
+        )
+
+        # 通过 canvas 添加连线
+        canvas = self._page._canvas
+        if canvas:
+            scene = canvas._scene if hasattr(canvas, '_scene') else canvas.scene()
+            if scene and hasattr(scene, 'add_join_from_definition'):
+                scene.add_join_from_definition(join_def)
+            elif hasattr(canvas, 'add_join'):
+                canvas.add_join(join_def)
+
+    def _exec_add_column(self, act: dict):
+        display_name = act.get('display_name', '')
+        source_api = act.get('source_object_api', '')
+        source_field = act.get('source_field', '')
+        comp_type = act.get('computation_type', 'direct')
+
+        # 如果没指定 source_api，用主表
+        if not source_api:
+            source_api = self._page._report.main_object_api if self._page._report else ''
+
+        # 自动在 shared_settings 中启用该字段（确保源表同步时包含此列）
+        if source_api and source_field and comp_type != 'formula':
+            self._ensure_field_enabled(source_api, source_field, display_name)
+
+        fp = self._page._field_panel
+        if not fp:
+            raise ValueError("字段面板不可用")
+
+        # 公式列 / 聚合列不需要 source_field，直接字段需要
+        if comp_type in ('direct', '') and not source_field:
+            raise ValueError("add_column 缺少 source_field")
+
+        # 公式列 / 聚合列需要额外字段，直接操作 _columns + set_columns
+        if comp_type in ('formula', 'aggregate'):
+            fp._sync_columns_from_table()
+            # 计算新列的 sort_order（追加到末尾）
+            max_so = max((c.get('sort_order', 0) for c in fp._columns), default=-1)
+            next_so = max_so + 1
+            fp._columns.append({
+                'display_name': display_name or source_field,
+                'source_object': source_api,
+                'source_field': source_field,
+                'visible': True,
+                'computation_type': comp_type,
+                'aggregate_func': act.get('aggregate_func', ''),
+                'formula_expression': act.get('formula_expression', ''),
+                'sort_order': next_so,
+                'field_format': act.get('field_format', 'text'),
+            })
+            fp.set_columns(fp._columns)
+            fp.columnsChanged.emit()
+        else:
+            # 直接字段：使用 FieldConfigPanel.add_column()
+            fp.add_column(display_name or source_field, source_api, source_field)
+
+    def _exec_remove_column(self, act: dict):
+        source_field = act.get('source_field', '')
+        source_api = act.get('source_object_api', '')
+        fp = self._page._field_panel
+        if fp and hasattr(fp, 'remove_column_by_field'):
+            fp.remove_column_by_field(source_field, source_api)
+        elif fp and hasattr(fp, '_columns'):
+            # fallback: 直接过滤 dict 列表
+            fp._columns = [c for c in fp._columns
+                           if not (c.get('source_field') == source_field and
+                                   (not source_api or c.get('source_object') == source_api))]
+            if hasattr(fp, 'set_columns'):
+                fp.set_columns(fp._columns)
+            if hasattr(fp, 'columnsChanged'):
+                fp.columnsChanged.emit()
+
+    def _exec_add_filter(self, act: dict):
+        condition_dict = {
+            'field': act.get('field_api', ''),
+            'field_label': act.get('field_api', ''),
+            'target_object_api': act.get('target_object_api', ''),
+            'operator': act.get('operator', 'EQ'),
+            'value': act.get('value', ''),
+            'expose': act.get('expose', False),
+            'is_date': act.get('is_date_field', False),
+        }
+        fb = self._page._filter_bar
+        if fb and hasattr(fb, '_conditions'):
+            fb._conditions.append(condition_dict)
+            if hasattr(fb, '_rebuild_ui'):
+                fb._rebuild_ui()
+
+    def _exec_remove_filter(self, act: dict):
+        field_api = act.get('field_api', '')
+        target_api = act.get('target_object_api', '')
+        fb = self._page._filter_bar
+        if fb and hasattr(fb, '_conditions'):
+            fb._conditions = [c for c in fb._conditions
+                              if not (c.get('field') == field_api and
+                                      (not target_api or c.get('target_object_api') == target_api))]
+            if hasattr(fb, '_rebuild_ui'):
+                fb._rebuild_ui()
+
+    def _exec_set_sort(self, act: dict):
+        display_name = act.get('display_name', '')
+        direction = act.get('direction', 'asc')
+        fp = self._page._field_panel
+        if not fp or not hasattr(fp, '_columns'):
+            return
+
+        fp._sync_columns_from_table()
+
+        # 找到匹配的列
+        target_idx = None
+        for i, c in enumerate(fp._columns):
+            if c.get('display_name', '') == display_name:
+                target_idx = i
+                break
+
+        if target_idx is None:
+            return
+
+        # 调整列顺序：desc 移到最前，asc 移到最后
+        target_col = fp._columns.pop(target_idx)
+        if direction == 'desc':
+            fp._columns.insert(0, target_col)
+        else:
+            fp._columns.append(target_col)
+
+        # 更新 sort_order
+        for i, c in enumerate(fp._columns):
+            c['sort_order'] = i
+
+        fp.set_columns(fp._columns)
+        fp.columnsChanged.emit()
+
+    def _exec_reorder_columns(self, act: dict):
+        """按指定顺序重排所有字段。order 列表中未提及的字段追加到末尾。"""
+        order = act.get('order', [])
+        if not order:
+            return
+        fp = self._page._field_panel
+        if not fp or not hasattr(fp, '_columns'):
+            return
+
+        fp._sync_columns_from_table()
+
+        # 按 display_name 建立索引
+        name_map = {}
+        for c in fp._columns:
+            dn = c.get('display_name', '')
+            if dn:
+                name_map[dn] = c
+
+        ordered = []
+        seen = set()
+        for dn in order:
+            col = name_map.get(dn)
+            if col:
+                ordered.append(col)
+                seen.add(dn)
+
+        # 未在 order 中出现的列追加到末尾（保持原相对顺序）
+        for c in fp._columns:
+            if c.get('display_name', '') not in seen:
+                ordered.append(c)
+
+        # 更新 sort_order
+        for i, c in enumerate(ordered):
+            c['sort_order'] = i
+
+        fp._columns = ordered
+        fp.set_columns(ordered)
+        fp.columnsChanged.emit()
+
+    def _exec_set_group_by(self, act: dict):
+        fields = act.get('fields', [])
+        if self._page._report:
+            self._page._report.group_by_fields = fields
+
+    def _exec_set_report_name(self, act: dict):
+        name = act.get('name', '')
+        if name and hasattr(self._page, '_name_input'):
+            self._page._name_input.setText(name)
+        if name and self._page._report:
+            self._page._report.name = name
+
+
+class ReportEditorAIPanel(QWidget):
+    """报表编辑器 AI 助手面板 — 仿 Claude 对话界面布局"""
+
+    sendMessage = pyqtSignal(str)
+    applyChanges = pyqtSignal(list)
+    cancelChanges = pyqtSignal()
+    newConversation = pyqtSignal()
+    switchConversation = pyqtSignal(str)
+    quickAction = pyqtSignal(str)       # 快捷按钮动作名称
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pending_actions = None
+        self._ai_mode = 'auto'
+        self._ai_effort = 'medium'
+        self._quick_bar = None
+        self._quick_bar_layout = None
+        self._menu_ss = (
+            "QMenu { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; "
+            "border-radius: 4px; padding: 4px; font-size: 13px; }"
+            "QMenu::item { padding: 6px 24px 6px 12px; border-radius: 3px; }"
+            "QMenu::item:selected { background-color: #F0F0F0; color: #1890FF; }"
+            "QMenu::item:disabled { color: #999999; }"
+            "QMenu::separator { height: 1px; background: #E8E8E8; margin: 4px 8px; }"
+        )
+        self._setup_ui()
+
+    # ================================================================
+    #  UI 构建
+    # ================================================================
+
+    def _setup_ui(self):
+        t = _CLAUDE_TERMINAL_THEME
+        _claude_apply_palette(self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---- 顶栏：左侧标题 | 右侧历史 + 新对话 ----
+        header = QFrame()
+        header.setFixedHeight(40)
+        header.setStyleSheet(
+            f"QFrame {{ background-color: {t['bg_secondary']}; "
+            f"border-bottom: 1px solid {t['border_default']}; }}"
+        )
+        h = QHBoxLayout(header)
+        h.setContentsMargins(10, 0, 10, 0)
+        h.setSpacing(6)
+
+        self._title_label = QLabel("AI 助手")
+        self._title_label.setStyleSheet(
+            f"font-size: 14px; font-weight: 600; color: {t['text_primary']};"
+        )
+        h.addWidget(self._title_label)
+        h.addStretch()
+
+        self._history_btn = self._make_icon_btn("🕐", "历史对话")
+        self._history_btn.clicked.connect(self._on_history)
+        h.addWidget(self._history_btn)
+
+        self._new_btn = self._make_icon_btn("＋", "新对话")
+        self._new_btn.clicked.connect(self.newConversation.emit)
+        h.addWidget(self._new_btn)
+
+        layout.addWidget(header)
+
+        # ---- 聊天区 ----
+        self._chat_browser = QTextBrowser()
+        self._chat_browser.setOpenExternalLinks(False)
+        self._chat_browser.setFont(QFont("Cascadia Code", 13))
+        self._chat_browser.setStyleSheet(
+            f"QTextBrowser {{ background-color: {t['bg_primary']}; "
+            f"color: {t['text_primary']}; border: none; padding: 10px; }}"
+            f"{_claude_scrollbar_stylesheet()}"
+        )
+        self._chat_browser.setHtml(self._welcome_html())
+        layout.addWidget(self._chat_browser, 1)
+
+        # ---- 预览区（初始隐藏）----
+        self._preview_frame = QFrame()
+        self._preview_frame.setStyleSheet(
+            f"QFrame {{ background-color: {t['bg_accent_subtle']}; "
+            f"border: 1px solid {t['accent_green']}; border-radius: 4px; margin: 4px 8px; }}"
+        )
+        pv = QVBoxLayout(self._preview_frame)
+        pv.setContentsMargins(10, 8, 10, 8)
+        pv.setSpacing(6)
+        self._preview_text = QLabel("")
+        self._preview_text.setWordWrap(True)
+        self._preview_text.setStyleSheet(
+            f"font-size: 12px; color: {t['text_primary']}; background: transparent;"
+        )
+        pv.addWidget(self._preview_text)
+        br = QHBoxLayout()
+        br.setSpacing(8)
+        self._apply_btn = QPushButton("✅ 应用变更")
+        self._apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._apply_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {t['accent_green']}; color: white; border: none; "
+            f"border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #56D364; }}"
+        )
+        self._apply_btn.clicked.connect(self._on_apply)
+        br.addWidget(self._apply_btn)
+        self._cancel_btn = QPushButton("❌ 取消")
+        self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cancel_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {t['text_secondary']}; "
+            f"border: 1px solid {t['border_default']}; border-radius: 4px; "
+            f"padding: 6px 16px; font-size: 12px; }}"
+            f"QPushButton:hover {{ border-color: {t['text_error']}; color: {t['text_error']}; }}"
+        )
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        br.addWidget(self._cancel_btn)
+        pv.addLayout(br)
+        self._preview_frame.setVisible(False)
+        layout.addWidget(self._preview_frame)
+
+        # ---- 底部栏：左侧[模型|模式|effort]  右侧[输入框|发送] ----
+        bottom = QFrame()
+        bottom.setStyleSheet(
+            f"QFrame {{ background-color: {t['bg_secondary']}; "
+            f"border-top: 1px solid {t['border_default']}; }}"
+        )
+        lay = QVBoxLayout(bottom)
+        lay.setContentsMargins(8, 6, 8, 8)
+        lay.setSpacing(6)
+
+        # ---- 输入框（多行自动换行）----
+        self._input_edit = QTextEdit()
+        self._input_edit.setAcceptRichText(False)  # 强制纯文本粘贴，防止富文本导致显示叠加
+        self._input_edit.setPlaceholderText("Ask anything...（Enter 发送，Shift+Enter 换行）")
+        self._input_edit.setMinimumHeight(60)
+        self._input_edit.setMaximumHeight(120)
+        self._input_edit.setStyleSheet(
+            f"QTextEdit {{ background-color: {t['bg_input']}; color: {t['text_primary']}; "
+            f"border: 1px solid {t['border_default']}; border-radius: 6px; "
+            f"padding: 8px 12px; font-size: 13px; }}"
+            f"QTextEdit:focus {{ border-color: {t['border_focus']}; }}"
+        )
+        self._input_edit.installEventFilter(self)
+        lay.addWidget(self._input_edit)
+
+        # ---- 工具栏：model | mode | effort | 发送 ----
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+
+        self._model_btn = self._make_selector_btn("模型", t)
+        self._model_btn.clicked.connect(self._on_model)
+        bar.addWidget(self._model_btn)
+
+        bar.addWidget(self._vsep(t))
+
+        self._mode_btn = self._make_selector_btn("模式 · 自动", t)
+        self._mode_btn.clicked.connect(self._on_mode)
+        bar.addWidget(self._mode_btn)
+
+        bar.addWidget(self._vsep(t))
+
+        self._effort_btn = self._make_selector_btn("深度 · 中", t)
+        self._effort_btn.clicked.connect(self._on_effort)
+        bar.addWidget(self._effort_btn)
+
+        bar.addStretch()
+
+        self._send_btn = QPushButton("发送")
+        self._send_btn.setFixedSize(56, 32)
+        self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._send_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {t['accent_blue']}; color: white; border: none; "
+            f"border-radius: 6px; font-size: 13px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #79C0FF; }}"
+            f"QPushButton:disabled {{ background-color: {t['bg_hover']}; }}"
+        )
+        self._send_btn.clicked.connect(self._on_send)
+        bar.addWidget(self._send_btn)
+
+        lay.addLayout(bar)
+        layout.addWidget(bottom)
+
+    # ---- 工厂方法 ----
+
+    @staticmethod
+    def _make_icon_btn(icon: str, tooltip: str) -> QPushButton:
+        t = _CLAUDE_TERMINAL_THEME
+        btn = QPushButton(icon)
+        btn.setFixedSize(28, 28)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        btn.setStyleSheet(
+            f"QPushButton {{ border: none; font-size: 15px; background: transparent; "
+            f"border-radius: 4px; color: {t['text_secondary']}; }}"
+            f"QPushButton:hover {{ background: {t['bg_hover']}; color: {t['text_primary']}; }}"
+        )
+        return btn
+
+    @staticmethod
+    def _make_selector_btn(text: str, t: dict) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setMinimumHeight(16)
+        btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {t['text_secondary']}; "
+            f"border: none; font-size: 11px; text-align: left; padding: 1px 2px; }}"
+            f"QPushButton:hover {{ color: {t['accent_blue']}; }}"
+        )
+        return btn
+
+    @staticmethod
+    def _vsep(t: dict) -> QFrame:
+        sep = QFrame()
+        sep.setFixedSize(1, 14)
+        sep.setStyleSheet(f"background-color: {t['border_default']};")
+        return sep
+
+    def eventFilter(self, obj, event):
+        if obj is self._input_edit and event.type() == event.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    return False          # Shift+Enter → 换行
+                self._on_send()
+                return True               # Enter → 发送
+        return super().eventFilter(obj, event)
+
+    # ================================================================
+    #  公开接口
+    # ================================================================
+
+    def set_title(self, title: str):
+        self._title_label.setText(title)
+
+    def add_quick_button(self, text: str, action_name: str):
+        """外部动态添加快捷按钮（如 SQL 面板的检查/优化/解释/生成）"""
+        t = _CLAUDE_TERMINAL_THEME
+        # 懒创建快捷按钮栏（插入到预览区和底部栏之间）
+        if not hasattr(self, '_quick_bar') or self._quick_bar is None:
+            self._quick_bar = QFrame()
+            self._quick_bar.setStyleSheet(
+                f"QFrame {{ background-color: {t['bg_secondary']}; "
+                f"border-top: 1px solid {t['border_default']}; }}"
+            )
+            self._quick_bar_layout = QHBoxLayout(self._quick_bar)
+            self._quick_bar_layout.setContentsMargins(8, 6, 8, 6)
+            self._quick_bar_layout.setSpacing(6)
+            # 插入到底部栏上方
+            main_lay = self.layout()
+            main_lay.insertWidget(main_lay.count() - 1, self._quick_bar)
+        btn = QPushButton(text)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(
+            f"QPushButton {{ border: 1px solid {t['border_default']}; border-radius: 3px; "
+            f"padding: 4px 8px; font-size: 11px; background: {t['bg_input']}; "
+            f"color: {t['text_secondary']}; }}"
+            f"QPushButton:hover {{ border-color: {t['accent_blue']}; color: {t['accent_blue']}; }}"
+        )
+        btn.clicked.connect(lambda checked, a=action_name: self.quickAction.emit(a))
+        self._quick_bar_layout.addWidget(btn)
+
+    def set_model_label(self, name: str):
+        self._model_btn.setText(name)
+
+    def update_history_menu(self, conversations: list, active_id: str):
+        """由父级调用，刷新历史对话下拉菜单"""
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_ss)
+        if not conversations:
+            act = menu.addAction("（暂无历史对话）")
+            act.setEnabled(False)
+        else:
+            for conv in reversed(conversations):
+                title = conv.get('title', '未命名')
+                n = len(conv.get('messages', []))
+                label = f"{title}  ({n} 条消息)"
+                act = menu.addAction(label)
+                act.setData(conv.get('id', ''))
+                if conv.get('id') == active_id:
+                    act.setEnabled(False)
+        self._history_menu = menu  # prevent GC
+
+    def append_chat_message(self, role: str, content: str):
+        html = _claude_message_html(role, content)
+        self._chat_browser.append(html)
+        sb = self._chat_browser.verticalScrollBar()
+        if sb:
+            sb.setValue(sb.maximum())
+
+    def replay_messages(self, messages: list):
+        self._chat_browser.setHtml(self._welcome_html())
+        for msg in messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            if role in ('user', 'assistant'):
+                self.append_chat_message(role, content)
+
+    def show_action_preview(self, preview_text: str, actions: list):
+        self._pending_actions = actions
+        self._preview_text.setText(preview_text)
+        self._preview_frame.setVisible(True)
+
+    def hide_action_preview(self):
+        self._pending_actions = None
+        self._preview_frame.setVisible(False)
+
+    def set_busy(self, busy: bool):
+        self._send_btn.setEnabled(not busy)
+        self._input_edit.setEnabled(not busy)
+        if busy:
+            self._send_btn.setText("⏳")
+            self._chat_browser.append(_claude_message_html("thinking", ""))
+        else:
+            self._send_btn.setText("发送")
+
+    # ================================================================
+    #  内部槽
+    # ================================================================
+
+    def _on_send(self):
+        text = self._input_edit.toPlainText().strip()
+        if not text:
+            return
+        self._input_edit.clear()
+        self.hide_action_preview()
+        self.sendMessage.emit(text)
+
+    def _on_history(self):
+        menu = getattr(self, '_history_menu', None)
+        if not menu:
+            menu = QMenu(self)
+            menu.setStyleSheet(self._menu_ss)
+            act = menu.addAction("（暂无历史对话）")
+            act.setEnabled(False)
+        action = menu.exec(self._history_btn.mapToGlobal(
+            self._history_btn.rect().bottomLeft()
+        ))
+        if action and action.data():
+            self.switchConversation.emit(action.data())
+
+    def _on_model(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_ss)
+        p = self.parent()
+        assistant = getattr(p, '_ai_assistant', None)
+        if assistant:
+            providers = assistant.available_providers
+            cur = assistant.current_provider
+            cur_name = cur.name if cur else ''
+            for pv in providers:
+                name = pv.name
+                act = menu.addAction(("✔ " if name == cur_name else "   ") + name)
+                act.setData(name)
+                act.setEnabled(pv.is_available)
+        else:
+            a = menu.addAction("（未配置 AI）")
+            a.setEnabled(False)
+        action = menu.exec(self._model_btn.mapToGlobal(
+            self._model_btn.rect().bottomLeft()
+        ))
+        if action and action.data():
+            self._model_btn.setText(action.data())
+            if p and hasattr(p, '_on_panel_model_changed'):
+                p._on_panel_model_changed(action.data())
+
+    def _on_mode(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_ss)
+        modes = {'auto': '自动', 'manual': '手动'}
+        for key, label in modes.items():
+            act = menu.addAction(("✔ " if key == self._ai_mode else "   ") + label)
+            act.setData(key)
+        action = menu.exec(self._mode_btn.mapToGlobal(
+            self._mode_btn.rect().bottomLeft()
+        ))
+        if action and action.data():
+            self._ai_mode = action.data()
+            self._mode_btn.setText(f"模式 · {modes[self._ai_mode]}")
+
+    def _on_effort(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_ss)
+        levels = {'low': '低', 'medium': '中', 'high': '高', 'max': '极限'}
+        for key, label in levels.items():
+            act = menu.addAction(("✔ " if key == self._ai_effort else "   ") + label)
+            act.setData(key)
+        action = menu.exec(self._effort_btn.mapToGlobal(
+            self._effort_btn.rect().bottomLeft()
+        ))
+        if action and action.data():
+            self._ai_effort = action.data()
+            self._effort_btn.setText(f"深度 · {levels[self._ai_effort]}")
+
+    def _on_apply(self):
+        if self._pending_actions:
+            self.applyChanges.emit(self._pending_actions)
+            self.hide_action_preview()
+
+    def _on_cancel(self):
+        self.hide_action_preview()
+        self.cancelChanges.emit()
+
+    def _request_close(self):
+        self.hide()
+        p = self.parent()
+        if p and hasattr(p, '_ai_panel_visible'):
+            p._ai_panel_visible = False
+        if p and hasattr(p, '_ai_toggle_btn'):
+            p._ai_toggle_btn.setText("AI 助手")
+
+    # ---- 欢迎页 ----
+
+    def _welcome_html(self) -> str:
+        t = _CLAUDE_TERMINAL_THEME
+        return f"""
+        <div style="text-align:center; padding:40px 16px; color:{t['text_secondary']};
+                    font-family:{t['font_mono']}; font-size:{t['font_mono_size']};">
+            <div style="font-size:18px; color:{t['text_primary']}; margin-bottom:12px; font-weight:600;">
+                AI 报表助手
+            </div>
+            <div style="line-height:2; text-align:left; display:inline-block;">
+                <div>{t['prompt_char']} 「帮我建一个商机和发货单的报表」</div>
+                <div>{t['prompt_char']} 「显示客户名称、订单金额和发货日期」</div>
+                <div>{t['prompt_char']} 「只要本月的数据，按金额降序」</div>
+                <div>{t['prompt_char']} 「再加一个客户联系人字段」</div>
+            </div>
+            <div style="margin-top:16px; font-size:11px; color:{t['text_muted']};">
+                Enter 发送
+            </div>
+        </div>
+        """
+
+
+def _ReportAI_html_escape(text: str) -> str:
+    """HTML 转义（已废弃，保留向后兼容）"""
+    return (text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                .replace('\n', '<br>'))
+
+
+def _ReportAI_markdown_to_html(text: str) -> str:
+    """简易 Markdown → HTML（已废弃，使用 _claude_markdown_to_html 替代）"""
+    return _claude_markdown_to_html(text)
+
+
 class ReportListPage(QWidget):
     """报表列表页面"""
 
@@ -20985,8 +26595,9 @@ class ReportListPage(QWidget):
     newReportWithMain = pyqtSignal(str)      # 新建并指定主表 (api_name)
     newReportInFolder = pyqtSignal(str)      # 新建报表到指定文件夹 (folder_path)
 
+    refreshDataReady = pyqtSignal(object, object, str)  # (folder_data, all_reports, search)
     def __init__(self, repo: ReportRepository = None, parent=None,
-                 save_config_fn=None, load_config_fn=None):
+                 save_config_fn=None, load_config_fn=None, batch_refresh_fn=None):
         super().__init__(parent)
         self._repo = repo or ReportRepository()
         self._all_reports: list[ReportDefinition] = []
@@ -20994,12 +26605,20 @@ class ReportListPage(QWidget):
         self._page_size = 20
         self._save_config_fn = save_config_fn
         self._load_config_fn = load_config_fn
+        self._batch_refresh_fn = batch_refresh_fn
+        self._checked_ids: set[str] = set()
+        self._current_page_ids: list[str] = []
+        self._is_updating_checkboxes = False
+        self._batch_refresh_fn = batch_refresh_fn
         self._col_widths_loaded = False
         self._object_name_map: dict[str, str] = {}  # {api_name: chinese_name}
         self._current_folder = "__root__"  # 当前选中的文件夹路径
         self._folder_data: list[dict] = []  # 文件夹树缓存
 
+        self._bg_processing = False
+        self.refreshDataReady.connect(self._on_refresh_data_ready)
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def set_object_name_map(self, name_map: dict[str, str]):
         """设置对象 API 名 → 中文名的映射（用于主表列显示）。"""
@@ -21049,6 +26668,17 @@ class ReportListPage(QWidget):
 
         action_row.addStretch()
 
+        batch_btn = QPushButton("🔄 批量刷新")
+        batch_btn.setFixedHeight(28)
+        batch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        batch_btn.setStyleSheet("""
+            QPushButton { background-color: #1890FF; color: #FFFFFF; border: none;
+                          border-radius: 4px; padding: 4px 14px; font-size: 13px; }
+            QPushButton:hover { background-color: #40A9FF; }
+        """)
+        batch_btn.clicked.connect(self._on_batch_refresh)
+        action_row.addWidget(batch_btn)
+
         new_btn = QPushButton("+ 新建报表")
         new_btn.setFixedHeight(30)
         new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -21060,8 +26690,30 @@ class ReportListPage(QWidget):
         """)
         new_btn.clicked.connect(self._on_new_report)
         action_row.addWidget(new_btn)
-
         group_layout.addLayout(action_row)
+
+        # 批量刷新状态标签
+        self._batch_status_label = QLabel()
+        self._batch_status_label.setVisible(False)
+        self._batch_status_label.setStyleSheet("""
+            QLabel {
+                color: #333; font-size: 13px; padding: 6px 10px;
+                background-color: #FFF7E6; border: 1px solid #FFD591;
+                border-radius: 4px; line-height: 1.6;
+            }
+        """)
+        self._batch_status_label.setWordWrap(True)
+        self._batch_status_label.setMinimumHeight(50)
+        group_layout.addWidget(self._batch_status_label)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setFixedHeight(20)
+        self._progress_bar.setVisible(False)
+        self._progress_bar.setStyleSheet("""
+            QProgressBar { border: 1px solid #D9D9D9; border-radius: 3px; text-align: center; }
+            QProgressBar::chunk { background-color: #FF8C00; border-radius: 2px; }
+        """)
+        group_layout.addWidget(self._progress_bar)
 
         # === 左右分栏：文件夹树 + 报表表格 ===
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -21072,7 +26724,7 @@ class ReportListPage(QWidget):
         folder_panel = QFrame()
         folder_panel.setMinimumWidth(160)
         folder_panel.setStyleSheet("""
-            QFrame { background-color: #FAFAFA; border-right: 1px solid #E0E0E0; }
+            QFrame { background-color: #FFFFFF; border-right: 1px solid #E0E0E0; }
         """)
         folder_layout = QVBoxLayout(folder_panel)
         folder_layout.setContentsMargins(8, 6, 4, 6)
@@ -21130,53 +26782,58 @@ class ReportListPage(QWidget):
 
         # 表格
         self._table = QTableWidget()
-        self._table.setColumnCount(8)
+        self._table.setColumnCount(10)
         self._table.setHorizontalHeaderLabels([
-            "报表名称", "主表", "报表说明", "字段数", "结果记录数", "修改时间", "状态", "操作"
+                "",
+            "报表名称", "主表", "报表说明", "字段数", "结果记录数", "修改时间", "更新时间", "状态", "操作"
         ])
-        for c in range(8):
+        install_autofilter_header(self._table)
+        for c in range(10):
             hdr = self._table.horizontalHeaderItem(c)
             if hdr:
                 hdr.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self._table.verticalHeader().setVisible(False)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._table.cellDoubleClicked.connect(self._on_double_click)
         self._table.cellClicked.connect(self._on_cell_click)
+        # QSS for _table deleted for checkbox
         self._table.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #F0F0F0; background-color: #FFFFFF;
-                border: 1px solid #E0E0E0; border-radius: 4px; font-size: 13px;
-            }
-            QTableWidget::item { padding: 10px 12px; border-bottom: 1px solid #F0F0F0; }
-            QTableWidget::item:selected { background-color: #FFF7E6; color: #333; }
             QHeaderView::section {
-                background-color: #FAFAFA; color: #333; padding: 10px 12px;
-                border: none; border-bottom: 2px solid #E0E0E0; font-weight: 500;
-            }
-            QToolTip {
-                background-color: #FFF7E6; color: #333; border: 1px solid #FF8C00;
-                border-radius: 3px; padding: 4px 8px; font-size: 12px;
+                background-color: #FFFFFF;
+                color: #333333;
+                border: none;
+                border-bottom: 1px solid #E0E0E0;
+                padding: 6px 8px;
+                font-weight: 600;
             }
         """)
 
-        header = self._table.horizontalHeader()
+        from common import CheckBoxHeader
+        header = CheckBoxHeader(self._table)
+        self._table.setHorizontalHeader(header)
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(20)
+        header.setSectionsMovable(False)
+        header.setSortIndicatorShown(False)
+        header.toggled.connect(self._on_header_select_all_toggled)
         header.sectionResized.connect(self._on_column_resized)
-        for c in range(8):
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(0, 22)
+        for c in range(1, 10):
             header.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
-        self._table.setColumnWidth(0, 200)
-        self._table.setColumnWidth(1, 100)
-        self._table.setColumnWidth(2, 200)
-        self._table.setColumnWidth(3, 60)
-        self._table.setColumnWidth(4, 85)
-        self._table.setColumnWidth(5, 140)
-        self._table.setColumnWidth(6, 65)
-        self._table.setColumnWidth(7, 25)
+        self._table.setColumnWidth(1, 200)
+        self._table.setColumnWidth(2, 100)
+        self._table.setColumnWidth(3, 200)
+        self._table.setColumnWidth(4, 60)
+        self._table.setColumnWidth(5, 85)
+        self._table.setColumnWidth(6, 140)
+        self._table.setColumnWidth(7, 140)
+        self._table.setColumnWidth(8, 65)
+        self._table.setColumnWidth(9, 25)
         self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         self._col_resize_timer = QTimer()
@@ -21232,17 +26889,39 @@ class ReportListPage(QWidget):
     # ==================== 数据 ====================
 
     def refresh(self):
-        """刷新列表和文件夹树"""
-        # 刷新文件夹树
-        self._folder_data = self._repo.list_folders()
-        self._rebuild_folder_tree()
-
-        # 刷新表格
+        """刷新列表和文件夹树（后台线程加载数据）"""
+        if self._bg_processing:
+            return
         search = self._search_input.text().strip() or None
-        if self._current_folder and self._current_folder != "__root__":
-            self._all_reports = self._repo.list_by_folder(self._current_folder, search=search)
-        else:
-            self._all_reports = self._repo.list_all(search=search)
+        snap_current_folder = self._current_folder
+        self._bg_processing = True
+        import threading
+        t = threading.Thread(
+            target=self._do_refresh_bg,
+            args=(snap_current_folder, search),
+            daemon=True)
+        t.start()
+
+    def _do_refresh_bg(self, current_folder, search):
+        """后台线程加载数据"""
+        try:
+            folder_data = self._repo.list_folders()
+            if current_folder and current_folder != "__root__":
+                all_reports = self._repo.list_by_folder(current_folder, search=search)
+            else:
+                all_reports = self._repo.list_all(search=search)
+            self.refreshDataReady.emit(folder_data, all_reports, search)
+        except Exception:
+            self.refreshDataReady.emit(None, None, None)
+
+    def _on_refresh_data_ready(self, folder_data, all_reports, search):
+        """后台数据就绪，在主线程更新 UI"""
+        if not self._bg_processing:
+            return
+        self._bg_processing = False
+        self._folder_data = folder_data
+        self._rebuild_folder_tree()
+        self._all_reports = all_reports
         self._current_page = 1
         self._populate()
         if not self._col_widths_loaded:
@@ -21280,6 +26959,7 @@ class ReportListPage(QWidget):
         self._folder_tree.blockSignals(False)
 
     def _populate(self):
+        from common import TableRowCheckBox
         """填充表格"""
         total = len(self._all_reports)
         page_count = max(1, (total + self._page_size - 1) // self._page_size)
@@ -21294,46 +26974,64 @@ class ReportListPage(QWidget):
             return it
 
         self._table.setRowCount(len(page_data))
+        self._current_page_ids = []
         for row, rpt in enumerate(page_data):
-            self._table.setItem(row, 0, _item(rpt.name))
+            rid = rpt.id if hasattr(rpt, 'id') else hash(rpt.name)
+            cb = TableRowCheckBox(row_id=rid)
+            cb_w = QWidget()
+            cb_l = QHBoxLayout(cb_w)
+            cb_l.setContentsMargins(0, 0, 0, 0)
+            cb_l.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cb_l.addWidget(cb)
+            self._table.setCellWidget(row, 0, cb_w)
+            cb.setChecked(rid in self._checked_ids)
+            cb.blockSignals(True)
+            cb.setChecked(rid in self._checked_ids)
+            cb.blockSignals(False)
+            cb.toggled_with_row_id.connect(self._on_row_checkbox_toggled)
+            self._table.setItem(row, 1, _item(rpt.name))
 
             # 主表中文名（优先映射名，其次 API 名）
             main_name = self._object_name_map.get(rpt.main_object_api, rpt.main_object_api)
-            self._table.setItem(row, 1, _item(main_name))
+            self._table.setItem(row, 2, _item(main_name))
 
             # 报表说明：由主表 + JOIN 表拼接而成
             obj_apis = rpt.get_object_apis() if hasattr(rpt, 'get_object_apis') else ([rpt.main_object_api] if rpt.main_object_api else [])
             obj_names = [self._object_name_map.get(api, api) for api in obj_apis if api]
             description = " + ".join(obj_names) if obj_names else main_name
-            self._table.setItem(row, 2, _item(description))
+            self._table.setItem(row, 3, _item(description))
 
             # 字段数
             col_count = len(rpt.columns)
-            self._table.setItem(row, 3, _item(str(col_count)))
+            self._table.setItem(row, 4, _item(str(col_count)))
 
             # 结果记录数
             row_count_str = str(rpt.result_row_count) if rpt.result_row_count else "-"
-            self._table.setItem(row, 4, _item(row_count_str))
+            self._table.setItem(row, 5, _item(row_count_str))
 
             # 修改时间
-            self._table.setItem(row, 5, _item(rpt.modified_at or rpt.created_at or ""))
+            self._table.setItem(row, 6, _item(rpt.modified_at or rpt.created_at or ""))
+
+            # 更新时间（数据刷新时间）
+            self._table.setItem(row, 7, _item(rpt.last_refresh_time or ""))
 
             # 状态
             status = "已生成" if rpt.result_row_count > 0 else "未生成"
-            self._table.setItem(row, 6, _item(status))
+            self._table.setItem(row, 8, _item(status))
 
             # === 操作列：纯文本标记，点击触发菜单 ===
             action_item = QTableWidgetItem("⋮")
             action_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             action_item.setData(Qt.ItemDataRole.UserRole, rpt.id)
             action_item.setToolTip("点击查看操作")
+            action_item.setData(Qt.ItemDataRole.ToolTipRole, "点击查看操作")
             # 操作列文字样式
             font = action_item.font()
             font.setPointSize(14)
             font.setBold(True)
             action_item.setFont(font)
             action_item.setForeground(QColor("#FF8C00"))
-            self._table.setItem(row, 7, action_item)
+            self._table.setItem(row, 9, action_item)
             self._table.setRowHeight(row, 34)
 
             # 存储 report_id 到首列 UserRole
@@ -21351,7 +27049,7 @@ class ReportListPage(QWidget):
         row = self._table.currentRow()
         if row < 0:
             return ""
-        item = self._table.item(row, 0)
+        item = self._table.item(row, 1)
         if item:
             rid = item.data(Qt.ItemDataRole.UserRole)
             if rid:
@@ -21522,19 +27220,31 @@ class ReportListPage(QWidget):
             self._populate()
 
     def _on_double_click(self, row, col):
-        """双击打开编辑（操作列不触发）"""
-        if col == 7:
+        """双击打开详情页（复选框列和操作列不触发）"""
+        if col == 9 or col == 0:
             return
         start = (self._current_page - 1) * self._page_size
         idx = start + row
         if 0 <= idx < len(self._all_reports):
-            self.reportEdit.emit(self._all_reports[idx].id)
+            self.reportSelected.emit(self._all_reports[idx].id)
 
     def _on_cell_click(self, row, col):
-        """单击操作列弹出菜单"""
-        if col != 7:
+        """单击操作列弹出菜单，单击数据列打开详情页"""
+        if col == 0:
+            w = self._table.cellWidget(row, 0)
+            if w:
+                from common import TableRowCheckBox
+                cb = w.findChild(TableRowCheckBox)
+                if cb: cb.toggle()
             return
-        item = self._table.item(row, 7)
+
+        # 单击数据列 → 不做操作（双击才打开详情页）
+        if 1 <= col <= 8:
+            return
+
+        if col != 9:
+            return
+        item = self._table.item(row, 9)
         if not item:
             return
         rid = item.data(Qt.ItemDataRole.UserRole)
@@ -21548,12 +27258,13 @@ class ReportListPage(QWidget):
             QMenu::item:selected { background-color: #FFF7E6; color: #FF8C00; }
             QMenu::separator { height: 1px; background: #F0F0F0; margin: 4px 12px; }
         """)
-        menu.addAction("编辑", lambda r=rid: self.reportEdit.emit(r))
-        menu.addAction("复制", lambda r=rid: self._copy_report(r))
+        menu.addAction("👁 查看", lambda: self.reportSelected.emit(rid))
+        menu.addAction("✏️ 编辑", lambda: self.reportEdit.emit(rid))
+        menu.addAction("复制", lambda: self._copy_report(rid))
         menu.addSeparator()
         move_menu = menu.addMenu("移动到文件夹")
         move_menu.setStyleSheet(menu.styleSheet())
-        move_menu.addAction("📂 根目录", lambda r=rid: self._move_report_to_folder(r, ""))
+        move_menu.addAction("📂 根目录", lambda: self._move_report_to_folder(rid, ""))
         # 填充文件夹
         folders = self._repo.list_folders()
         def _add_dirs(parent_menu, children):
@@ -21563,7 +27274,7 @@ class ReportListPage(QWidget):
                     if node.get('children'):
                         _add_dirs(parent_menu, node['children'])
                     continue
-                parent_menu.addAction(f"📁 {node['name']}", lambda r=rid, p=np: self._move_report_to_folder(r, p))
+                parent_menu.addAction(f"📁 {node['name']}", lambda *a, np=np: self._move_report_to_folder(rid, np))
                 if node.get('children'):
                     sub = parent_menu.addMenu(node['name'])
                     sub.setStyleSheet(parent_menu.styleSheet())
@@ -21573,7 +27284,7 @@ class ReportListPage(QWidget):
                 if root_node.get('children'):
                     _add_dirs(move_menu, root_node['children'])
         menu.addSeparator()
-        menu.addAction("删除", lambda r=rid: self._delete_report(r))
+        menu.addAction("删除", lambda: self._delete_report(rid))
         # 在点击位置弹出
         cell_rect = self._table.visualRect(self._table.model().index(row, 7))
         menu.exec(self._table.viewport().mapToGlobal(cell_rect.center()))
@@ -21810,6 +27521,12 @@ class ReportListPage(QWidget):
         reply = _light_confirm(self, "确认删除",
             f"确定要删除报表 \"{rpt.name}\" 吗？\n此操作不可恢复。")
         if reply == QMessageBox.StandardButton.Yes:
+            # 先清理 MySQL 表（结果表 + 同步展示表）
+            try:
+                if hasattr(self, '_db') and self._db:
+                    self._db.drop_result_table(rid)
+            except Exception:
+                pass
             self._repo.delete(rid)
             self.refresh()
 
@@ -21878,6 +27595,66 @@ class ReportListPage(QWidget):
             pass
 
 
+
+
+    def _on_row_checkbox_toggled(self, report_id, checked):
+        if self._is_updating_checkboxes: return
+        if checked: self._checked_ids.add(report_id)
+        else: self._checked_ids.discard(report_id)
+        self._update_header_checkbox_state()
+
+    def _on_header_select_all_toggled(self, checked):
+        if self._is_updating_checkboxes: return
+        self._is_updating_checkboxes = True
+        for rid in self._current_page_ids:
+            if checked: self._checked_ids.add(rid)
+            else: self._checked_ids.discard(rid)
+        self._is_updating_checkboxes = False
+        for j in range(self._table.rowCount()):
+            wc = self._table.cellWidget(j, 0)
+            if wc:
+                from common import TableRowCheckBox
+                cb = wc.findChild(TableRowCheckBox)
+                if cb:
+                    cb.blockSignals(True)
+                    cb.setChecked(checked)
+                    cb.blockSignals(False)
+
+    def _update_header_checkbox_state(self):
+        from common import CheckBoxHeader
+        h = self._table.horizontalHeader()
+        if not isinstance(h, CheckBoxHeader): return
+        cur = set(self._current_page_ids)
+        chk = cur & self._checked_ids
+        if len(chk) == 0:
+            h.set_check_state(Qt.CheckState.Unchecked)
+        elif len(chk) == len(cur):
+            h.set_check_state(Qt.CheckState.Checked)
+        else:
+            h.set_check_state(Qt.CheckState.PartiallyChecked)
+
+    def _on_batch_refresh(self):
+        checked = list(self._checked_ids)
+        if not checked: return
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setVisible(True)
+        self._batch_status_label.setText("准备刷新 " + str(len(checked)) + " 个报表…")
+        self._batch_status_label.setVisible(True)
+        if self._batch_refresh_fn:
+            self._batch_refresh_fn(checked, self._update_batch_progress, self._on_batch_done)
+
+    def _update_batch_progress(self, overall_pct, completed, total, msg):
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(overall_pct)
+        self._batch_status_label.setText(msg)
+        self._batch_status_label.setVisible(True)
+
+    def _on_batch_done(self):
+        self._progress_bar.setVisible(False)
+        self._batch_status_label.setVisible(False)
+        self.refresh()
+
 # -- custom_report/views/sql_editor_dialog.py --
 """
 SQL 代码编辑弹窗
@@ -21887,144 +27664,1266 @@ SQL 代码编辑弹窗
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QPlainTextEdit,
-    QLabel, QFrame,
+    QLabel, QFrame, QSplitter, QLineEdit, QTextBrowser,
+    QSizePolicy, QInputDialog, QListWidget, QListWidgetItem,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor, QPalette
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QEvent
+from PyQt6.QtGui import QFont, QColor, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+import re as _re
+import json as _json
 
 
-# 浅色 QMessageBox 样式
-_MSGBOX_STYLE = """
-    QMessageBox { background-color: #FAFAFA; color: #333333; }
-    QLabel { color: #333333; font-size: 13px; }
-    QPushButton {
-        background-color: #FFFFFF; color: #333333;
-        border: 1px solid #D9D9D9; border-radius: 4px;
+# 深色 QMessageBox 样式
+_MSGBOX_STYLE = f"""
+    QMessageBox {{ background-color: {_CLAUDE_TERMINAL_THEME['bg_secondary']}; color: {_CLAUDE_TERMINAL_THEME['text_primary']}; }}
+    QLabel {{ color: {_CLAUDE_TERMINAL_THEME['text_primary']}; font-size: 13px; }}
+    QPushButton {{
+        background-color: {_CLAUDE_TERMINAL_THEME['bg_input']}; color: {_CLAUDE_TERMINAL_THEME['text_primary']};
+        border: 1px solid {_CLAUDE_TERMINAL_THEME['border_default']}; border-radius: 4px;
         padding: 6px 20px; font-size: 13px; min-width: 80px;
-    }
-    QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
+    }}
+    QPushButton:hover {{ border-color: {_CLAUDE_TERMINAL_THEME['accent_blue']}; color: {_CLAUDE_TERMINAL_THEME['accent_blue']}; }}
 """
 
 
-class SQLEditorDialog(QDialog):
-    """SQL 代码编辑弹窗"""
+# ---- SQL 补全常量 ----
 
-    def __init__(self, parent, sql: str, report, db, repo):
+_SQL_KEYWORDS = [
+    'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON', 'AS',
+    'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS', 'FULL',
+    'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
+    'HAVING', 'DISTINCT', 'ALL', 'UNION', 'EXCEPT', 'INTERSECT',
+    'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+    'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'VIEW',
+    'IF', 'EXISTS', 'NULL', 'IS', 'BETWEEN', 'LIKE',
+    'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+    'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'COALESCE', 'IFNULL',
+    'CONCAT', 'SUBSTRING', 'TRIM', 'UPPER', 'LOWER', 'LENGTH',
+    'CAST', 'CONVERT', 'DATE', 'NOW', 'CURDATE',
+]
+
+_SQL_POPUP_STYLE = f"""
+    QListWidget {{
+        border: 1px solid {_CLAUDE_TERMINAL_THEME['border_default']};
+        border-radius: 4px;
+        font-size: 13px;
+        color: {_CLAUDE_TERMINAL_THEME['text_primary']};
+        background: {_CLAUDE_TERMINAL_THEME['bg_secondary']};
+        outline: none;
+    }}
+    QListWidget::item {{
+        padding: 5px 10px;
+    }}
+    QListWidget::item:selected {{
+        background: {_CLAUDE_TERMINAL_THEME['bg_hover']};
+        color: {_CLAUDE_TERMINAL_THEME['accent_blue']};
+    }}
+"""
+
+
+
+class _AIChatWorker(QThread):
+    """后台线程调用 AI API，避免阻塞 UI"""
+    finished = pyqtSignal(str)   # AI 回复文本
+    error = pyqtSignal(str)      # 错误信息
+
+    def __init__(self, ai_assistant, user_message, sources_info, system_prompt_override=None):
+        super().__init__()
+        self._ai = ai_assistant
+        self._msg = user_message
+        self._sources = sources_info
+        self._sys_prompt = system_prompt_override
+
+    def run(self):
+        try:
+            reply = self._ai.chat(self._msg, self._sources,
+                                  system_prompt_override=self._sys_prompt)
+            self.finished.emit(reply)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _ReportAIMultiTurnWorker(QThread):
+    """报表 AI 助手多轮对话后台线程"""
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, ai_assistant, messages: list, system_prompt: str):
+        super().__init__()
+        self._ai = ai_assistant
+        self._messages = messages
+        self._sys_prompt = system_prompt
+
+    def run(self):
+        try:
+            reply = self._ai.chat_multi_turn(self._messages, self._sys_prompt)
+            self.finished.emit(reply)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+# ---- SQL 语法高亮 ----
+
+class _SQLHighlighter(QSyntaxHighlighter):
+    """SQL 语法高亮器：关键词、字符串、数字、注释、表名。"""
+
+    def __init__(self, parent, table_names=None, column_names=None):
         super().__init__(parent)
+        self._table_names = set(table_names or [])
+        self._column_names = set(column_names or [])
+        self._rules = []
+        self._build_rules()
+
+    def _build_rules(self):
+        self._rules.clear()
+
+        # 关键词：红色（Claude Code 风格）
+        kw_fmt = QTextCharFormat()
+        kw_fmt.setForeground(QColor('#FF7B72'))
+        kw_fmt.setFontWeight(QFont.Weight.Bold)
+        kw_pattern = _re.compile(
+            r'\b(' + '|'.join(_SQL_KEYWORDS) + r')\b', _re.IGNORECASE
+        )
+        self._rules.append((kw_pattern, kw_fmt))
+
+        # 字符串：浅蓝
+        str_fmt = QTextCharFormat()
+        str_fmt.setForeground(QColor('#A5D6FF'))
+        self._rules.append((_re.compile(r"'[^']*'"), str_fmt))
+        self._rules.append((_re.compile(r'"[^"]*"'), str_fmt))
+
+        # 数字：蓝色
+        num_fmt = QTextCharFormat()
+        num_fmt.setForeground(QColor('#79C0FF'))
+        self._rules.append((_re.compile(r'\b\d+(\.\d+)?\b'), num_fmt))
+
+        # 行注释：灰色斜体
+        cmt_fmt = QTextCharFormat()
+        cmt_fmt.setForeground(QColor('#8B949E'))
+        cmt_fmt.setFontItalic(True)
+        self._rules.append((_re.compile(r'--.*$'), cmt_fmt))
+
+        # 表名（反引号包裹）：紫色
+        if self._table_names:
+            tbl_fmt = QTextCharFormat()
+            tbl_fmt.setForeground(QColor('#D2A8FF'))
+            escaped = [_re.escape(t) for t in self._table_names if t]
+            if escaped:
+                self._rules.append(
+                    (_re.compile(r'`(' + '|'.join(escaped) + r')`'), tbl_fmt)
+                )
+
+        # 列名（反引号包裹）：橙色
+        if self._column_names:
+            col_fmt = QTextCharFormat()
+            col_fmt.setForeground(QColor('#FFA657'))
+            escaped = [_re.escape(c) for c in self._column_names if c]
+            if escaped:
+                self._rules.append(
+                    (_re.compile(r'`(' + '|'.join(escaped) + r')`'), col_fmt)
+                )
+
+    def set_schema(self, tables, columns):
+        """动态更新表名/列名列表并重新高亮。"""
+        self._table_names = set(tables or [])
+        self._column_names = set(columns or [])
+        self._build_rules()
+        self.rehighlight()
+
+    def highlightBlock(self, text: str):
+        for pattern, fmt in self._rules:
+            for m in pattern.finditer(text):
+                self.setFormat(m.start(), m.end() - m.start(), fmt)
+
+
+# ---- SQL 补全弹窗 ----
+
+class _SQLCompleterPopup:
+    """SQL 代码补全弹窗，支持本地即时补全和 AI 异步补全。"""
+
+    def __init__(self, editor: QPlainTextEdit):
+        self._editor = editor
+        self._popup: QListWidget | None = None
+        self._prefix_start = 0
+        self._prefix = ''
+        self._is_loading = False
+        self._loading_item: QListWidgetItem | None = None
+
+    def _ensure_popup(self):
+        if self._popup is None:
+            self._popup = QListWidget()
+            self._popup.setWindowFlags(
+                Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint
+            )
+            self._popup.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+            self._popup.setStyleSheet(_SQL_POPUP_STYLE)
+            self._popup.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self._popup.itemClicked.connect(self._on_item_clicked)
+            self._popup.installEventFilter(self)
+
+    def _get_word_at_cursor(self) -> tuple:
+        """获取光标前正在输入的单词及其起始位置。"""
+        cursor = self._editor.textCursor()
+        pos = cursor.position()
+        text = self._editor.toPlainText()
+        before = text[:pos]
+        # 匹配反引号标识符或普通单词
+        m = _re.search(r'(?:`[^`]*`|[A-Za-z_]\w*)$', before)
+        if m:
+            return m.group(), m.start()
+        return '', -1
+
+    def show_local_completions(self, prefix, tables, columns, keywords):
+        """即时显示本地补全结果。"""
+        self._ensure_popup()
+        if not prefix or len(prefix) < 1:
+            self._popup.hide()
+            return
+
+        self._prefix = prefix
+        _, self._prefix_start = self._get_word_at_cursor()
+        pu = prefix.upper().lstrip('`')
+        items = []
+
+        # 关键词
+        for kw in keywords:
+            if kw.upper().startswith(pu):
+                items.append((f'[K] {kw}', kw))
+        # 表名
+        for t in tables:
+            if t and t.upper().startswith(pu):
+                items.append((f'[T] {t}', t))
+        # 列名
+        for c in columns:
+            if c and c.upper().startswith(pu):
+                items.append((f'[C] {c}', c))
+
+        if not items:
+            self._popup.hide()
+            return
+
+        self._popup.clear()
+        self._is_loading = False
+        self._loading_item = None
+        for display, replacement in items[:20]:
+            item = QListWidgetItem(display)
+            item.setData(Qt.ItemDataRole.UserRole, replacement)
+            self._popup.addItem(item)
+
+        self._popup.setCurrentRow(0)
+        self._position_at_cursor()
+        self._popup.setMinimumWidth(max(280, self._editor.width() // 3))
+        count = min(len(items), 10)
+        self._popup.setFixedHeight(count * 28 + 6)
+        self._popup.show()
+
+    def append_ai_completions(self, suggestions):
+        """AI 补全结果返回后追加到弹窗。"""
+        if not self._popup or not suggestions:
+            return
+        self._ensure_popup()
+
+        # 分隔线
+        sep = QListWidgetItem('── AI 建议 ──')
+        sep.setFlags(Qt.ItemFlag.NoItemFlags)
+        sep.setForeground(QColor('#999999'))
+        self._popup.addItem(sep)
+
+        for s in suggestions:
+            s = s.strip()
+            if not s:
+                continue
+            item = QListWidgetItem(f'[AI] {s}')
+            item.setData(Qt.ItemDataRole.UserRole, s)
+            item.setForeground(QColor('#7B2D8B'))
+            self._popup.addItem(item)
+
+        # 调整高度
+        count = min(self._popup.count(), 14)
+        self._popup.setFixedHeight(count * 28 + 6)
+        if not self._popup.isVisible():
+            self._position_at_cursor()
+            self._popup.show()
+
+    def show_loading_indicator(self):
+        """在弹窗底部显示加载指示器。"""
+        if self._is_loading:
+            return
+        self._ensure_popup()
+        self._is_loading = True
+        self._loading_item = QListWidgetItem('⏳ AI 正在补全...')
+        self._loading_item.setFlags(Qt.ItemFlag.NoItemFlags)
+        self._loading_item.setForeground(QColor('#999999'))
+        self._popup.addItem(self._loading_item)
+        count = min(self._popup.count(), 14)
+        self._popup.setFixedHeight(count * 28 + 6)
+
+    def hide_loading_indicator(self):
+        """移除加载指示器。"""
+        if not self._is_loading or not self._loading_item:
+            return
+        self._is_loading = False
+        row = self._popup.row(self._loading_item)
+        if row >= 0:
+            self._popup.takeItem(row)
+        self._loading_item = None
+
+    def _on_item_clicked(self, item):
+        self._apply_item(item)
+
+    def apply_current(self):
+        """应用当前选中的补全项。"""
+        if self._popup and self._popup.isVisible():
+            item = self._popup.currentItem()
+            if item:
+                self._apply_item(item)
+
+    def _apply_item(self, item):
+        """将选中项插入编辑器。"""
+        if not item or not (item.flags() & Qt.ItemFlag.ItemIsSelectable):
+            return
+        replacement = item.data(Qt.ItemDataRole.UserRole)
+        if not replacement:
+            return
+        cursor = self._editor.textCursor()
+        # 选中从 prefix_start 到当前位置的文本
+        cursor.setPosition(self._prefix_start)
+        cursor.setPosition(
+            self._editor.textCursor().position(),
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        cursor.insertText(replacement)
+        self._editor.setTextCursor(cursor)
+        self.hide()
+
+    def _position_at_cursor(self):
+        """将弹窗定位到编辑器光标下方。"""
+        cursor_rect = self._editor.cursorRect()
+        pos = self._editor.mapToGlobal(cursor_rect.bottomLeft())
+        self._popup.move(pos)
+
+    def isVisible(self) -> bool:
+        return self._popup is not None and self._popup.isVisible()
+
+    def hide(self):
+        if self._popup:
+            self._popup.hide()
+
+    # ---- 事件过滤器：键盘导航 ----
+
+    def eventFilter(self, obj, event):
+        if obj is self._popup and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                current = self._popup.currentItem()
+                if current:
+                    self._apply_item(current)
+                return True
+            elif key == Qt.Key.Key_Escape:
+                self.hide()
+                self._editor.setFocus()
+                return True
+            elif key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+                return False  # 让列表自行处理
+        return False
+
+
+# ---- AI 补全后台线程 ----
+
+class _AICompletionWorker(QThread):
+    """后台线程调用 AI 进行代码补全。"""
+    finished = pyqtSignal(list)  # 补全建议列表
+    error = pyqtSignal(str)
+
+    def __init__(self, ai_assistant, sql_text, cursor_pos, sources_info):
+        super().__init__()
+        self._ai = ai_assistant
+        self._sql = sql_text
+        self._pos = cursor_pos
+        self._sources = sources_info
+
+    def run(self):
+        try:
+            before = self._sql[:self._pos]
+            after = self._sql[self._pos:]
+
+            # 构建 schema 描述
+            schema_lines = []
+            for src in (self._sources or []):
+                name = src.get('name', '')
+                fields = src.get('fields', [])
+                cols = ', '.join(
+                    f"`{f.get('key','')}`" for f in fields if f.get('key')
+                )
+                if cols:
+                    schema_lines.append(f"表 {name}: {cols}")
+            schema_text = '\n'.join(schema_lines) if schema_lines else '(无可用表)'
+
+            # 获取当前正在输入的单词
+            m = _re.search(r'(?:`[^`]*`|[A-Za-z_]\w*)$', before)
+            current_word = m.group() if m else ''
+
+            prompt = (
+                "你是一个 MySQL 代码补全助手。根据光标位置前后的 SQL 上下文，"
+                "给出最可能的补全建议。\n\n"
+                f"可用数据表和列:\n{schema_text}\n\n"
+                "规则：\n"
+                "- 只返回一个 JSON 数组，如 [\"SELECT\", \"COUNT(*)\"]\n"
+                "- 每个字符串是一个补全建议（SQL 片段）\n"
+                "- 建议 3-5 项，最可能的在前\n"
+                "- 建议应从光标位置自然延续\n"
+                "- 包含中文列名时用反引号包裹\n\n"
+                f"光标位置用 | 标记:\n"
+                f"```sql\n{before}|{after}\n```\n\n"
+                f"当前正在输入的词: {current_word}"
+            )
+
+            reply = self._ai.chat(prompt, self._sources)
+
+            # 解析 AI 响应
+            suggestions = self._parse_suggestions(reply)
+            self.finished.emit(suggestions)
+        except Exception as e:
+            self.error.emit(str(e))
+
+    @staticmethod
+    def _parse_suggestions(reply: str) -> list:
+        """从 AI 响应中提取补全建议列表。"""
+        if not reply:
+            return []
+        # 尝试提取 JSON 数组
+        m = _re.search(r'\[.*?\]', reply, _re.DOTALL)
+        if m:
+            try:
+                arr = _json.loads(m.group())
+                if isinstance(arr, list):
+                    return [str(s).strip() for s in arr if s]
+            except Exception:
+                pass
+        # 降级：按行解析
+        lines = [
+            line.strip().lstrip('- •*0123456789.）)')
+            for line in reply.strip().split('\n')
+            if line.strip() and not line.strip().startswith('```')
+        ]
+        return [l for l in lines if l][:5]
+
+
+class SQLEditorDialog(QDialog):
+
+    def _on_batch_refresh(self):
+        checked = list(self._checked_ids)
+        if not checked: return
+        self._progress_bar.setRange(0, len(checked))
+        self._progress_bar.setValue(0)
+        self._progress_bar.setVisible(True)
+        if self._batch_refresh_fn:
+            self._batch_refresh_fn(checked, self._update_batch_progress, self._on_batch_done)
+
+    def _update_batch_progress(self, completed, total, stage_pct, msg):
+        self._progress_bar.setValue(completed)
+        parent = self.parent()
+        if parent and hasattr(parent, 'append_output'):
+            parent.append_output(msg)
+
+    def _on_batch_done(self):
+        self._progress_bar.setVisible(False)
+        self.refresh()
+
+    """SQL 代码编辑弹窗（集成 AI 智能助手）"""
+
+    def __init__(self, parent, sql: str, report, db, repo, ai_assistant=None):
+        super().__init__(parent)
+        self.setMinimumSize(700, 500)
+        self.resize(1200, 650) if ai_assistant else self.resize(900, 650)
+        self.setWindowTitle("MySQL 拼表 SQL 编辑")
+        self.setStyleSheet(
+            "SQLEditorDialog { background-color: #FAFAFA; }"
+        )
         self._report = report
         self._db = db
         self._repo = repo
         self._custom_sql = ""
+        self._ai_assistant = ai_assistant
+        self._ai_worker = None  # 当前 AI 后台线程
+        self._ai_panel_visible = ai_assistant is not None
+        self._execute_error = None  # SQL 执行错误信息
+        self._apply_sql_btn = None  # AI 建议 SQL 的应用按钮
 
-        self.setWindowTitle("MySQL 代码编辑")
-        self.resize(900, 650)
-        self.setMinimumSize(700, 500)
+        # 构建 AI 上下文（可用数据源 schema）
+        self._ai_sources_info = self._build_ai_sources_info()
 
-        # 浅色调色板
-        light_palette = self.palette()
-        light_palette.setColor(QPalette.ColorRole.Window, QColor('#FAFAFA'))
-        light_palette.setColor(QPalette.ColorRole.WindowText, QColor('#333333'))
-        light_palette.setColor(QPalette.ColorRole.Base, QColor('#FFFFFF'))
-        light_palette.setColor(QPalette.ColorRole.Text, QColor('#333333'))
-        light_palette.setColor(QPalette.ColorRole.Button, QColor('#FFFFFF'))
-        light_palette.setColor(QPalette.ColorRole.ButtonText, QColor('#333333'))
-        self.setPalette(light_palette)
+        # ---- 内联补全状态 ----
+        self._completion_popup = None
+        self._ai_completion_worker = None
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.setInterval(600)
+        self._completion_timer.timeout.connect(self._trigger_ai_completion)
+        self._sql_keywords = list(_SQL_KEYWORDS)
+        self._last_completion_prefix = ''
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # Claude Code 深色主题
+        t = _CLAUDE_TERMINAL_THEME
+        _claude_apply_palette(self)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         # ---- 顶部栏 ----
         top_bar = QFrame()
-        top_bar.setStyleSheet("""
-            QFrame { background-color: #FAFAFA; border-bottom: 1px solid #E0E0E0; }
-        """)
+        top_bar.setStyleSheet(
+            f"QFrame {{ background-color: {t['bg_secondary']}; "
+            f"border-bottom: 1px solid {t['border_default']}; }}"
+        )
         top_layout = QHBoxLayout(top_bar)
         top_layout.setContentsMargins(16, 10, 16, 10)
         top_layout.setSpacing(12)
 
-        title = QLabel("📝 MySQL 拼表 SQL 编辑")
-        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #333;")
+        title = QLabel("MySQL 拼表 SQL 编辑")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {t['text_primary']};")
         top_layout.addWidget(title)
         top_layout.addStretch()
 
+        # AI 面板切换按钮
+        if ai_assistant:
+            self._toggle_ai_btn = QPushButton("🤖 收起助手")
+            self._toggle_ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._toggle_ai_btn.setStyleSheet(
+                f"QPushButton {{ border: 1px solid {t['accent_blue']}; border-radius: 4px; "
+                f"padding: 6px 14px; font-size: 13px; "
+                f"background: {t['bg_accent_subtle']}; color: {t['accent_blue']}; }}"
+                f"QPushButton:hover {{ background-color: {t['bg_hover']}; }}"
+            )
+            self._toggle_ai_btn.clicked.connect(self._toggle_ai_panel)
+            top_layout.addWidget(self._toggle_ai_btn)
+
         # 生成默认 SQL 按钮
+        _top_btn_ss = (
+            f"QPushButton {{ border: 1px solid {t['border_default']}; border-radius: 4px; "
+            f"padding: 6px 14px; font-size: 13px; background: {t['bg_input']}; "
+            f"color: {t['text_primary']}; }}"
+            f"QPushButton:hover {{ border-color: {t['accent_blue']}; color: {t['accent_blue']}; }}"
+        )
         regen_btn = QPushButton("重新生成 SQL")
         regen_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        regen_btn.setStyleSheet("""
-            QPushButton { border: 1px solid #D9D9D9; border-radius: 4px;
-                          padding: 6px 14px; font-size: 13px; background: #FFFFFF; color: #333; }
-            QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
-        """)
+        regen_btn.setStyleSheet(_top_btn_ss)
         top_layout.addWidget(regen_btn)
 
-        layout.addWidget(top_bar)
+        main_layout.addWidget(top_bar)
 
-        # ---- SQL 编辑区 ----
+        # ---- 中间区域：SQL 编辑 + AI 面板 ----
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setStyleSheet(
+            f"QSplitter {{ background-color: {t['bg_primary']}; }}"
+            f"QSplitter::handle {{ background-color: {t['border_default']}; width: 2px; }}"
+        )
+
+        # 左侧: SQL 编辑区
         self._editor = QPlainTextEdit()
         self._editor.setFont(QFont("Consolas", 12))
-        self._editor.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #FFFFFF; color: #333333;
-                border: none; padding: 16px; font-family: 'Consolas', 'Courier New', monospace;
-                font-size: 13px; line-height: 1.6;
-                selection-background-color: #FFE7BA;
-            }
-        """)
-        # 设置 Tab 宽度
+        self._editor.setStyleSheet(
+            f"QPlainTextEdit {{ "
+            f"background-color: {t['bg_primary']}; color: {t['text_primary']}; "
+            f"border: none; padding: 16px; font-family: 'Consolas', 'Courier New', monospace; "
+            f"font-size: 13px; line-height: 1.6; "
+            f"selection-background-color: {t['accent_blue']}40; }}"
+            f"{_claude_scrollbar_stylesheet()}"
+        )
         self._editor.setTabStopDistance(32)
         self._editor.setPlainText(sql)
+
+        # ---- 语法高亮 + 补全弹窗 ----
+        _tables = [s.get('name', '') for s in (self._ai_sources_info or [])]
+        _columns = []
+        for s in (self._ai_sources_info or []):
+            for f in (s.get('fields') or []):
+                if isinstance(f, dict) and f.get('key'):
+                    _columns.append(f['key'])
+        self._highlighter = _SQLHighlighter(
+            self._editor.document(), _tables, _columns
+        )
+        self._completion_popup = _SQLCompleterPopup(self._editor)
+        self._editor.textChanged.connect(self._on_editor_text_changed)
+        self._editor.cursorPositionChanged.connect(self._on_cursor_position_changed)
+        self._editor.installEventFilter(self)
+
+        self._splitter.addWidget(self._editor)
+
+        # 右侧: AI 面板
+        if ai_assistant:
+            self._ai_panel = self._build_ai_panel()
+            self._splitter.addWidget(self._ai_panel)
+            self._splitter.setSizes([560, 340])
+            if not self._ai_panel_visible:
+                self._ai_panel.hide()
+        else:
+            self._ai_panel = None
+
+        main_layout.addWidget(self._splitter, 1)
 
         # 重置 SQL 为当前生成结果
         regen_btn.clicked.connect(lambda: self._editor.setPlainText(sql))
 
-        layout.addWidget(self._editor, 1)
-
         # ---- 底部按钮栏 ----
         bottom_bar = QFrame()
-        bottom_bar.setStyleSheet("""
-            QFrame { background-color: #FAFAFA; border-top: 1px solid #E0E0E0; }
-        """)
+        bottom_bar.setStyleSheet(
+            f"QFrame {{ background-color: {t['bg_secondary']}; "
+            f"border-top: 1px solid {t['border_default']}; }}"
+        )
         bottom_layout = QHBoxLayout(bottom_bar)
         bottom_layout.setContentsMargins(16, 10, 16, 10)
         bottom_layout.setSpacing(12)
 
         hint = QLabel("编辑上方 SQL 后，点击「执行 SQL」直接在 MySQL 中运行并刷新预览。")
-        hint.setStyleSheet("font-size: 12px; color: #999;")
+        hint.setStyleSheet(f"font-size: 12px; color: {t['text_secondary']};")
         bottom_layout.addWidget(hint)
         bottom_layout.addStretch()
 
         cancel_btn = QPushButton("取消")
-        cancel_btn.setStyleSheet("""
-            QPushButton { border: 1px solid #D9D9D9; border-radius: 4px;
-                          padding: 8px 20px; font-size: 14px; background: #FFFFFF; color: #333; }
-            QPushButton:hover { border-color: #FF8C00; color: #FF8C00; }
-        """)
+        cancel_btn.setStyleSheet(_top_btn_ss)
         cancel_btn.clicked.connect(self.reject)
         bottom_layout.addWidget(cancel_btn)
 
         exec_btn = QPushButton("⚡ 执行 SQL")
         exec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        exec_btn.setStyleSheet("""
-            QPushButton { background-color: #FF8C00; color: #FFFFFF; border: none;
-                          border-radius: 4px; padding: 8px 24px; font-size: 14px; font-weight: 600; }
-            QPushButton:hover { background-color: #E67A00; }
-        """)
+        exec_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {t['accent_green']}; color: #FFFFFF; border: none; "
+            f"border-radius: 4px; padding: 8px 24px; font-size: 14px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #56D364; }}"
+        )
         exec_btn.clicked.connect(self._on_execute)
         bottom_layout.addWidget(exec_btn)
 
-        layout.addWidget(bottom_bar)
+        main_layout.addWidget(bottom_bar)
+
+    # ==================== AI 面板构建 ====================
+
+    def _build_ai_sources_info(self) -> list[dict]:
+        """从当前报表构建 AI 可用的数据源信息"""
+        sources = []
+        if not self._report:
+            return sources
+
+        # 主表
+        main_api = self._report.main_object_api
+        if main_api:
+            fields = []
+            for col in (self._report.columns or []):
+                if col.source_object_api == main_api:
+                     fields.append({'key': col.source_field, 'label': col.display_name, 'data_type': col.field_format or 'text'})
+            sources.append({
+                'id': main_api, 'name': f'主表-{main_api}',
+                'row_count': 0, 'fields': fields,
+            })
+
+        # 关联表
+        for j in (self._report.joins or []):
+            right_api = j.right_object_api
+            if right_api:
+                fields = []
+                for col in (self._report.columns or []):
+                    if col.source_object_api == right_api:
+                         fields.append({'key': col.source_field, 'label': col.display_name, 'data_type': col.field_format or 'text'})
+                sources.append({
+                    'id': right_api, 'name': f'关联表-{right_api}',
+                    'row_count': 0, 'fields': fields,
+                })
+
+        return sources
+
+    def _build_ai_panel(self) -> QWidget:
+        """构建右侧 AI 助手面板 — 复用 ReportEditorAIPanel"""
+        panel = ReportEditorAIPanel(self)
+        panel.set_title("SQL 助手")
+
+        # 连接信号
+        panel.sendMessage.connect(self._on_panel_send)
+        panel.quickAction.connect(self._on_panel_quick_action)
+        panel.newConversation.connect(self._on_panel_new_conv)
+        panel.switchConversation.connect(self._on_panel_switch_conv)
+
+        # 添加 SQL 专用快捷按钮
+        panel.add_quick_button("🔍 检查", "check_sql")
+        panel.add_quick_button("💡 优化", "optimize_sql")
+        panel.add_quick_button("📝 解释", "explain_sql")
+        panel.add_quick_button("✨ 生成", "generate_sql")
+
+        # 存储对话状态
+        self._sql_conversations: list[dict] = []
+        self._sql_active_conv_id: str = ""
+
+        return panel
+
+    # ---- 对话管理 ----
+
+    def _get_sql_conversation(self) -> dict | None:
+        for c in self._sql_conversations:
+            if c.get('id') == self._sql_active_conv_id:
+                return c
+        return None
+
+    def _ensure_sql_conversation(self) -> dict:
+        conv = self._get_sql_conversation()
+        if conv:
+            return conv
+        import uuid
+        conv_id = uuid.uuid4().hex[:8]
+        now = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        conv = {'id': conv_id, 'title': 'SQL 对话', 'created_at': now, 'messages': []}
+        self._sql_conversations.append(conv)
+        self._sql_active_conv_id = conv_id
+        return conv
+
+    def _on_panel_send(self, text: str):
+        """面板发消息 → 附带 SQL 上下文发给 AI"""
+        self._send_to_ai(text, auto_include_sql=True)
+
+    def _on_panel_quick_action(self, action: str):
+        """面板快捷按钮"""
+        prompts = {
+            'check_sql':    "请检查以下 SQL 是否存在语法错误、逻辑问题或潜在风险。如果有问题，请指出具体位置并给出修复建议。",
+            'optimize_sql': "请分析以下 SQL 的性能，给出优化建议。包括但不限于：索引使用、JOIN 顺序、子查询优化、WHERE 条件优化等。",
+            'explain_sql':  "请用简单易懂的中文解释以下 SQL 的含义和作用，包括每个部分的功能说明。",
+            'generate_sql': None,  # 特殊处理
+        }
+        prompt = prompts.get(action)
+        if prompt:
+            self._send_to_ai(prompt, auto_include_sql=True)
+        elif action == 'generate_sql':
+            self._on_ai_generate_sql()
+
+    def _on_panel_new_conv(self):
+        """新建对话"""
+        import uuid
+        conv_id = uuid.uuid4().hex[:8]
+        now = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        conv = {'id': conv_id, 'title': 'SQL 对话', 'created_at': now, 'messages': []}
+        self._sql_conversations.append(conv)
+        self._sql_active_conv_id = conv_id
+        self._ai_panel.set_title("SQL 对话")
+        self._ai_panel.replay_messages([])
+        self._ai_panel.update_history_menu(self._sql_conversations, self._sql_active_conv_id)
+
+    def _on_panel_switch_conv(self, conv_id: str):
+        """切换对话"""
+        for c in self._sql_conversations:
+            if c.get('id') == conv_id:
+                self._sql_active_conv_id = conv_id
+                self._ai_panel.set_title(c.get('title', 'SQL 对话'))
+                self._ai_panel.replay_messages(c.get('messages', []))
+                self._ai_panel.update_history_menu(self._sql_conversations, self._sql_active_conv_id)
+                return
+
+    def _ai_welcome_html(self) -> str:
+        """AI 面板欢迎消息 HTML"""
+        t = _CLAUDE_TERMINAL_THEME
+        return f"""
+        <div style="text-align:center; padding:30px 16px;
+                    font-family:{t['font_mono']}; color:{t['text_secondary']};">
+            <div style="font-size:16px; color:{t['text_primary']}; margin-bottom:16px; font-weight:600;">
+                智能助手
+            </div>
+            <div style="display:inline-block; text-align:left; line-height:2;">
+                <div>{t['prompt_char']} <b style="color:{t['text_primary']}">检查</b> — 发现 SQL 语法错误与潜在风险</div>
+                <div>{t['prompt_char']} <b style="color:{t['text_primary']}">优化</b> — 分析性能瓶颈并给出建议</div>
+                <div>{t['prompt_char']} <b style="color:{t['text_primary']}">解释</b> — 用通俗语言解读 SQL 含义</div>
+                <div>{t['prompt_char']} <b style="color:{t['text_primary']}">生成</b> — 用自然语言描述需求生成 SQL</div>
+            </div>
+            <div style="margin-top:20px; font-size:11px; color:{t['text_muted']};">
+                输入问题开始对话，或使用上方快捷按钮
+            </div>
+        </div>
+        """
+
+    # ==================== AI 面板交互 ====================
+
+    def _toggle_ai_panel(self):
+        """显示/隐藏 AI 面板"""
+        if not self._ai_panel:
+            return
+        self._ai_panel_visible = not self._ai_panel_visible
+        self._ai_panel.setVisible(self._ai_panel_visible)
+        if hasattr(self, '_toggle_ai_btn'):
+            self._toggle_ai_btn.setText("🤖 助手" if not self._ai_panel_visible else "🤖 收起助手")
+        if self._ai_panel_visible:
+            conv = self._get_sql_conversation()
+            if conv:
+                self._ai_panel.set_title(conv.get('title', 'SQL 助手'))
+                self._ai_panel.replay_messages(conv.get('messages', []))
+            self._ai_panel.update_history_menu(self._sql_conversations, self._sql_active_conv_id)
+
+    def _append_chat_message(self, role: str, content: str):
+        """向聊天历史追加一条消息"""
+        if self._ai_panel:
+            self._ai_panel.append_chat_message(role, content)
+
+    def _scroll_ai_to_bottom(self):
+        """滚动 AI 聊天区域到底部（已由面板内部处理）"""
+
+    def _set_ai_busy(self, busy: bool):
+        """设置 AI 面板忙碌状态"""
+        if self._ai_panel:
+            self._ai_panel.set_busy(busy)
+
+    def _on_ai_send(self):
+        """已废弃：发送由面板 sendMessage 信号驱动，见 _on_panel_send"""
+
+    def _send_to_ai(self, user_message: str, auto_include_sql: bool = True):
+        """后台发送消息到 AI"""
+        if not self._ai_assistant:
+            return
+
+        # 确保有对话并保存用户消息
+        conv = self._ensure_sql_conversation()
+        conv['messages'].append({"role": "user", "content": user_message})
+
+        # 自动生成标题
+        if conv.get('title', '').startswith('SQL') and len(conv['messages']) == 1:
+            conv['title'] = ReportEditorPage._auto_title(user_message)
+            if self._ai_panel:
+                self._ai_panel.set_title(conv['title'])
+
+        # 显示用户消息
+        self._append_chat_message('user', user_message)
+
+        # 自动附带当前 SQL 作为上下文
+        full_message = user_message
+        if auto_include_sql:
+            current_sql = self.get_sql()
+            if current_sql:
+                full_message += f"\n\n--- 当前编辑的 SQL ---\n```sql\n{current_sql}\n```"
+
+        self._set_ai_busy(True)
+
+        # 使用 SQL 专用 system prompt
+        sql_prompt = self._build_sql_system_prompt()
+
+        # 使用后台线程调用 AI
+        self._ai_worker = _AIChatWorker(
+            self._ai_assistant, full_message, self._ai_sources_info,
+            system_prompt_override=sql_prompt,
+        )
+        self._ai_worker.finished.connect(self._on_ai_response)
+        self._ai_worker.error.connect(self._on_ai_error)
+        self._ai_worker.start()
+
+    def _build_sql_system_prompt(self) -> str:
+        """构建通用 system prompt（不限定领域）"""
+        provider = self._ai_assistant.current_provider if self._ai_assistant else None
+        provider_name = getattr(provider, 'name', 'AI') if provider else 'AI'
+        provider_model = getattr(provider, 'default_model', '') if provider else ''
+
+        # 构建数据源 schema（作为背景知识，非限制）
+        sources_desc = []
+        for src in (self._ai_sources_info or []):
+            fields_desc = []
+            for f in (src.get('fields') or []):
+                if isinstance(f, dict):
+                    fields_desc.append(
+                        f"    - `{f.get('key','')}`: "
+                        f"{f.get('data_type','text')} ({f.get('label','')})"
+                    )
+            if fields_desc:
+                sources_desc.append(
+                    f"表 {src.get('name','')} (ID: {src.get('id','')})"
+                    + "\n" + "\n".join(fields_desc)
+                )
+        schema_text = "\n\n".join(sources_desc) if sources_desc else ''
+
+        prompt = f"""你是智能助手，由 {provider_name} 的 {provider_model} 模型驱动。
+你可以回答任何问题，包括但不限于：编程、SQL、数据分析、数学、写作、翻译、知识问答等。
+用简体中文回复，简洁清晰。"""
+
+        if schema_text:
+            prompt += f"""
+
+## 当前可用数据源（仅供参考，不回答数据问题时可忽略）
+{schema_text}
+
+当用户要求创建图表时，在回复末尾附上 JSON 图表定义:
+```json
+{{"chart_type": "bar", "title": "标题", "x_field": "维度", "y_fields": ["度量"], "aggregate_funcs": {{"度量": "SUM"}}, "color_field": "", "data_source_type": "report", "data_source_id": "ID", "data_source_name": "名称"}}
+```
+图表类型: bar, line, pie, scatter, area, table, card, gauge, funnel, treemap, sunburst, heatmap, stacked_bar, stacked_area, radar, sankey, word_cloud
+不需要图表时不要返回 JSON。"""
+
+        return prompt
+
+    def _on_ai_response(self, reply: str):
+        """AI 响应回调"""
+        self._set_ai_busy(False)
+        self._append_chat_message('assistant', reply)
+        # 保存到对话历史
+        conv = self._get_sql_conversation()
+        if conv:
+            conv['messages'].append({"role": "assistant", "content": reply})
+        if self._ai_panel:
+            self._ai_panel.update_history_menu(self._sql_conversations, self._sql_active_conv_id)
+        # 如果回复中包含 SQL 代码块，添加"应用"按钮提示
+        if '```sql' in reply.lower() or '```' in reply:
+            self._append_apply_hint(reply)
+
+    def _on_ai_error(self, error: str):
+        """AI 调用失败回调"""
+        self._set_ai_busy(False)
+        self._append_chat_message('assistant', f"❌ AI 调用失败: {error}")
+
+    def _append_apply_hint(self, reply: str):
+        """如果 AI 回复中包含 SQL，追加一个可点击的'应用'提示"""
+        import re
+        sql_blocks = re.findall(r'```(?:sql)?\s*\n?(.*?)```', reply, re.DOTALL | re.IGNORECASE)
+        if sql_blocks:
+            suggested_sql = sql_blocks[-1].strip()
+            if suggested_sql and len(suggested_sql) > 10:
+                self._ai_last_suggested_sql = suggested_sql
+                if self._ai_panel:
+                    self._ai_panel.append_chat_message('system', '💡 AI 建议了 SQL，点击下方按钮应用到编辑器。')
+                QTimer.singleShot(100, self._show_apply_sql_button)
+
+    def _show_apply_sql_button(self):
+        """在 AI 面板中显示"应用 SQL"按钮"""
+        t = _CLAUDE_TERMINAL_THEME
+        if hasattr(self, '_apply_sql_btn') and self._apply_sql_btn:
+            self._apply_sql_btn.show()
+            return
+        btn = QPushButton("📋 应用 AI 建议的 SQL")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(
+            f"QPushButton {{ background-color: {t['accent_green']}; color: #FFFFFF; border: none; "
+            f"border-radius: 4px; padding: 6px 14px; font-size: 12px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #56D364; }}"
+        )
+        btn.clicked.connect(self._on_apply_suggested_sql)
+        # 插入到面板布局底部（输入区上方）
+        if self._ai_panel:
+            lay = self._ai_panel.layout()
+            lay.insertWidget(lay.count() - 1, btn)
+        self._apply_sql_btn = btn
+
+    def _on_apply_suggested_sql(self):
+        """将 AI 建议的 SQL 应用到编辑器"""
+        if hasattr(self, '_ai_last_suggested_sql') and self._ai_last_suggested_sql:
+            self._editor.setPlainText(self._ai_last_suggested_sql)
+            self._append_chat_message('assistant', "✅ 已将建议的 SQL 应用到编辑器，您可以检查后点击「执行 SQL」。")
+            # 隐藏应用按钮
+            if hasattr(self, '_apply_sql_btn') and self._apply_sql_btn:
+                self._apply_sql_btn.hide()
+
+    # ==================== 内联代码补全 ====================
+
+    def _on_editor_text_changed(self):
+        """编辑器文本变化时触发即时本地补全 + 重启 AI 补全防抖。"""
+        if not self._completion_popup:
+            return
+        text = self._editor.toPlainText()
+        if not text.strip():
+            self._completion_popup.hide()
+            return
+        # 即时本地补全
+        self._show_local_completions()
+        # 重启 AI 补全防抖定时器
+        self._completion_timer.start()
+
+    def _on_cursor_position_changed(self):
+        """光标位置变化时（点击/方向键移动）也触发联想提示。"""
+        if not self._completion_popup:
+            return
+        # 如果弹窗已可见，不要因为文本变化导致的光标变化重复触发
+        # （textChanged 会先于此信号触发，所以弹窗应该已经显示了）
+        if self._completion_popup.isVisible():
+            return
+        text = self._editor.toPlainText()
+        if not text.strip():
+            return
+        self._show_local_completions()
+
+    def _show_local_completions(self):
+        """获取光标处单词，过滤并显示本地关键词/表名/列名补全。"""
+        if not self._completion_popup:
+            return
+        word, start = self._completion_popup._get_word_at_cursor()
+        if not word or len(word) < 2:
+            self._completion_popup.hide()
+            return
+        # 避免重复触发
+        if word == self._last_completion_prefix and self._completion_popup.isVisible():
+            return
+        self._last_completion_prefix = word
+
+        tables = [s.get('name', '') for s in (self._ai_sources_info or [])]
+        columns = []
+        for s in (self._ai_sources_info or []):
+            for f in (s.get('fields') or []):
+                if isinstance(f, dict) and f.get('key'):
+                    columns.append(f['key'])
+        self._completion_popup.show_local_completions(
+            word, tables, columns, self._sql_keywords
+        )
+
+    def _trigger_ai_completion(self):
+        """防抖定时器触发或 Ctrl+Space 手动触发 AI 补全。"""
+        if not self._ai_assistant:
+            return
+        # 取消上一次未完成的 AI 补全
+        if self._ai_completion_worker and self._ai_completion_worker.isRunning():
+            self._ai_completion_worker.quit()
+            self._ai_completion_worker.wait(1000)
+            self._ai_completion_worker = None
+
+        word, _ = (self._completion_popup._get_word_at_cursor()
+                   if self._completion_popup else ('', -1))
+        if not word or len(word) < 2:
+            return
+
+        sql = self._editor.toPlainText()
+        cursor_pos = self._editor.textCursor().position()
+
+        if self._completion_popup:
+            self._completion_popup.show_loading_indicator()
+            if not self._completion_popup.isVisible():
+                self._show_local_completions()
+
+        self._ai_completion_worker = _AICompletionWorker(
+            self._ai_assistant, sql, cursor_pos, self._ai_sources_info
+        )
+        self._ai_completion_worker.finished.connect(self._on_ai_completions_ready)
+        self._ai_completion_worker.error.connect(self._on_ai_completions_error)
+        self._ai_completion_worker.start()
+
+    def _on_ai_completions_ready(self, suggestions):
+        """AI 补全结果返回。"""
+        if self._completion_popup:
+            self._completion_popup.hide_loading_indicator()
+            if suggestions and self._completion_popup.isVisible():
+                self._completion_popup.append_ai_completions(suggestions)
+
+    def _on_ai_completions_error(self, error_msg):
+        """AI 补全失败，静默处理。"""
+        if self._completion_popup:
+            self._completion_popup.hide_loading_indicator()
+
+    def eventFilter(self, obj, event):
+        """拦截 Ctrl+Space 触发 AI 补全，以及补全弹窗键盘导航。"""
+        if obj is self._editor and event.type() == QEvent.Type.KeyPress:
+            # Ctrl+Space 立即触发 AI 补全
+            if (event.key() == Qt.Key.Key_Space
+                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                self._completion_timer.stop()
+                self._trigger_ai_completion()
+                return True
+            # 如果补全弹窗可见，处理导航键
+            if self._completion_popup and self._completion_popup.isVisible():
+                key = event.key()
+                if key == Qt.Key.Key_Down:
+                    popup = self._completion_popup._popup
+                    if popup:
+                        popup.setFocus()
+                        if popup.currentRow() < 0:
+                            popup.setCurrentRow(0)
+                    return True
+                elif key == Qt.Key.Key_Up:
+                    popup = self._completion_popup._popup
+                    if popup:
+                        popup.setFocus()
+                        popup.setCurrentRow(popup.count() - 1)
+                    return True
+                elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                    self._completion_popup.apply_current()
+                    return True
+                elif key == Qt.Key.Key_Escape:
+                    self._completion_popup.hide()
+                    return True
+        return super().eventFilter(obj, event)
+
+    # ==================== 快捷 AI 操作 ====================
+
+    def _on_ai_check_sql(self):
+        """快捷操作：检查当前 SQL"""
+        prompt = "请检查以下 SQL 是否存在语法错误、逻辑问题或潜在风险。如果有问题，请指出具体位置并给出修复建议。"
+        self._send_to_ai(prompt, auto_include_sql=True)
+
+    def _on_ai_optimize_sql(self):
+        """快捷操作：SQL 优化建议"""
+        prompt = "请分析以下 SQL 的性能，给出优化建议。包括但不限于：索引使用、JOIN 顺序、子查询优化、WHERE 条件优化等。"
+        self._send_to_ai(prompt, auto_include_sql=True)
+
+    def _on_ai_explain_sql(self):
+        """快捷操作：解释 SQL"""
+        prompt = "请用简单易懂的中文解释以下 SQL 的含义和作用，包括每个部分的功能说明。"
+        self._send_to_ai(prompt, auto_include_sql=True)
+
+    def _on_ai_generate_sql(self):
+        """快捷操作：自然语言生成 SQL"""
+        t = _CLAUDE_TERMINAL_THEME
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+        _dlg = QDialog(self)
+        _dlg.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        _dlg.setMinimumSize(480, 200)
+        _dlg.setStyleSheet(
+            f"QDialog {{ background-color: {t['bg_secondary']}; "
+            f"border: 1px solid {t['border_default']}; border-radius: 6px; }}"
+            f"QLabel {{ color: {t['text_primary']}; font-size: 13px; }}"
+            f"QLineEdit {{ border: 1px solid {t['border_default']}; border-radius: 4px; "
+            f"padding: 8px 12px; background: {t['bg_input']}; "
+            f"color: {t['text_primary']}; font-size: 13px; }}"
+            f"QPushButton {{ background: {t['bg_input']}; color: {t['text_primary']}; "
+            f"border: 1px solid {t['border_default']}; border-radius: 4px; "
+            f"padding: 6px 20px; font-size: 13px; min-width: 80px; }}"
+            f"QPushButton:hover {{ border-color: {t['accent_blue']}; color: {t['accent_blue']}; }}"
+        )
+        _lo = QVBoxLayout(_dlg)
+        _lo.setContentsMargins(16, 16, 16, 16)
+        _lo.setSpacing(12)
+        _lbl = QLabel("请用自然语言描述你需要的 SQL 查询：\n（例如：查询本月新增商机的总金额，按销售员分组）")
+        _lbl.setWordWrap(True)
+        _lo.addWidget(_lbl)
+        _edit = QLineEdit()
+        _edit.setPlaceholderText("输入 SQL 查询描述...")
+        _lo.addWidget(_edit)
+        _bl = QHBoxLayout()
+        _bl.setSpacing(8)
+        _ok_btn = QPushButton("OK")
+        _cancel_btn = QPushButton("Cancel")
+        _ok_btn.clicked.connect(_dlg.accept)
+        _cancel_btn.clicked.connect(_dlg.reject)
+        _bl.addWidget(_ok_btn)
+        _bl.addWidget(_cancel_btn)
+        _lo.addLayout(_bl)
+        # 居中弹出（限制在屏幕内）
+        _dlg.adjustSize()
+        screen = QApplication.primaryScreen().availableGeometry()
+        dx = self.x() + self.width() // 2 - _dlg.width() // 2
+        dy = self.y() + self.height() // 2 - _dlg.height() // 2
+        dx = max(screen.left(), min(dx, screen.right() - _dlg.width()))
+        dy = max(screen.top(),  min(dy, screen.bottom() - _dlg.height()))
+        _dlg.move(dx, dy)
+        # 鼠标拖拽移动
+        def _mp(e):
+            if e.button() == Qt.MouseButton.LeftButton:
+                _dlg._drag_pos = e.globalPosition().toPoint() - _dlg.frameGeometry().topLeft()
+        _dlg.mousePressEvent = _mp
+        def _mm(e):
+            if _dlg._drag_pos is not None and e.buttons() == Qt.MouseButton.LeftButton:
+                _dlg.move(e.globalPosition().toPoint() - _dlg._drag_pos)
+        _dlg.mouseMoveEvent = _mm
+        def _mr(e):
+            _dlg._drag_pos = None
+        _dlg.mouseReleaseEvent = _mr
+        _is_ok = _dlg.exec() == QDialog.DialogCode.Accepted
+        description = _edit.text().strip() if _is_ok else ""
+        if description:
+            # 确保 AI 面板可见
+            if not self._ai_panel_visible:
+                self._toggle_ai_panel()
+            prompt = f"请根据以下需求生成 MySQL SQL 语句。注意使用中文列名（因为表中的列名是中文）：\n\n{description.strip()}"
+            self._send_to_ai(prompt, auto_include_sql=False)
+
+    # ==================== SQL 执行 ====================
+
+    def _execute_sql_internal(self, sql: str):
+        """在对话框内部执行 SQL，返回 (成功, 错误信息)"""
+        if not self._db or not self._db.available:
+            return False, "数据库未连接，请先在设置中配置 MySQL 连接。"
+        try:
+            # 仅当为 CREATE TABLE 语句时才删除旧结果表
+            # 跳过前导注释行，取第一个非注释语句判断 SQL 类型
+            _is_create = False
+            _is_select = False
+            for _line in sql.strip().splitlines():
+                _line = _line.strip()
+                if _line and not _line.startswith('--') and not _line.startswith('#'):
+                    _upper = _line.upper()
+                    _is_create = _upper.startswith('CREATE TABLE')
+                    _is_select = _upper.startswith('SELECT')
+                    break
+            # 如果是 SELECT 查询，自动包装为 CREATE TABLE cr_xxx AS (sql)
+            if _is_select and not _is_create and self._report and self._report.id:
+                _table = self._db.result_table_name(self._report.id)
+                sql = f"CREATE TABLE `{_table}` AS\n{sql}"
+                _is_create = True
+            if _is_create and self._report and self._report.id:
+                self._db.drop_result_table(self._report.id)
+            # 执行 SQL
+            self._db.execute(sql)
+            # 仅当为 CREATE TABLE 时更新报表状态（非建表 SQL 不更新结果表元信息）
+            if _is_create and self._report:
+                table_name = self._db.result_table_name(self._report.id)
+                self._report.result_table_name = table_name
+                row_count = self._db.get_result_count(self._report.id)
+                self._report.result_row_count = row_count
+                import datetime as _dt
+                self._report.last_refresh_time = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                if self._repo:
+                    self._repo.save(self._report)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def _on_execute(self):
+        """执行 SQL：成功则关闭对话框，失败则自动请求 AI 分析"""
+        try:
+            # 清理补全弹窗和线程
+            if self._completion_popup:
+                self._completion_popup.hide()
+            self._completion_timer.stop()
+            if self._ai_completion_worker and self._ai_completion_worker.isRunning():
+                self._ai_completion_worker.quit()
+                self._ai_completion_worker.wait(1000)
+                self._ai_completion_worker = None
+
+            self._custom_sql = self.get_sql()
+            if not self._custom_sql:
+                return
+
+            if not self._db or not self._db.available:
+                frameless_message_box(self, "数据库未连接", "请先在设置中配置 MySQL 连接。")
+                return
+
+            # 执行 SQL
+            success, error_msg = self._execute_sql_internal(self._custom_sql)
+            if success:
+                self._execute_error = None
+                self.accept()
+            else:
+                self._execute_error = error_msg
+                print(f"[SQL] 执行失败: {error_msg}")
+                if self._ai_assistant:
+                    if not self._ai_panel_visible:
+                        self._toggle_ai_panel()
+                    ai_prompt = f"SQL 执行失败，错误信息如下，请分析原因并给出修复建议：\n\n错误: {error_msg}"
+                    self._send_to_ai(ai_prompt, auto_include_sql=True)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            frameless_message_box(self, "执行出错", f"执行 SQL 时发生异常:\n{e}")
 
     def get_sql(self) -> str:
         """获取编辑后的 SQL"""
         return self._editor.toPlainText().strip()
 
-    def _on_execute(self):
-        """执行 SQL 并关闭"""
-        self._custom_sql = self.get_sql()
-        if not self._custom_sql:
-            return
-        self.accept()
+    @property
+    def execute_error(self) -> str | None:
+        """获取 SQL 执行错误信息（仅在执行失败时有值）"""
+        return self._execute_error
+
+    # ==================== 工具方法 ====================
+
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """转义 HTML 特殊字符（委托给共享函数）"""
+        return (text.replace('&', '&amp;').replace('<', '&lt;')
+                    .replace('>', '&gt;').replace('\n', '<br>'))
+
+    @staticmethod
+    def _simple_markdown_to_html(text: str) -> str:
+        """Markdown → HTML（委托给共享函数 _claude_markdown_to_html）"""
+        return _claude_markdown_to_html(text)
+
+
 
 
 # -- custom_report/views/table_selector_panel.py --
@@ -22055,11 +28954,12 @@ class _MySQLTableDialog(QDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.setWindowTitle("添加 MySQL 表")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(500, 420)
         self._db = db
         self._selected_table: str = ""
         self.setStyleSheet("""
-            QDialog { background-color: #FAFAFA; }
+            QDialog { background-color: #FFFFFF; }
             QLabel { color: #333333; font-size: 13px; }
             QLineEdit {
                 background-color: #FFFFFF; color: #333333;
@@ -22075,7 +28975,7 @@ class _MySQLTableDialog(QDialog):
             QTableWidget::item { padding: 6px 10px; }
             QTableWidget::item:selected { background-color: #FFF7E6; color: #333333; }
             QHeaderView::section {
-                background-color: #FAFAFA; color: #333333;
+                background-color: #FFFFFF; color: #333333;
                 border: none; border-bottom: 2px solid #E0E0E0;
                 padding: 6px; font-weight: 500;
             }
@@ -22106,6 +29006,7 @@ class _MySQLTableDialog(QDialog):
         self._table = QTableWidget()
         self._table.setColumnCount(3)
         self._table.setHorizontalHeaderLabels(["表名", "行数", "列数"])
+        install_autofilter_header(self._table)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -22169,7 +29070,7 @@ class _MySQLTableDialog(QDialog):
     def _on_accept(self):
         row = self._table.currentRow()
         if row >= 0:
-            item = self._table.item(row, 0)
+            item = self._table.item(row, 1)
             if item:
                 self._selected_table = item.text()
         self.accept()
@@ -22187,6 +29088,7 @@ class TableSelectorPanel(QWidget):
     addMySQLRequested = pyqtSignal()          # 请求添加 MySQL 表
     refreshExcelRequested = pyqtSignal(str)   # 请求刷新 Excel 表数据 (table_name)
 
+    refreshDataReady = pyqtSignal(list, bool)  # (table_entries, include_mysql_tables)
     def __init__(self, db=None, excel_repo=None, parent=None):
         """
         Args:
@@ -22198,7 +29100,10 @@ class TableSelectorPanel(QWidget):
         self._excel_repo = excel_repo
         self._table_data: dict[str, dict] = {}  # {table_name: {display_name, fields, source_type, ...}}
         self._name_map: dict[str, str] = {}  # {raw_name: mapped_name}
+        self._bg_processing = False  # 后台数据加载标志
+        self.refreshDataReady.connect(self._on_refresh_data_ready)
         self._setup_ui()
+        self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
 
     def set_name_mapping(self, mapping: dict[str, str]):
         """设置表名映射 {api_name: chinese_display_name} 用于显示。"""
@@ -22236,7 +29141,7 @@ class TableSelectorPanel(QWidget):
         import_row.setContentsMargins(8, 4, 8, 4)
         import_row.setSpacing(4)
 
-        excel_btn = QPushButton("📥 导入Excel")
+        excel_btn = QPushButton("📥 导入文件")
         excel_btn.setFixedHeight(28)
         excel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         excel_btn.setStyleSheet("""
@@ -22257,6 +29162,17 @@ class TableSelectorPanel(QWidget):
         """)
         mysql_btn.clicked.connect(self.addMySQLRequested.emit)
         import_row.addWidget(mysql_btn, 1)
+        # 刷新按钮
+        self._refresh_btn = QPushButton("🔄 刷新")
+        self._refresh_btn.setFixedHeight(28)
+        self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._refresh_btn.setStyleSheet("""
+            QPushButton { background-color: #FFFFFF; color: #333; border: 1px solid #D9D9D9;
+                          border-radius: 3px; padding: 2px 10px; font-size: 12px; }
+            QPushButton:hover { border-color: #1890FF; color: #1890FF; }
+        """)
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
+        import_row.addWidget(self._refresh_btn, 1)
 
         layout.addLayout(import_row)
 
@@ -22277,16 +29193,16 @@ class TableSelectorPanel(QWidget):
         bottom_layout.addWidget(self._count_label)
         bottom_layout.addStretch()
 
-        refresh_btn = QPushButton("刷新")
-        refresh_btn.setFixedSize(52, 24)
-        refresh_btn.clicked.connect(self.refresh)
-        bottom_layout.addWidget(refresh_btn)
+        self._refresh_text = QLabel("<a href='#' style='color:#1890FF; text-decoration:none; font-size:11px;'>刷新</a>")
+        self._refresh_text.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._refresh_text.linkActivated.connect(lambda _: self.refresh())
+        bottom_layout.addWidget(self._refresh_text)
 
         layout.addWidget(bottom)
 
         # 样式
         self.setStyleSheet("""
-            QWidget { background-color: #FAFAFA; }
+            QWidget { background-color: #FFFFFF; }
             QLabel#panel_title {
                 font-size: 13px; font-weight: 600; color: #333;
                 padding: 10px 12px;
@@ -22312,49 +29228,134 @@ class TableSelectorPanel(QWidget):
 
     # ==================== 数据 ====================
 
+    def _restore_refresh_btn(self):
+        """恢复刷新按钮状态"""
+        if hasattr(self, '_refresh_btn'):
+            self._refresh_btn.setText("🔄 刷新")
+            self._refresh_btn.setEnabled(True)
+
+
+    def _on_refresh_clicked(self):
+        """刷新按钮点击的中转方法"""
+        import sys
+        print("[D] _on_refresh_clicked executed", file=sys.stderr)
+        try:
+            self.refresh()
+            print("[D] self.refresh() returned OK", file=sys.stderr)
+        except Exception as _e:
+            import traceback
+            print("[D] self.refresh() FAILED: %s" % _e, file=sys.stderr)
+            traceback.print_exc()
+        
     def refresh(self, include_mysql_tables: bool = False):
-        """从 MySQL 查询可用表。
+        """从 MySQL 查询可用表（后台线程执行查询）。
 
         Args:
             include_mysql_tables: 是否包含非管理的直连 MySQL 表。
                                   默认 False，只显示 CRM 对象表 + Excel 导入表。
         """
+        if self._bg_processing:
+            return
+        self._bg_processing = True
+        self._count_label.setText("刷新中...")
         self._list_widget.clear()
         self._table_data.clear()
+        _btn = getattr(self, "_refresh_btn", None)
+        if _btn:
+            _btn.setText('刷新中...')
 
         if not self._db or not self._db.available:
             self._show_placeholder("MySQL 未连接", "请在设置中配置并启用 MySQL 连接")
+            self._restore_refresh_btn()
+            self._bg_processing = False
             return
 
+        import threading
+        t = threading.Thread(
+            target=self._do_refresh_bg,
+            args=(include_mysql_tables,),
+            daemon=True)
+        t.start()
+
+    def _do_refresh_bg(self, include_mysql_tables: bool):
+        """后台线程执行 MySQL 查询"""
         try:
-            crm_tables = self._db.execute("SHOW TABLES LIKE '对象-%'") or []
-        except Exception as e:
-            self._show_placeholder("查询失败", str(e)[:80])
+            entries = []  # list of {table_name, display_name, source_type}
+            # 强制刷新连接
+            try:
+                _conn = self._db._get_conn()
+                if _conn:
+                    _conn.ping(reconnect=True)
+            except Exception:
+                pass
+
+            # 1. 对象表
+            try:
+                result = self._db.execute("SHOW TABLES LIKE '对象-%'")
+                if result:
+                    for row in result:
+                        tname = list(row.values())[0] if row else ""
+                        if tname:
+                            entries.append({"table_name": tname, "source_type": "crm"})
+            except Exception:
+                pass
+
+            # 1b. sr_* 源表
+            try:
+                sr_tables = self._db.execute("SHOW TABLES LIKE 'sr_%'")
+                if sr_tables:
+                    for row in sr_tables:
+                        tname = list(row.values())[0] if row else ""
+                        if tname and tname.startswith("sr_") and tname not in [e["table_name"] for e in entries]:
+                            entries.append({"table_name": tname, "source_type": "crm"})
+            except Exception:
+                pass
+
+            # 2. Excel 导入表
+            if self._excel_repo:
+                for ds in self._excel_repo.list_all():
+                    tbl = ds.mysql_table
+                    if tbl and tbl not in [e["table_name"] for e in entries]:
+                        try:
+                            if self._db.table_exists(tbl):
+                                entries.append({"table_name": tbl, "source_type": "excel"})
+                        except Exception:
+                            pass
+
+            # 3. 内置直连表
+            for known_table in ("部门员工",):
+                if known_table not in [e["table_name"] for e in entries]:
+                    try:
+                        if self._db.table_exists(known_table):
+                            entries.append({"table_name": known_table, "source_type": "mysql"})
+                    except Exception:
+                        pass
+
+            self.refreshDataReady.emit(entries, include_mysql_tables)
+        except Exception:
+            self.refreshDataReady.emit([], False)
+
+    def _on_refresh_data_ready(self, entries, include_mysql_tables):
+        """后台查询完成，在主线程更新 UI"""
+        if not self._bg_processing:
+            return
+        self._bg_processing = False
+        if not entries:
+            self._show_placeholder("查询失败", "MySQL 连接可能已断开")
+            self._restore_refresh_btn()
             return
 
-        # 1. 对象表（仅显示 对象-XXX）
-        for row in crm_tables:
-            table_name = list(row.values())[0] if row else ""
-            if not table_name:
-                continue
-            self._add_table_item(table_name, 'crm')
-
-        # 2. (sr_% / ex_% / 普通MySQL表等不再显示)
-
-        # 3. (已根据用户要求隐藏，不显示其他MySQL表)
-        if include_mysql_tables:
-            # (已根据用户要求隐藏，不再显示普通MySQL表)
-            pass
-
-        # 4. 始终追加「部门员工」等内置直连表（如果存在）
-        for known_table in ('部门员工',):
-            if known_table not in self._table_data and self._db.table_exists(known_table):
-                self._add_table_item(known_table, 'mysql')
+        self._list_widget.clear()
+        self._table_data.clear()
+        for e in entries:
+            self._add_table_item(e["table_name"], e["source_type"])
 
         if not self._table_data:
             self._show_placeholder("暂无数据表", "请先在对象查询中同步数据到 MySQL\n或通过上方按钮导入 Excel")
         else:
             self._count_label.setText(f"共 {len(self._table_data)} 张表")
+        self._restore_refresh_btn()
+        self._emit_refreshed()
 
     def add_mysql_table(self, table_name: str) -> bool:
         """按需添加一个直连 MySQL 表到列表。
@@ -22383,9 +29384,9 @@ class TableSelectorPanel(QWidget):
             icon = "📊"
             if self._excel_repo:
                 for ds in self._excel_repo.list_all():
-                    if ds.mysql_table == table_name:
-                        display_name = ds.name
-                        break
+                   if ds.mysql_table == table_name:
+                       display_name = ds.name
+                       break
         else:
             display_name = table_name
             icon = "🗄️"
@@ -22398,19 +29399,19 @@ class TableSelectorPanel(QWidget):
             cols = self._db.execute(f"SHOW COLUMNS FROM `{table_name}`")
             if cols:
                 fields = [r['Field'] for r in cols
-                          if r['Field'] not in ('_id', '_hash', '_sync_time', '_row_id')]
+                         if r['Field'] not in ('_id', '_hash', '_sync_time', '_row_id')]
             cnt = self._db.execute(f"SELECT COUNT(*) AS cnt FROM `{table_name}`")
             if cnt:
                 row_count = cnt[0].get('cnt', 0)
             col_names = {r['Field'] for r in cols} if cols else set()
             if '_sync_time' in col_names:
                 try:
-                    sync = self._db.execute(
-                        f"SELECT MAX(`_sync_time`) AS last_sync FROM `{table_name}`")
-                    if sync and sync[0].get('last_sync'):
-                        last_sync = str(sync[0]['last_sync'])[:19]
+                   sync = self._db.execute(
+                       f"SELECT MAX(`_sync_time`) AS last_sync FROM `{table_name}`")
+                   if sync and sync[0].get('last_sync'):
+                       last_sync = str(sync[0]['last_sync'])[:19]
                 except Exception:
-                    pass
+                   pass
         except Exception:
             pass
 
@@ -22434,6 +29435,15 @@ class TableSelectorPanel(QWidget):
         """获取已缓存的表字段列表"""
         data = self._table_data.get(table_name, {})
         return data.get('fields', [])
+
+    def _emit_refreshed(self):
+        """通知父级控件数据表已刷新，清除其字段缓存。"""
+        p = self.parent()
+        while p is not None:
+            if hasattr(p, '_on_table_selector_refreshed'):
+                p._on_table_selector_refreshed()
+                break
+            p = p.parent()
 
     # ==================== 交互 ====================
 
@@ -22476,11 +29486,12 @@ class TableSelectorPanel(QWidget):
 
     def _delete_direct_table(self, table_name: str, source_type: str):
         """删除直连表（Excel 导入 / MySQL 表）：从 MySQL 删表 + 从仓库移除记录"""
+        from common import frameless_message_box
         from PyQt6.QtWidgets import QMessageBox
         data = self._table_data.get(table_name, {})
         display_name = data.get('display_name', table_name)
 
-        reply = QMessageBox.question(
+        reply = frameless_message_box(
             self, '确认删除',
             f'确定要删除「{display_name}」吗？\n\n'
             f'MySQL 表 {table_name} 将被删除，此操作不可撤销。',
@@ -22509,7 +29520,7 @@ class TableSelectorPanel(QWidget):
                 errors.append(f"仓库: {e}")
 
         if errors:
-            QMessageBox.warning(self, '删除失败', '；'.join(errors))
+            frameless_message_box(self, '删除失败', '；'.join(errors))
         else:
             # 刷新列表
             self.refresh()
@@ -22849,7 +29860,7 @@ class JoinCanvas(QGraphicsView):
         """视图基础设置"""
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -22920,6 +29931,7 @@ class JoinCanvas(QGraphicsView):
         """结束连线拖拽"""
         self._connecting = False
         self._connect_temp_line = None
+        # 移除场景级临时连线
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
         # 查找目标卡片
@@ -22946,6 +29958,7 @@ class JoinCanvas(QGraphicsView):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("设置匹配关系")
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dialog.setMinimumWidth(420)
         dialog.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         # 强制浅色调色板，防止被系统深色主题影响
@@ -22959,7 +29972,7 @@ class JoinCanvas(QGraphicsView):
         light_palette.setColor(light_palette.ButtonText, QColor('#333333'))
         dialog.setPalette(light_palette)
         dialog.setStyleSheet("""
-            QDialog { background-color: #FAFAFA; }
+            QDialog { background-color: #FFFFFF; }
             QLabel { color: #333333; font-size: 13px; }
             QComboBox {
                 background-color: #FFFFFF; color: #333333;
@@ -23051,8 +30064,8 @@ class JoinCanvas(QGraphicsView):
         # 检查是否已存在连线
         existing = self._scene.get_line_between(self._connect_from_api, target_card.object_api)
         if existing:
-            from PyQt6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(
+            from common import frameless_message_box
+            reply = frameless_message_box(
                 self, "连线已存在",
                 f"两表之间已有连线 ({existing.left_field} = {existing.right_field})。\n是否替换？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -23275,6 +30288,7 @@ class JoinLine(QGraphicsPathItem):
         self.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsSelectable, True)
 
         self.update_path()
+        self.setCacheMode(QGraphicsPathItem.CacheMode.ItemCoordinateCache)
 
     @property
     def left_api(self) -> str:
@@ -23477,9 +30491,10 @@ class JoinLine(QGraphicsPathItem):
 
         dlg = QDialog()
         dlg.setWindowTitle("编辑匹配字段")
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dlg.setMinimumWidth(440)
         dlg.setStyleSheet("""
-            QDialog { background-color: #FAFAFA; }
+            QDialog { background-color: #FFFFFF; }
             QLabel { color: #333333; font-size: 13px; }
             QComboBox { background-color: #FFFFFF; color: #333333;
                         border: 1px solid #D9D9D9; border-radius: 4px;
@@ -23723,6 +30738,9 @@ class TableCard(QGraphicsObject):
         self._header_height = CARD_HEADER_HEIGHT
         self._fields_offset = CARD_HEADER_HEIGHT + SEARCH_BAR_HEIGHT
         self.set_fields(fields or [])
+
+        # 启用图形项缓存
+        self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
         self._setup_search_input()
 
     # ==================== 尺寸计算 ====================
@@ -24073,7 +31091,9 @@ class ReportManager:
     """报表功能管理器 — 门面类"""
 
     def __init__(self, mysql_config: dict = None, crm_client=None, app_config: dict = None,
-                 save_config_fn=None, load_config_fn=None):
+                 save_config_fn=None, load_config_fn=None, append_output_fn=None):
+        self._append_output = append_output_fn
+        self._append_output = append_output_fn
         """
         Args:
             mysql_config: config.json → mysql_config
@@ -24082,19 +31102,21 @@ class ReportManager:
             save_config_fn: callable(config_dict)，保存配置到用户个人文件
             load_config_fn: callable() → config_dict，重新加载最新配置
         """
-        self._config = app_config or {}
+        self._app_config = app_config or {}
         self._save_config_fn = save_config_fn
         self._load_config_fn = load_config_fn
+        self._mysql_config = mysql_config or {}
+        self._crm_client = crm_client
 
         # 数据库
-        mysql_cfg = mysql_config or self._config.get('mysql_config', {})
+        mysql_cfg = mysql_config or self._app_config.get('mysql_config', {})
         self._db = ReportDatabase(mysql_cfg) if mysql_cfg.get('enabled') else None
 
         # 持久化
         self._repo = ReportRepository()
 
         # 数据获取
-        self._fetcher = DataFetcher(crm_client, self._config)
+        self._fetcher = DataFetcher(crm_client, self._app_config)
 
         # 同步和刷新
         self._syncer = SourceTableSyncer(self._db, self._fetcher) if self._db else None
@@ -24132,7 +31154,7 @@ class ReportManager:
 
         # 执行 v1→v2 迁移
         try:
-            run_migration_if_needed(self._config)
+            run_migration_if_needed(self._app_config)
         except Exception as e:
             logger.warning(f"配置迁移失败（非致命）: {e}")
 
@@ -24152,10 +31174,10 @@ class ReportManager:
             try:
                 cfg = self._load_config_fn()
                 if cfg:
-                    self._config = cfg
+                    self._app_config = cfg
             except Exception:
                 pass
-        crm_objs = self._config.get('fxiaoke', {}).get('crm_objects', [])
+        crm_objs = self._app_config.get('fxiaoke', {}).get('crm_objects', [])
         if not crm_objs:
             # 默认对象列表
             crm_objs = [
@@ -24175,7 +31197,7 @@ class ReportManager:
                 name = obj.get('name', api)
                 if api:
                     # 从配置获取字段列表
-                    field_cfg = self._config.get('fxiaoke', {}).get('crm_object_fields', {}).get(api, {})
+                    field_cfg = self._app_config.get('fxiaoke', {}).get('crm_object_fields', {}).get(api, {})
                     fields = []
                     if field_cfg and isinstance(field_cfg, dict):
                         for key, info in field_cfg.items():
@@ -24314,6 +31336,72 @@ class ReportManager:
             self._repo.save(report)
         return result
 
+
+    def _on_batch_refresh_reports(self, report_ids, progress_callback=None, done_callback=None):
+        if hasattr(self, '_batch_worker') and self._batch_worker:
+            self._batch_worker.cancel()
+            self._batch_worker = None
+        if not report_ids:
+            if done_callback: done_callback()
+            return
+        self._append_output('[刷新] 开始刷新 ' + str(len(report_ids)) + ' 个报表…\n')
+        worker = BatchRefreshWorker(
+            mysql_config=self._mysql_config, crm_client=self._crm_client,
+            app_config=self._app_config, report_ids=report_ids,
+        )
+        self._batch_worker = worker
+        current_worker = worker
+
+        # 在主线程收集结果（信号槽回调）
+        batch_results = []
+
+        def _on_report_finished(name, ok, error_msg, row_count):
+            if ok:
+                self._append_output('[刷新] ✅ ' + name + ': 刷新成功, ' + str(row_count) + ' 条\n')
+                batch_results.append((name, True, row_count))
+            else:
+                self._append_output('[刷新] ❌ ' + name + ': 失败 - ' + error_msg + '\n')
+                batch_results.append((name, False, error_msg))
+
+        worker.report_finished.connect(_on_report_finished)
+
+        if progress_callback:
+            worker.progress_updated.connect(progress_callback)
+
+        def _on_all_done():
+            if self._batch_worker is not current_worker: return
+            self._batch_worker = None
+
+            # ---- 刷新汇总 ----
+            total = len(report_ids)
+            success_list = [(n, rc) for n, ok, rc in batch_results if ok]
+            fail_list = [(n, msg) for n, ok, msg in batch_results if not ok]
+            ok_count = len(success_list)
+            fail_count = len(fail_list)
+
+            self._append_output('\n[刷新] ========== 刷新汇总 ==========\n')
+            self._append_output('[刷新] 总计: ' + str(total) + ' 个报表\n')
+            self._append_output('[刷新] 成功: ' + str(ok_count) + ' 个, 失败: ' + str(fail_count) + ' 个\n')
+
+            if success_list:
+                self._append_output('[刷新] \n[刷新] ✅ 成功列表:\n')
+                for n, rc in success_list:
+                    self._append_output('[刷新]   • ' + n + ' — 更新 ' + str(rc) + ' 条\n')
+
+            if fail_list:
+                self._append_output('[刷新] \n[刷新] ❌ 失败列表:\n')
+                for n, msg in fail_list:
+                    self._append_output('[刷新]   • ' + n + ' — 失败原因: ' + msg + '\n')
+
+            self._append_output('[刷新] ================================\n')
+
+            if done_callback: done_callback()
+
+        worker.all_done.connect(_on_all_done)
+        import threading
+        threading.Thread(target=worker.run, daemon=True).start()
+
+
     def query_preview(self, report_id: str, page: int = 1, page_size: int = 50,
                       search: str = None) -> tuple[list[dict], int]:
         """查询预览数据"""
@@ -24340,6 +31428,7 @@ class ReportManager:
                 self._repo,
                 save_config_fn=self._save_config_fn,
                 load_config_fn=self._load_config_fn,
+                batch_refresh_fn=self._on_batch_refresh_reports,
             )
             # 传递对象名映射（API 名 → 中文名）
             name_map = {api: meta.get('name', api) for api, meta in self._object_meta.items()}
@@ -24350,6 +31439,11 @@ class ReportManager:
             self._list_page.newReport.connect(self._on_list_new)
             self._list_page.newReportWithMain.connect(self._on_list_new_with_main)
 
+            # 首次创建时加载数据
+            try:
+                self._list_page.refresh()
+            except Exception as e:
+                logging.error(f"报表列表加载失败: {e}")
         return self._list_page
 
     def get_editor_page(self):
@@ -24375,7 +31469,7 @@ class ReportManager:
 
             self._editor_page = ReportEditorPage(
                 self._repo, self._db, self._fetcher,
-                app_config=self._config,
+                app_config=self._app_config,
                 save_config_fn=self._save_config_fn,
                 load_config_fn=self._load_config_fn,
                 save_filters_fn=_save_filters,
@@ -24750,7 +31844,7 @@ class ReportManager:
     def get_ai_assistant(self):
         """获取 AI 助手实例"""
 # [merged] from .dashboard.ai_assistant import AIAssistant
-        providers_config = self._config.get('llm_providers', {})
+        providers_config = self._app_config.get('llm_providers', {})
         return AIAssistant(providers_config)
 
     # ==================== 清理 ====================
@@ -24788,6 +31882,7 @@ import json
 logger = logging.getLogger(__name__)
 
 
+_thread_local = threading.local()
 class ReportDatabase:
     """报表专用数据库管理器"""
 
@@ -24816,7 +31911,34 @@ class ReportDatabase:
         return "❌ MySQL 连接失败"
 
     def _get_conn(self):
-        """获取或创建连接"""
+        """获取或创建连接（主线程用共享连接，后台线程用独立连接）"""
+        # 后台线程：使用线程本地连接，避免共享连接导致的 packet sequence 错误
+        import threading
+        if threading.current_thread() is not threading.main_thread():
+            conn = getattr(_thread_local, 'conn', None)
+            if conn and conn.open:
+                return conn
+            cfg = self._cfg
+            if not cfg.get('enabled'):
+                return None
+            try:
+                conn = pymysql.connect(
+                    host=cfg.get('host', '127.0.0.1'),
+                    port=int(cfg.get('port', 3306)),
+                    user=cfg.get('user', ''),
+                    password=cfg.get('password', ''),
+                    database=cfg.get('database', ''),
+                    charset='utf8mb4',
+                    connect_timeout=5,
+                    cursorclass=pymysql.cursors.DictCursor,
+                    autocommit=True,
+                )
+                _thread_local.conn = conn
+                return conn
+            except Exception as e:
+                logger.error(f"[ReportDatabase] BG线程连接失败: {e}")
+                return None
+        # 主线程：使用共享连接
         if self._conn and self._conn.open:
             return self._conn
         cfg = self._cfg
@@ -24836,9 +31958,8 @@ class ReportDatabase:
             )
             return self._conn
         except Exception as e:
-            logger.error(f"[ReportDatabase] 连接失败: {e}")
+            logger.error(f"[ReportDatabase] 主线程连接失败: {e}")
             return None
-
     def close(self):
         if self._conn and self._conn.open:
             try:
@@ -24862,9 +31983,23 @@ class ReportDatabase:
 
     def execute(self, sql: str, params=None) -> Optional[list[dict]]:
         """执行 SQL，返回结果行（如果是查询）"""
+        if not sql or not sql.strip():
+            logger.error("[ReportDatabase] SQL 为空，跳过执行")
+            return None
         conn = self._get_conn()
         if not conn:
+            logger.error("[ReportDatabase] 数据库连接不可用")
             return None
+        # 连接可能已断开（open 属性有延迟），用 ping 确认
+        try:
+            conn.ping(reconnect=True)
+        except Exception:
+            logger.warning("[ReportDatabase] 连接已断开，尝试重连...")
+            self._conn = None
+            conn = self._get_conn()
+            if not conn:
+                logger.error("[ReportDatabase] 重连失败")
+                return None
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
@@ -24872,7 +32007,8 @@ class ReportDatabase:
                     return cur.fetchall()
             return []
         except Exception as e:
-            logger.error(f"[ReportDatabase] SQL 执行失败: {e}\nSQL: {sql[:200]}")
+            err_str = str(e)
+            logger.error(f"[ReportDatabase] SQL 执行失败: {err_str}\nSQL: {sql[:500]}")
             raise
 
     def execute_many_insert(self, table_name: str, columns: list[dict],
@@ -24912,6 +32048,9 @@ class ReportDatabase:
     @staticmethod
     def source_table_name(object_api: str) -> str:
         """Source 表命名: sr_{api_name}"""
+        # Excel / 直连表：直接返回 API 名
+        if object_api.startswith("ex_") or object_api.startswith("cr_"):
+            return object_api
         return f"sr_{object_api}"
 
     def resolve_existing_table(self, object_api: str) -> str:
@@ -24955,6 +32094,16 @@ class ReportDatabase:
         conn = self._get_conn()
         if not conn:
             return False
+
+        # 预计列数较多时，主动关闭 strict mode（避免 Row size too large 错误后重试）
+        col_count = len(sample_row) if sample_row else 0
+        if col_count > 50:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SET SESSION innodb_strict_mode=OFF")
+            except Exception:
+                pass
+
         try:
             with conn.cursor() as cur:
                 if force_recreate:
@@ -24970,19 +32119,35 @@ class ReportDatabase:
 
                 if sample_row:
                     existing_cols = self._get_columns(table)
+                    added = 0
                     for key in sample_row.keys():
                         if key in ('_id', '_sync_time', '_hash'):
                             continue
                         safe_key = key
                         if safe_key not in existing_cols:
                             cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `{safe_key}` LONGTEXT")
+                            added += 1
+                    if added > 0:
+                        logger.info(f"[ReportDatabase] {table}: 新增 {added} 列 (共 {col_count} 字段)")
             return True
         except Exception as e:
-            logger.error(f"[ReportDatabase] 建 source 表失败 {table}: {e}")
-            # 兜底：删表重建后再试一次
-            if not force_recreate:
+            err_str = str(e)
+            is_row_too_large = 'Row size too large' in err_str or '1118' in err_str
+            # 兜底1：删表重建后再试一次（非超宽表）
+            if not force_recreate and not is_row_too_large:
                 logger.info(f"[ReportDatabase] 尝试删表重建 {table}...")
                 return self.ensure_source_table(object_api, sample_row, force_recreate=True)
+            # 兜底2：超宽表 — 关闭 strict mode 后重建
+            if is_row_too_large:
+                logger.info(f"[ReportDatabase] {table} 行大小超限, 设置 innodb_strict_mode=OFF 后重建...")
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SET SESSION innodb_strict_mode=OFF")
+                    return self.ensure_source_table(object_api, sample_row, force_recreate=True)
+                except Exception as e2:
+                    logger.error(f"[ReportDatabase] innodb_strict_mode=OFF 后仍失败 {table}: {e2}")
+            else:
+                logger.error(f"[ReportDatabase] 建 source 表失败 {table}: {e}")
             return False
 
     def truncate_source(self, object_api: str):
@@ -25089,7 +32254,7 @@ class ReportDatabase:
                         v = row.get(k)
                         row_vals[k] = float(v) if v not in (None, '') else None
                     else:
-                        row_vals[k] = str(row.get(k, '') or '')
+                        row_vals[k] = _clean_crm_value(row.get(k, ''))
                 row_hash = hashlib.md5(
                     json.dumps(row_vals, sort_keys=True, ensure_ascii=False, default=str).encode('utf-8')
                 ).hexdigest()
@@ -25158,9 +32323,19 @@ class ReportDatabase:
         return f"cr_{report_id}"
 
     def drop_result_table(self, report_id: str):
-        """删除结果表"""
+        """删除结果表 + 同步的展示表"""
         table = self.result_table_name(report_id)
         self.execute(f"DROP TABLE IF EXISTS `{table}`")
+        # 同步删除「报表-xxx」展示表
+        try:
+            meta = self.execute(
+                "SELECT name FROM `cr_meta_reports` WHERE id = %s", (report_id,))
+            if meta:
+                report_name = meta[0].get('name', '') if isinstance(meta[0], dict) else meta[0][0]
+                if report_name:
+                    self.execute(f"DROP TABLE IF EXISTS `报表-{report_name}`")
+        except Exception:
+            pass
 
     def create_result_table_as(self, report_id: str, select_sql: str,
                                write_mode: str = "overwrite"):
@@ -25172,7 +32347,11 @@ class ReportDatabase:
             select_sql: 完整的 SELECT 语句（不含 CREATE TABLE 前缀）
             write_mode: "overwrite" (覆盖: DROP+CREATE) | "incremental" (增量: UPSERT)
         """
+        if not select_sql or not select_sql.strip():
+            raise ValueError("拼表 SQL 为空，无法创建结果表")
+
         table = self.result_table_name(report_id)
+        logger.info(f"[ReportDatabase] 创建结果表: {table} | write_mode={write_mode} | SQL长度={len(select_sql)}")
 
         if write_mode == "incremental" and self.table_exists(table):
             try:
@@ -25189,9 +32368,11 @@ class ReportDatabase:
         try:
             self.execute(sql)
         except Exception as e:
-            logger.error(f"[ReportDatabase] 创建结果表失败: {e}\nSQL:\n{sql[:800]}")
+            err_str = str(e)
+            logger.error(f"[ReportDatabase] 创建结果表失败: {err_str}\n表名: {table}\nSQL长度: {len(select_sql)}\nSQL前800字符:\n{sql[:800]}")
             raise
         self._add_row_id(table)
+        logger.info(f"[ReportDatabase] 结果表创建成功: {table}")
 
     def _add_row_id(self, table: str):
         """给结果表添加自增主键 _row_id 和 _hash 列。"""
@@ -25202,27 +32383,58 @@ class ReportDatabase:
         self._ensure_result_hash_column(table)
 
     def _ensure_result_hash_column(self, table: str):
-        """确保结果表有 _hash 列并计算初始哈希值。"""
+        """确保结果表有 _hash 列并计算初始哈希值（纯 SQL MD5，无 Python 循环）。"""
         existing = self._get_columns(table)
         if '_hash' not in existing:
             try:
                 self.execute(f"ALTER TABLE `{table}` ADD COLUMN `_hash` VARCHAR(32) DEFAULT ''")
             except Exception:
                 return
-        # 为已有行计算 hash（仅覆盖模式下首次创建时需要）
+        # 为已有行计算 hash — 用 MySQL MD5(CONCAT_WS(...)) 一条 UPDATE 完成
         data_cols = [c for c in self._get_columns(table) if c not in ('_row_id', '_hash')]
-        if data_cols:
-            concat = ", '|', ".join(f'IFNULL(`{c}`, \'\')' for c in data_cols)
-            try:
-                self.execute(
-                    f"UPDATE `{table}` SET `_hash` = MD5(CONCAT({concat})) "
-                    f"WHERE `_hash` = '' OR `_hash` IS NULL"
-                )
-            except Exception:
-                pass
+        if not data_cols:
+            return
+        # 构建 CONCAT_WS 参数：每列 IFNULL(CAST(`col` AS CHAR), '')
+        concat_parts = ', '.join(
+            f"IFNULL(CAST(`{c}` AS CHAR), '')" for c in data_cols
+        )
+        try:
+            self.execute(
+                f"UPDATE `{table}` SET `_hash` = MD5(CONCAT_WS('|', {concat_parts})) "
+                f"WHERE `_hash` = '' OR `_hash` IS NULL"
+            )
+        except Exception as e:
+            logger.warning(f"[Hash] 纯 SQL 计算 hash 失败，回退为逐行计算: {e}")
+            self._ensure_result_hash_column_fallback(table, data_cols)
+
+    def _ensure_result_hash_column_fallback(self, table: str, data_cols: list):
+        """_ensure_result_hash_column 的逐行回退方案（兼容极端情况）。"""
+        import hashlib
+        rows = self.execute(
+            f"SELECT `_row_id`, {', '.join(f'`{c}`' for c in data_cols)} FROM `{table}` "
+            f"WHERE `_hash` = '' OR `_hash` IS NULL"
+        )
+        if not rows:
+            return
+        conn = self._get_conn()
+        if not conn:
+            return
+        try:
+            with conn.cursor() as cur:
+                for row in rows:
+                    row_id = row['_row_id']
+                    vals = '|'.join(str(row.get(c, '') or '') for c in data_cols)
+                    h = hashlib.md5(vals.encode('utf-8', errors='replace')).hexdigest()
+                    cur.execute(
+                        f"UPDATE `{table}` SET `_hash` = %s WHERE `_row_id` = %s",
+                        (h, row_id)
+                    )
+                conn.commit()
+        except Exception:
+            conn.rollback()
 
     def _add_hash_to_temp_table(self, tmp_table: str):
-        """给临时表添加 _hash 列并计算每行的哈希值。"""
+        """给临时表添加 _hash 列并计算每行的哈希值（纯 SQL MD5，无 Python 循环）。"""
         data_cols = [c for c in self._get_columns(tmp_table) if c not in ('_row_id', '_hash')]
         if not data_cols:
             return
@@ -25230,8 +32442,38 @@ class ReportDatabase:
             self.execute(f"ALTER TABLE `{tmp_table}` ADD COLUMN `_hash` VARCHAR(32) DEFAULT ''")
         except Exception:
             return
-        concat = ", '|', ".join(f'IFNULL(`{c}`, \'\')' for c in data_cols)
-        self.execute(f"UPDATE `{tmp_table}` SET `_hash` = MD5(CONCAT({concat}))")
+        # 纯 SQL 一条 UPDATE 计算 hash
+        concat_parts = ', '.join(
+            f"IFNULL(CAST(`{c}` AS CHAR), '')" for c in data_cols
+        )
+        try:
+            self.execute(
+                f"UPDATE `{tmp_table}` SET `_hash` = MD5(CONCAT_WS('|', {concat_parts}))"
+            )
+        except Exception as e:
+            logger.warning(f"[Hash] 临时表纯 SQL 计算 hash 失败，回退为逐行计算: {e}")
+            import hashlib
+            rows = self.execute(
+                f"SELECT `_row_id`, {', '.join(f'`{c}`' for c in data_cols)} FROM `{tmp_table}`"
+            )
+            if not rows:
+                return
+            conn = self._get_conn()
+            if not conn:
+                return
+            try:
+                with conn.cursor() as cur:
+                    for row in rows:
+                        row_id = row['_row_id']
+                        vals = '|'.join(str(row.get(c, '') or '') for c in data_cols)
+                        h = hashlib.md5(vals.encode('utf-8', errors='replace')).hexdigest()
+                        cur.execute(
+                            f"UPDATE `{tmp_table}` SET `_hash` = %s WHERE `_row_id` = %s",
+                            (h, row_id)
+                        )
+                    conn.commit()
+            except Exception:
+                conn.rollback()
 
     def _upsert_result_table(self, report_id: str, select_sql: str):
         """增量模式：将 SELECT 结果 UPSERT 到已有结果表（基于 _hash 变更检测）。
@@ -25358,10 +32600,6 @@ class ReportDatabase:
             where_clause = "WHERE " + " AND ".join(where_parts)
 
         count_sql = f"SELECT COUNT(*) AS cnt FROM `{table}` {where_clause}"
-        import sys
-        print(f"[FilterDebug] filters={filters}", file=sys.stderr, flush=True)
-        print(f"[FilterDebug] count_sql={count_sql}", file=sys.stderr, flush=True)
-        print(f"[FilterDebug] params={params}", file=sys.stderr, flush=True)
         with conn.cursor() as cur:
             cur.execute(count_sql, params)
             total = cur.fetchone().get('cnt', 0)
@@ -25372,7 +32610,8 @@ class ReportDatabase:
 
         offset = (page - 1) * page_size
         cols_str = ', '.join(f'`{c}`' for c in display_cols)
-        data_sql = f"SELECT {cols_str} FROM `{table}` {where_clause} LIMIT %s OFFSET %s"
+        order_clause = f"ORDER BY {order_by}" if order_by else ""
+        data_sql = f"SELECT {cols_str} FROM `{table}` {where_clause} {order_clause} LIMIT %s OFFSET %s"
         with conn.cursor() as cur:
             cur.execute(data_sql, params + [page_size, offset])
             rows = cur.fetchall()
@@ -25405,7 +32644,7 @@ class ReportDatabase:
         if operator == 'CONTAINS':
             return (f"{col} LIKE %s", [f"%{value}%"])
         if operator == 'NOT_CONTAINS':
-            return (f"{col} NOT LIKE %s", [f"%{value}%"])
+            return (f"({col} IS NULL OR {col} NOT LIKE %s)", [f"%{value}%"])
         if operator == 'STARTS_WITH':
             return (f"{col} LIKE %s", [f"{value}%"])
         if operator == 'ENDS_WITH':
@@ -25424,7 +32663,7 @@ class ReportDatabase:
             if not vals:
                 return ("", [])
             placeholders = ', '.join(['%s'] * len(vals))
-            return (f"{col} NOT IN ({placeholders})", vals)
+            return (f"({col} IS NULL OR {col} NOT IN ({placeholders}))", vals)
         if operator in ('GT', 'GTE', 'LT', 'LTE'):
             op_map = {'GT': '>', 'GTE': '>=', 'LT': '<', 'LTE': '<='}
             return (f"{col} {op_map[operator]} %s", [value])
@@ -25444,7 +32683,12 @@ class ReportDatabase:
         if operator == 'DATE_RANGE':
             parts = value.split('~')
             if len(parts) == 2:
-                return (f"({col} >= %s AND {col} <= %s)", [parts[0].strip(), parts[1].strip()])
+                start_val = parts[0].strip()
+                end_val = parts[1].strip()
+                # 结束日期追加 23:59:59，确保当天有时间成分的记录不被遗漏
+                # （与 JoinSQLBuilder._build_filter_condition 保持一致）
+                return (f"({col} >= %s AND {col} <= %s)",
+                        [start_val, f"{end_val} 23:59:59"])
             return ("", [])
         # 相对日期操作符 — 计算边界后比对
         if operator in ('PAST_N_DAYS_INCLUSIVE', 'PAST_N_DAYS_EXCLUSIVE',
@@ -25727,6 +32971,79 @@ class ReportDatabase:
             return True
         except Exception:
             return False
+    def get_table_row_count(self, table_name: str) -> int:
+        """获取MySQL表行数（静默模式，不记录错误日志）"""
+        if not table_name:
+            return 0
+        conn = self._get_conn()
+        if not conn:
+            return 0
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM `{}`".format(table_name))
+                row = cur.fetchone()
+                if isinstance(row, dict):
+                    return row.get('cnt', 0)
+                return row[0] if row else 0
+        except Exception:
+            return 0
+
+    def get_data_freshness_info(self, report_id: str, report_def=None) -> dict:
+        """获取数据新鲜度对比信息
+
+        比较 cr_{report_id} 结果表与其依赖的 sr_* 源表的行数，
+        判断是否需要刷新数据。
+
+        Returns:
+            dict with keys: result_table, result_exists, result_row_count,
+            last_refresh_time, source_tables, source_total, needs_refresh
+        """
+        info = {
+            'result_table': self.result_table_name(report_id),
+            'result_exists': False,
+            'result_row_count': 0,
+            'last_refresh_time': '',
+            'source_tables': [],
+            'source_total': 0,
+            'needs_refresh': False,
+        }
+        needs = False
+        if self.result_table_exists(report_id):
+            info['result_exists'] = True
+            info['result_row_count'] = self.get_table_row_count(info['result_table'])
+        else:
+            needs = True
+        if report_def is not None:
+            info['last_refresh_time'] = getattr(report_def, 'last_refresh_time', '') or ''
+            source_apis = set()
+            main_api = getattr(report_def, 'main_object_api', None)
+            if main_api:
+                source_apis.add(main_api)
+            for j in (getattr(report_def, 'joins', None) or []):
+                if hasattr(j, 'right_object_api') and j.right_object_api:
+                    source_apis.add(j.right_object_api)
+                if hasattr(j, 'left_object_api') and j.left_object_api:
+                    source_apis.add(j.left_object_api)
+            source_total = 0
+            for api in sorted(source_apis):
+                sr_name = 'sr_' + api
+                rc = self.get_table_row_count(sr_name)
+                if rc > 0:
+                    source_total += rc
+                info['source_tables'].append({'name': sr_name, 'row_count': rc})
+            info['source_total'] = source_total
+            if needs:
+                info['needs_refresh'] = True
+            elif info['result_row_count'] == 0 and source_total > 0:
+                info['needs_refresh'] = True
+            elif info['result_row_count'] > 0 and source_total == 0:
+                info['needs_refresh'] = True
+            elif source_total > 0:
+                ratio = abs(info['result_row_count'] - source_total) / max(source_total, 1)
+                if ratio > 0.2:
+                    info['needs_refresh'] = True
+        return info
+
 
     # ---------- 元数据表 ----------
 
@@ -25786,15 +33103,15 @@ class ReportDatabase:
 
     # ---------- 工具方法 ----------
 
-    def _get_columns(self, table: str) -> set:
-        """获取表的所有列名"""
+    def _get_columns(self, table: str) -> list:
+        """获取表的所有列名（保持 MySQL 物理列顺序）"""
         try:
             result = self.execute(f"SHOW COLUMNS FROM `{table}`")
             if result:
-                return {r['Field'] for r in result}
+                return [r['Field'] for r in result]
         except Exception:
             pass
-        return set()
+        return []
 
     def table_exists(self, table: str) -> bool:
         """检查表是否存在"""
@@ -25862,6 +33179,7 @@ class ReportDatabase:
 
         # 获取结果表全部列名（排除内部列）
         all_cols = list(self._get_columns(result_table))
+        # ✅ 仅排除内部列，不排除任何业务列——条件删除的字段在结果表中仍然存在
         display_cols = [c for c in all_cols if c not in ('_row_id', '_id', '_hash')]
 
         if not display_cols:
@@ -25933,10 +33251,17 @@ class ReportDatabase:
             safe_pk = target_pk.replace('`', '``')
             business_cols = [h for h in safe_display if h != pk_col and h != target_pk]
 
-        # 按 UI 列顺序排列
+        # 按 UI 列顺序排列：column_order 中的列排在前面并保持相对顺序，
+        # 不在此列表中的列（如 formula 新列）追加到末尾，确保顺序始终与预览表一致
         if column_order:
+            order_set = set(column_order)
             rank = {name: i for i, name in enumerate(column_order)}
-            business_cols.sort(key=lambda h: rank.get(h, len(rank)))
+            # 在 column_order 中的列按 rank 排序，不在其中的按原顺序排在末尾
+            in_order = [h for h in business_cols if h in order_set]
+            extra = [h for h in business_cols if h not in order_set]
+            in_order.sort(key=lambda h: rank.get(h, len(rank)))
+            business_cols = in_order + extra
+        # 当 column_order 为空时保持 business_cols 原始顺序（结果表列顺序）
 
         desired_cols = [safe_pk] + business_cols + ['_sync_time']
 
@@ -26121,3 +33446,252 @@ class ReportDatabase:
         return True, msg, {'synced': synced, 'skipped_empty_id': skipped_empty, 'skipped_dup_id': skipped_dup}
 
 
+
+
+class BatchRefreshWorker(QObject):
+    progress_updated = pyqtSignal(int, int, int, str)   # overall_pct, completed, total, status_msg
+    report_finished = pyqtSignal(str, bool, str, int)   # name, ok, error_msg, row_count
+    all_done = pyqtSignal()
+    def __init__(self, mysql_config, crm_client, app_config, report_ids):
+        super().__init__(None)
+        self._mysql_config = mysql_config; self._crm_client = crm_client
+        self._app_config = app_config; self._report_ids = report_ids
+        self._cancelled = False; self._total = len(report_ids)
+        self._completed = 0; self._repo = ReportRepository()
+    def cancel(self): self._cancelled = True
+    def run(self):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time, threading; lock = threading.Lock()
+        t_start = time.time()
+        _report_pct = {}   # {idx: 0..100}
+        _report_phase = {} # {idx: (phase_cn, pct)}
+
+        _PHASE_CN = {
+            'sync': '同步CRM数据',
+            'join': '拼表建结果表',
+            'calc': '数据后处理',
+            'done': '更新元数据',
+        }
+
+        def _overall_pct():
+            if not _report_pct:
+                return 0
+            return int(sum(_report_pct.values()) / self._total)
+
+        def _eta_str(overall):
+            if overall <= 0:
+                return "计算中…"
+            elapsed = time.time() - t_start
+            remaining = elapsed * (100 - overall) / overall
+            if remaining < 60:
+                return f"{int(remaining)}秒"
+            elif remaining < 3600:
+                return f"{int(remaining // 60)}分{int(remaining % 60)}秒"
+            else:
+                h = int(remaining // 3600)
+                m = int((remaining % 3600) // 60)
+                return f"{h}时{m}分"
+
+        def _refresh_one(rid, idx):
+            try:
+                rpt = self._repo.get(rid)
+                if not rpt: return (rid, False, 'not found', 0, '?', 0)
+                name = rpt.name
+                from custom_report import ReportDatabase, DataFetcher, SourceTableSyncer, ReportRefreshWorker
+                mc = self._mysql_config or {}
+                db = ReportDatabase(mc) if mc.get('enabled', False) else None
+                fetcher = DataFetcher(self._crm_client, self._app_config)
+                syncer = SourceTableSyncer(db, fetcher) if db else None
+                wrk = ReportRefreshWorker(db, syncer) if db else None
+                if not wrk: return (rid, False, 'no db', 0, name, 0)
+
+                def scb(phase, msg, pct):
+                    if self._cancelled: return
+                    with lock:
+                        _report_pct[idx] = pct
+                        _report_phase[idx] = (phase, pct)
+                        overall = _overall_pct()
+                        finished = len([p for p in _report_pct.values() if p >= 100])
+                        phase_cn = _PHASE_CN.get(phase, phase)
+                        status = (f"[{finished}/{self._total}] {name}\n"
+                                  f"{phase_cn}: {msg} ({pct}%)\n"
+                                  f"总进度 {overall}% · 预计剩余 {_eta_str(overall)}")
+                        self.progress_updated.emit(overall, finished, self._total, status)
+
+                t0 = time.time()
+                result = wrk.full_refresh(rpt, progress_callback=scb)
+                elapsed = int(time.time() - t0)
+                ok = result.get('success', False); err = result.get('error', '') if not ok else ''
+                row_count = result.get('row_count', 0)
+                # 持久化刷新元数据到 JSON（列表页从此读取）
+                if ok:
+                    self._repo.update_refresh_meta(rid, row_count, rpt.last_refresh_time)
+                # 标记此报表完成（100%）
+                with lock:
+                    _report_pct[idx] = 100
+                    overall = _overall_pct()
+                    finished = len([p for p in _report_pct.values() if p >= 100])
+                    self.progress_updated.emit(overall, finished, self._total,
+                        f"[{finished}/{self._total}] {name} · 刷新完成 ({row_count} 条, {elapsed}s)")
+                return (rid, ok, err, elapsed, name, row_count)
+            except Exception as e: return (rid, False, str(e), 0, '?', 0)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {}
+            for idx, rid in enumerate(self._report_ids):
+                if self._cancelled: break
+                futures[executor.submit(_refresh_one, rid, idx)] = rid
+            for future in as_completed(futures):
+                try:
+                    items = future.result()
+                    rid, ok, msg, elapsed, name, row_count = items
+                    with lock: self._completed += 1
+                    self.report_finished.emit(name, ok, msg, row_count)
+                except:
+                    pass
+        self.all_done.emit()
+
+class custom_report_pageMixin:
+    def on_enable_custom_report_button(self, value):
+        pass
+    def switch_to_custom_report_editor(self, *args, **kwargs):
+        # 先保证编辑器存在（但不显示）
+        self._ensure_editor_page()
+        # 先加载数据（页面隐藏）
+        if args:
+            report_id = args[0]
+            if report_id and hasattr(self, 'custom_report_editor_page') and self.custom_report_editor_page:
+                mgr = getattr(self, '_report_manager', None)
+                if mgr and hasattr(mgr, '_repo'):
+                    report = mgr._repo.get(report_id)
+                    if report and hasattr(self.custom_report_editor_page, 'load_report'):
+                        self.custom_report_editor_page.load_report(report)
+        # 最后显示已填充完成的页面（不会闪烁）
+        if hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page') and self.custom_report_editor_page is not None:
+            if self.custom_report_page_stack.indexOf(self.custom_report_editor_page) >= 0:
+                # 先在隐藏状态下切换到编辑器（避免显示时看到上一页）
+                self.custom_report_page_stack.setCurrentIndex(
+                    self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
+                )
+                # 再显示页面（编辑器已是当前页，直接可见）
+                self.content_stack.setCurrentWidget(self.custom_report_page)
+    def _ensure_editor_page(self):
+        if not hasattr(self, '_report_manager') or not self._report_manager:
+            return False
+        if self.custom_report_editor_page is None:
+            editor = self._report_manager.get_editor_page()
+            self.custom_report_editor_page = editor
+            if self.custom_report_page_stack.indexOf(editor) == -1:
+                self.custom_report_page_stack.addWidget(editor)
+            if hasattr(editor, 'backRequested'):
+                editor.backRequested.connect(self.switch_to_custom_report_list)
+            # 对象查询同步完成后自动刷新可用表面板
+            if not getattr(self, '_obj_query_sync_connected', False):
+                try:
+                    self.objQuerySyncCompleted.connect(self._on_obj_query_sync_completed)
+                    self._obj_query_sync_connected = True
+                except (AttributeError, TypeError):
+                    pass
+        return True
+    def _on_obj_query_sync_completed(self, api_name):
+        """对象查询同步完成后刷新自定义报表可用表面板"""
+        editor = getattr(self, 'custom_report_editor_page', None)
+        if editor and hasattr(editor, '_table_selector'):
+            editor._table_selector.refresh()
+    def _ensure_list_page(self):
+        if hasattr(self, 'custom_report_list_page'):
+            return
+        from PyQt6.QtWidgets import QFrame, QVBoxLayout, QStackedWidget
+        self.custom_report_page_stack = QStackedWidget()
+        self.custom_report_page_stack.setStyleSheet('background-color: transparent;')
+        mgr = getattr(self, '_report_manager', None)
+        self.custom_report_list_page = mgr.get_list_page() if mgr else None
+        if self.custom_report_list_page:
+            self.custom_report_page_stack.addWidget(self.custom_report_list_page)
+            if hasattr(self.custom_report_list_page, 'reportEdit'):
+                self.custom_report_list_page.reportEdit.connect(self._on_new_report_edit)
+            if hasattr(self.custom_report_list_page, 'reportSelected'):
+                self.custom_report_list_page.reportSelected.connect(self._on_report_selected)
+            if hasattr(self.custom_report_list_page, 'reportEditDirect'):
+                self.custom_report_list_page.reportEditDirect.connect(self._on_new_report_edit)
+            if hasattr(self.custom_report_list_page, 'newReport'):
+                self.custom_report_list_page.newReport.connect(self._on_new_report_create)
+            if hasattr(self.custom_report_list_page, 'newReportInFolder'):
+                self.custom_report_list_page.newReportInFolder.connect(self._on_new_report_create_in_folder)
+        page = QFrame()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(self.custom_report_page_stack)
+        self.content_stack.addWidget(page)
+        self.custom_report_page = page
+    def switch_to_custom_report_list(self):
+        self._ensure_list_page()
+        if hasattr(self, 'content_stack') and hasattr(self, 'custom_report_page'):
+            self.content_stack.setCurrentWidget(self.custom_report_page)
+        if hasattr(self, 'custom_report_page_stack') and self.custom_report_page_stack.count() > 0:
+            self.custom_report_page_stack.setCurrentIndex(0)
+    def _on_report_selected(self, report_id):
+        """双击报表列表 → 进入详情页（若主程序实现了 switch_to_custom_report_detail）。"""
+        if hasattr(self, 'switch_to_custom_report_detail'):
+            self.switch_to_custom_report_detail(report_id)
+        else:
+            # 回退到编辑页
+            self._on_new_report_edit(report_id)
+    def _on_new_report_edit(self, report_id):
+        import logging
+        try:
+            self._ensure_list_page()
+            if not self._ensure_editor_page():
+                logging.error(f"[编辑报表] _ensure_editor_page 返回 False, report_id={report_id}")
+                return
+            mgr = getattr(self, '_report_manager', None)
+            if not mgr:
+                logging.error(f"[编辑报表] _report_manager 为空, report_id={report_id}")
+                return
+            if not hasattr(mgr, '_repo'):
+                logging.error(f"[编辑报表] _report_manager 无 _repo, report_id={report_id}")
+                return
+            report = mgr._repo.get(report_id)
+            if not report:
+                logging.error(f"[编辑报表] 未找到报表 report_id={report_id}")
+                return
+            if not hasattr(self.custom_report_editor_page, 'load_report'):
+                logging.error(f"[编辑报表] editor 无 load_report 方法, report_id={report_id}")
+                return
+            self.custom_report_editor_page.load_report(report)
+            logging.info(f"[编辑报表] 已加载: {report.name} (id={report_id})")
+            self.custom_report_page_stack.setCurrentIndex(
+                self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
+            )
+        except Exception as e:
+            logging.exception(f"[编辑报表] 异常: {e}")
+    def _on_new_report_create(self):
+        import logging, sys
+        try:
+            self._ensure_list_page()
+            if self._ensure_editor_page():
+                if hasattr(self.custom_report_editor_page, 'new_report'):
+                    self.custom_report_editor_page.new_report()
+                self.custom_report_page_stack.setCurrentIndex(
+                    self.custom_report_page_stack.indexOf(self.custom_report_editor_page)
+                )
+        except Exception as e:
+            logging.exception(f"_on_new_report_create ??: {e}")
+            print(f"_on_new_report_create ??: {e}", file=sys.stderr, flush=True)
+    def _on_new_report_create_in_folder(self, folder_path):
+        self._on_new_report_create()
+    def switch_to_custom_report(self):
+        self.switch_to_custom_report_list()
+    def _apply_custom_report_builder_state(self, *args, **kwargs): pass
+    def _apply_custom_report_filters(self, *args, **kwargs): pass
+    def _collect_custom_report_field_configs(self, *args, **kwargs): pass
+    def _format_custom_report_value(self, *args, **kwargs): pass
+    def _guess_custom_report_field_label(self, *args, **kwargs): pass
+    def _load_custom_report_by_key(self, *args, **kwargs): pass
+    def _populate_custom_report_table(self, *args, **kwargs): pass
+    def _refresh_custom_report_field_source_options(self, *args, **kwargs): pass
+    def _refresh_custom_report_list(self, *args, **kwargs): pass
+    def _refresh_custom_report_main_source_options(self, *args, **kwargs): pass
+    def _refresh_custom_report_preset_combo(self, *args, **kwargs): pass
+    def _save_custom_report_builder_state(self, *args, **kwargs): pass

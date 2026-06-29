@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from core import *
 from common import *
+from common import frameless_message_box
 import common  # 显式导入，用于访问模块级私有函数
 
 """
@@ -95,6 +96,14 @@ class departmentMixin:
         top_row.addWidget(self.usergroup_group_id_input)
         top_row.addSpacing(12)
 
+        # 搜索字段选择下拉框
+        self.usergroup_search_field = QComboBox()
+        self.usergroup_search_field.setFixedHeight(30)
+        self.usergroup_search_field.setFixedWidth(90)
+        self.usergroup_search_field.setStyleSheet("QComboBox { border: 1px solid #D9D9D9; border-radius: 4px; padding: 2px 6px; font-size: 12px; background: #FFF; } QComboBox:hover { border-color: #1890FF; }")
+        self.usergroup_search_field.currentIndexChanged.connect(self._on_usergroup_search)
+        top_row.addWidget(self.usergroup_search_field)
+
         # 搜索框
         search_frame = QFrame()
         search_frame.setFixedHeight(30)
@@ -160,6 +169,7 @@ class departmentMixin:
         self.usergroup_table.setRowCount(0)
         self.usergroup_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.usergroup_table.setAlternatingRowColors(True)
+        self._usergroup_af_header = install_autofilter_header(self.usergroup_table)
         self.usergroup_table.horizontalHeader().setStretchLastSection(False)
         self.usergroup_table.verticalHeader().setVisible(False)
         layout.addWidget(self.usergroup_table, stretch=1)
@@ -514,7 +524,7 @@ class departmentMixin:
         data = getattr(self, 'usergroup_all_data', [])
         if not data:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self, "提示", "当前没有数据可同步。")
+            frameless_message_box(self, "提示", "当前没有数据可同步。")
             return
         if hasattr(self, 'usergroup_sync_btn'):
             self.usergroup_sync_btn.setText("⏳")

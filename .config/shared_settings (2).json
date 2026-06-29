@@ -1,0 +1,3024 @@
+{
+  "business_rules": {
+    "product_match_rows": [
+      {
+        "order_product": "02y6x24jy",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "0am3Igof1",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "0lj6b41c6",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix6600",
+        "product_remark": "含软件",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "1AfH1457l",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "2fica49r6",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "2fvN4Tcvs",
+        "product_name": "数字口内影像板扫描处理系统",
+        "model_spec": "F200",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "5B5uau0Qr",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "76kKpG9wr",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "P4a92gt1C",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "PY2tz6Kl5",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "YfevvD0Lo",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 55 OEM",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "ec13vjUsR",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix5600",
+        "product_remark": "含软件",
+        "dealer_price": "140000",
+        "end_customer_price": "155000"
+      },
+      {
+        "order_product": "hm81o5Hga",
+        "product_name": "数字牙科影像板扫描仪",
+        "model_spec": "F220C",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "oHQaTy0cs",
+        "product_name": "牙科X射线机",
+        "model_spec": "R150",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_example_options__c",
+        "product_name": "",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_matrix5600_three_in_one__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix5600",
+        "product_remark": "含软件",
+        "dealer_price": "140000",
+        "end_customer_price": "155000"
+      },
+      {
+        "order_product": "option_matrix5600_without_head_si__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix5600",
+        "product_remark": "含软件",
+        "dealer_price": "120000",
+        "end_customer_price": "140000"
+      },
+      {
+        "order_product": "option_matrix_7000_face_scan__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件",
+        "dealer_price": "180000",
+        "end_customer_price": "208000"
+      },
+      {
+        "order_product": "option_matrix_7000_xray_face_scan__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件\n配置四",
+        "dealer_price": "188000",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_matrix_7000_xray_machine__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000",
+        "product_remark": "含软件\n配置二",
+        "dealer_price": "140000",
+        "end_customer_price": "155000"
+      },
+      {
+        "order_product": "option_matrix_7600_face_sweep__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix7600",
+        "product_remark": "含软件\n配置三",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_matrix_7600_xray_face_scan__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7600",
+        "product_remark": "含软件",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_s10__c",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S10",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "r6ghbhW1t",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix5000",
+        "product_remark": "含软件",
+        "dealer_price": "130000",
+        "end_customer_price": "140000"
+      },
+      {
+        "order_product": "sjblFF9I1",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      },
+      {
+        "order_product": "option_s10_scanning_head_accessor__c",
+        "product_name": "S10扫描头附件（标准扫描头）",
+        "model_spec": "",
+        "product_remark": "",
+        "dealer_price": "",
+        "end_customer_price": ""
+      }
+    ],
+    "special_columns": [
+      {
+        "name": "日期",
+        "format": "%Y年%m月%d日"
+      },
+      {
+        "name": "合计金额",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "优惠金额1",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品金额1",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "优惠金额2",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品金额2",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "优惠金额3",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品金额3",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "优惠金额4",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品金额4",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "开始日期",
+        "format": "%Y年%m月%d日"
+      },
+      {
+        "name": "结束日期",
+        "format": "%Y年%m月%d日"
+      },
+      {
+        "name": "签订日期（公式）",
+        "format": "%Y年%m月%d日"
+      },
+      {
+        "name": "招标日期",
+        "format": "%Y年%m月%d日"
+      }
+    ],
+    "crm_option_mappings": {
+      "record_type": {
+        "label": "",
+        "mappings": {
+          "default__c": "CBCT事业部销售订单",
+          "record_PglSw__c": "口扫事业部销售订单",
+          "record_f06Q4__c": "小产品事业部销售订单",
+          "record_27MV3__c": "渠道口扫销售订单",
+          "record_7y9oP__c": "海外事业部销售订单",
+          "record_0a1lw__c": "SaaS事业部销售订单",
+          "record_Q8jRd__c": "公立/DSO订单",
+          "record_j16a2__c": "Cortex事业部销售订单"
+        }
+      },
+      "field_jv2dq__c": {
+        "label": "",
+        "mappings": {
+          "02y6x24jy": "S6500扫描头附件（小扫描头）",
+          "0am3Igof1": "牙医管家旗舰版",
+          "0lj6b41c6": "Matrix 6600 (16*16)",
+          "1AfH1457l": "牙医管家基础版",
+          "2fica49r6": "X光机",
+          "2fvN4Tcvs": "F200",
+          "5B5uau0Qr": "S6500扫描头附件（标准扫描头）",
+          "76kKpG9wr": "IP板",
+          "P4a92gt1C": "S6500临床版推车",
+          "PY2tz6Kl5": "S6500（技工版）",
+          "YfevvD0Lo": "Dentrix 55 OEM",
+          "ec13vjUsR": "Matrix 5600 (15*15)",
+          "hm81o5Hga": "F220C",
+          "oHQaTy0cs": "R150",
+          "option_example_options__c": "牙医管家单账号",
+          "option_matrix5600_three_in_one__c": "Matrix5600 (三合一)",
+          "option_matrix5600_without_head_si__c": "Matrix5600（二合一）",
+          "option_matrix_7000_face_scan__c": "Matrix 7000（面扫）",
+          "option_matrix_7000_xray_face_scan__c": "Matrix 7000（X光机+面扫）",
+          "option_matrix_7000_xray_machine__c": "Matrix 7000（X光机）",
+          "option_matrix_7600_face_sweep__c": "Matrix 7600（面扫）",
+          "option_matrix_7600_xray_face_scan__c": "Matrix 7600（X光机+面扫）",
+          "option_s10__c": "S10",
+          "r6ghbhW1t": "Matrix 5000 (15*9)标配版D",
+          "sjblFF9I1": "S6500（临床版）",
+          "option_s10_scanning_head_accessor__c": "S10扫描头附件（标准扫描头）"
+        }
+      },
+      "life_status": {
+        "label": "生命周期状态",
+        "mappings": {}
+      }
+    },
+    "field_mapping": {
+      "Q1台数": "Q1Task",
+      "Q2台数": "Q2Task",
+      "Q3台数": "Q3Task",
+      "Q4台数": "Q4Task",
+      "产品价格1": "Price1",
+      "产品价格2": "Price2",
+      "产品价格3": "Price3",
+      "产品价格4": "Price4",
+      "产品名称": "Productname",
+      "产品名称1": "Productname1",
+      "产品名称2": "Productname2",
+      "产品名称3": "Productname3",
+      "产品名称4": "Productname4",
+      "产品型号": "productmodel",
+      "产品规格1": "SoftwareVersion1",
+      "产品规格2": "SoftwareVersion2",
+      "产品规格3": "SoftwareVersion3",
+      "产品规格4": "SoftwareVersion4",
+      "产品金额1": "Totalamount1",
+      "产品金额2": "Totalamount2",
+      "产品金额3": "Totalamount3",
+      "产品金额4": "Totalamount4",
+      "优惠金额1": "Discountamount1",
+      "优惠金额2": "Discountamount2",
+      "优惠金额3": "Discountamount3",
+      "优惠金额4": "Discountamount4",
+      "保证金（大写）": "Marginwords",
+      "保证金（数字）": "Marginamount",
+      "全年台数": "AnnualTask",
+      "协议号（公式）": "ProtocolNumber",
+      "发票电话": "InvoicePhone",
+      "发票税点": "Invoicetaxpoint",
+      "合同数量1": "store1",
+      "合同数量2": "store2",
+      "合同数量3": "store3",
+      "合同数量4": "store4",
+      "合同编号": "YGSO",
+      "合计金额": "Total",
+      "地址": "Address",
+      "备注": "remark",
+      "大写": "CapitalizeRMB",
+      "客户": "Client",
+      "序号1": "nu1",
+      "序号2": "nu2",
+      "序号3": "nu3",
+      "序号4": "nu4",
+      "开始日期": "startdate",
+      "开户银行": "Bank",
+      "招标日期": "AuthorizationDate",
+      "授权客户": "authorizedcustomers",
+      "授权模板": "authorizationtemplates",
+      "文件名": "authorizationfilename",
+      "日期": "Date",
+      "服务时间1": "Durationofservice1",
+      "服务时间2": "Durationofservice2",
+      "服务时间3": "Durationofservice3",
+      "服务时间4": "Durationofservice4",
+      "法人": "Legalentity",
+      "注册地址": "Addressjx",
+      "票据类型": "Tickettype",
+      "签约区域全称": "ContractedArea",
+      "签订日期（公式）": "DateofSigning",
+      "管家号": "DentaLinkid",
+      "纳税识别号": "TaxIdentification",
+      "终端客户": "customers",
+      "经销商": "Distributor",
+      "结束日期": "enddate",
+      "联系人": "Contact",
+      "联系电话": "ContactNumber",
+      "联系邮箱": "ContactEmail",
+      "规格型号": "Specification",
+      "计价单位1": "Unit1",
+      "计价单位2": "Unit2",
+      "计价单位3": "Unit3",
+      "计价单位4": "Unit4",
+      "软件版本": "Softwareversion",
+      "银行账号": "BankAccount",
+      "销售员": "Salesman",
+      "项目名称": "thenameoftheproject",
+      "项目编号": "itemnumber"
+    },
+    "crm_field_mapping": {
+      "ERP订单号": "ERP",
+      "产品合计": "Totalpriceafterdiscountl",
+      "产品备注": "ModelRemarks",
+      "保修期": "WarrantyPeriod",
+      "创建时间": "Date",
+      "匹配价格": "Discountedunitprice",
+      "发货地址": "ShippingAddress",
+      "地址": "Address",
+      "备注": "remark",
+      "大写": "CapitalizeRMB",
+      "客户名称": "Client",
+      "手机": "ContactNumber",
+      "规格型号": "CTModel"
+    },
+    "crm_special_columns": [
+      {
+        "name": "ERP订单号",
+        "format": ""
+      },
+      {
+        "name": "产品合计",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "产品备注",
+        "format": ""
+      },
+      {
+        "name": "保修期",
+        "format": ""
+      },
+      {
+        "name": "创建时间",
+        "format": ""
+      },
+      {
+        "name": "匹配价格",
+        "format": "{:,.2f}"
+      },
+      {
+        "name": "发货地址",
+        "format": ""
+      },
+      {
+        "name": "地址",
+        "format": ""
+      },
+      {
+        "name": "备注",
+        "format": ""
+      },
+      {
+        "name": "大写",
+        "format": ""
+      },
+      {
+        "name": "客户名称",
+        "format": ""
+      },
+      {
+        "name": "手机",
+        "format": ""
+      },
+      {
+        "name": "规格型号",
+        "format": ""
+      }
+    ]
+  },
+  "fxiaoke": {
+    "crm_field_mapping_list": [
+      {
+        "api_name": "商机",
+        "display_name": "new_opportunity_id"
+      },
+      {
+        "api_name": "保修期",
+        "display_name": "warranty_period__c"
+      },
+      {
+        "api_name": "产品合计",
+        "display_name": "product_amount"
+      },
+      {
+        "api_name": "发货地址",
+        "display_name": "field_41yfW__c"
+      },
+      {
+        "api_name": "客户名称",
+        "display_name": "account_id"
+      },
+      {
+        "api_name": "ERP订单号",
+        "display_name": "field_2maFO__c"
+      },
+      {
+        "api_name": "国家",
+        "display_name": "field_3M5ss__c"
+      },
+      {
+        "api_name": "区",
+        "display_name": "field_1apA5__c"
+      },
+      {
+        "api_name": "收货地址",
+        "display_name": "ship_to_add"
+      },
+      {
+        "api_name": "负责人主属部门",
+        "display_name": "owner_department"
+      },
+      {
+        "api_name": "创建时间",
+        "display_name": "create_time"
+      },
+      {
+        "api_name": "销售类型",
+        "display_name": "field_umlvn__c"
+      },
+      {
+        "api_name": "创建人",
+        "display_name": "created_by"
+      },
+      {
+        "api_name": "收货时间",
+        "display_name": "confirmed_receive_date"
+      },
+      {
+        "api_name": "销售订单编号",
+        "display_name": "name"
+      },
+      {
+        "api_name": "省（商务统计合同用)",
+        "display_name": "province_for_business_stat__c"
+      },
+      {
+        "api_name": "市（商务统计合同用）",
+        "display_name": "field_bSU2c__c"
+      },
+      {
+        "api_name": "产品发货数",
+        "display_name": "field_j2Pj7__c"
+      },
+      {
+        "api_name": "关联合同",
+        "display_name": "field_xlo48__c"
+      },
+      {
+        "api_name": "负责人",
+        "display_name": "owner"
+      },
+      {
+        "api_name": "业务类型",
+        "display_name": "record_type"
+      },
+      {
+        "api_name": "商机来源经销商",
+        "display_name": "field_2xgIX__c"
+      },
+      {
+        "api_name": "订单数量",
+        "display_name": "field_Xqs0n__c"
+      },
+      {
+        "api_name": "代理商名称",
+        "display_name": "field_6SV1R__c"
+      },
+      {
+        "api_name": "最后修改时间",
+        "display_name": "last_modified_time"
+      },
+      {
+        "api_name": "生命状态",
+        "display_name": "life_status"
+      },
+      {
+        "api_name": "收货人电话",
+        "display_name": "ship_to_tel"
+      },
+      {
+        "api_name": "省",
+        "display_name": "field_qm318__c"
+      },
+      {
+        "api_name": "商机来源经销商级别",
+        "display_name": "field_n9U7s__c"
+      },
+      {
+        "api_name": "归属部门",
+        "display_name": "data_own_department"
+      },
+      {
+        "api_name": "商机名称",
+        "display_name": "opportunity_id"
+      },
+      {
+        "api_name": "备注",
+        "display_name": "remark"
+      },
+      {
+        "api_name": "最后修改人",
+        "display_name": "last_modified_by"
+      },
+      {
+        "api_name": "订单产品类型",
+        "display_name": "field_jv2dq__c"
+      },
+      {
+        "api_name": "关联客户（分销商&诊所）",
+        "display_name": "field_8pAwf__c"
+      }
+    ],
+    "obj_query_settings": {
+      "AccountObj": {
+        "max_records": 1000,
+        "filters": [
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "分销商；技工所；正畸客户；终端客户",
+            "is_quick": false
+          },
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "SalesOrderObj": {
+        "max_records": 20,
+        "filters": [
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "CBCT事业部销售订单；口扫事业部销售订单；小产品事业部销售订单",
+            "is_quick": false
+          },
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "LeadsObj": {
+        "max_records": 1000,
+        "filters": [
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          },
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "硬件线索",
+            "is_quick": false
+          }
+        ]
+      },
+      "DeliveryNoteObj": {
+        "max_records": 200,
+        "filters": [
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "预设业务类型",
+            "is_quick": false
+          },
+          {
+            "field": "发货日期",
+            "field_api": "delivery_date",
+            "operator": "date_range",
+            "value": "2026-04-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "DeliveryNoteProductObj": {
+        "max_records": 200,
+        "filters": [
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "预设业务类型",
+            "is_quick": false
+          },
+          {
+            "field": "发货日期",
+            "field_api": "field_Aa49V__c",
+            "operator": "date_range",
+            "value": "2026-04-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "object_Hm58x__c": {
+        "max_records": 100,
+        "filters": [
+          {
+            "field": "创建日期",
+            "field_api": "field_VegrQ__c",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "NewOpportunityObj": {
+        "max_records": 1000,
+        "filters": [
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "CBCT民营商机；公立商机；口扫商机",
+            "is_quick": false
+          },
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "CheckinsObj": {
+        "max_records": 3000,
+        "filters": [
+          {
+            "field": "签到内容",
+            "field_api": "content_text",
+            "operator": "not_contains",
+            "value": "SAAS",
+            "is_quick": true
+          },
+          {
+            "field": "签到时间",
+            "field_api": "checkins_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      },
+      "CasesObj": {
+        "max_records": 10000,
+        "filters": [
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-01-01~2026-03-31",
+            "is_quick": true
+          },
+          {
+            "field": "业务类型",
+            "field_api": "record_type",
+            "operator": "in",
+            "value": "二次安装；协同工作；市场支持；设备二次维修；设备升级；设备回访；设备培训；设备安装；设备移机；设备维修",
+            "is_quick": true
+          }
+        ]
+      },
+      "DeviceObj": {
+        "max_records": 50000,
+        "filters": [
+          {
+            "field": "创建时间",
+            "field_api": "create_time",
+            "operator": "date_range",
+            "value": "2026-06-01~2026-06-30",
+            "is_quick": true
+          }
+        ]
+      }
+    },
+    "crm_object_fields": {
+      "SalesOrderObj": {
+        "account_id": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "confirmed_receive_date": {
+          "enabled": true,
+          "label": "收货时间",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "field_1apA5__c": {
+          "enabled": true,
+          "label": "区",
+          "type": ""
+        },
+        "field_2maFO__c": {
+          "enabled": true,
+          "label": "ERP订单号",
+          "type": ""
+        },
+        "field_2xgIX__c": {
+          "enabled": true,
+          "label": "商机来源经销商",
+          "type": ""
+        },
+        "field_3M5ss__c": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "field_41yfW__c": {
+          "enabled": true,
+          "label": "发货地址",
+          "type": ""
+        },
+        "field_6SV1R__c": {
+          "enabled": true,
+          "label": "代理商名称",
+          "type": ""
+        },
+        "field_8pAwf__c": {
+          "enabled": true,
+          "label": "关联客户（分销商&诊所）",
+          "type": ""
+        },
+        "field_Xqs0n__c": {
+          "enabled": true,
+          "label": "订单数量",
+          "type": ""
+        },
+        "field_bSU2c__c": {
+          "enabled": true,
+          "label": "市（商务统计合同用）",
+          "type": ""
+        },
+        "field_j2Pj7__c": {
+          "enabled": true,
+          "label": "产品发货数",
+          "type": ""
+        },
+        "field_jv2dq__c": {
+          "enabled": true,
+          "label": "订单产品类型",
+          "type": ""
+        },
+        "field_n9U7s__c": {
+          "enabled": true,
+          "label": "商机来源经销商级别",
+          "type": ""
+        },
+        "field_qm318__c": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        },
+        "field_umlvn__c": {
+          "enabled": true,
+          "label": "销售类型",
+          "type": ""
+        },
+        "field_xlo48__c": {
+          "enabled": true,
+          "label": "关联合同",
+          "type": ""
+        },
+        "last_modified_by": {
+          "enabled": true,
+          "label": "最后修改人",
+          "type": ""
+        },
+        "last_modified_time": {
+          "enabled": true,
+          "label": "最后修改时间",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "销售订单编号",
+          "type": ""
+        },
+        "new_opportunity_id": {
+          "enabled": true,
+          "label": "商机",
+          "type": ""
+        },
+        "opportunity_id": {
+          "enabled": true,
+          "label": "商机名称",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人主属部门",
+          "type": ""
+        },
+        "product_amount": {
+          "enabled": true,
+          "label": "产品合计",
+          "type": ""
+        },
+        "province_for_business_stat__c": {
+          "enabled": true,
+          "label": "省（商务统计合同用)",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "remark": {
+          "enabled": true,
+          "label": "备注",
+          "type": ""
+        },
+        "ship_to_add": {
+          "enabled": true,
+          "label": "收货地址",
+          "type": ""
+        },
+        "ship_to_tel": {
+          "enabled": true,
+          "label": "收货人电话",
+          "type": ""
+        },
+        "warranty_period__c": {
+          "enabled": true,
+          "label": "保修期",
+          "type": ""
+        }
+      },
+      "AccountObj": {
+        "province": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        },
+        "field_2i7fn__c": {
+          "enabled": true,
+          "label": "拜访次数",
+          "type": ""
+        },
+        "field_V4K92__c": {
+          "enabled": true,
+          "label": "技师人数",
+          "type": ""
+        },
+        "uniform_social_credit_code": {
+          "enabled": true,
+          "label": "统一社会信用代码",
+          "type": ""
+        },
+        "field_qRQ68__c": {
+          "enabled": true,
+          "label": "客户性质",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人主属部门",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "field_biv1F__c": {
+          "enabled": true,
+          "label": "省份",
+          "type": ""
+        },
+        "district": {
+          "enabled": true,
+          "label": "区",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人（owner）",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "account_type": {
+          "enabled": true,
+          "label": "客户类型",
+          "type": ""
+        },
+        "account_no": {
+          "enabled": true,
+          "label": "客户编号",
+          "type": ""
+        },
+        "fax": {
+          "enabled": true,
+          "label": "传真",
+          "type": ""
+        },
+        "field_LPx6z__c": {
+          "enabled": true,
+          "label": "区域（cortex）",
+          "type": ""
+        },
+        "field_20UjM__c": {
+          "enabled": true,
+          "label": "首次拜访时间",
+          "type": ""
+        },
+        "field_8D5oe__c": {
+          "enabled": true,
+          "label": "经销商分类",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "field_Puqm9__c": {
+          "enabled": true,
+          "label": "最近拜访时间",
+          "type": ""
+        },
+        "field_t7k2O__c": {
+          "enabled": true,
+          "label": "客户分类",
+          "type": ""
+        },
+        "field_h5uc3__c": {
+          "enabled": true,
+          "label": "管家号",
+          "type": ""
+        },
+        "partner_id": {
+          "enabled": true,
+          "label": "经销商",
+          "type": ""
+        },
+        "account_source": {
+          "enabled": true,
+          "label": "客户来源",
+          "type": ""
+        }
+      },
+      "CheckinsObj": {
+        "address_city": {
+          "enabled": true,
+          "label": "城市",
+          "type": ""
+        },
+        "address_country": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "address_province": {
+          "enabled": true,
+          "label": "省份",
+          "type": ""
+        },
+        "address_street": {
+          "enabled": true,
+          "label": "街道",
+          "type": ""
+        },
+        "checkin_address_desc": {
+          "enabled": true,
+          "label": "签到详细地址",
+          "type": ""
+        },
+        "checkin_city": {
+          "enabled": true,
+          "label": "签到市",
+          "type": ""
+        },
+        "checkin_province": {
+          "enabled": true,
+          "label": "签到省",
+          "type": ""
+        },
+        "checkins_time": {
+          "enabled": true,
+          "label": "签到时间",
+          "type": ""
+        },
+        "checkinsobj_id": {
+          "enabled": true,
+          "label": "关联外勤",
+          "type": ""
+        },
+        "content_text": {
+          "enabled": true,
+          "label": "签到内容",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "customer_id": {
+          "enabled": true,
+          "label": "客户",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "duration_formula": {
+          "enabled": true,
+          "label": "外勤时长",
+          "type": ""
+        },
+        "field_2M02K__c": {
+          "enabled": true,
+          "label": "拜访客户目的",
+          "type": ""
+        },
+        "field_9ca2s__c": {
+          "enabled": true,
+          "label": "客户性质",
+          "type": ""
+        },
+        "field_Ci3XB__c": {
+          "enabled": true,
+          "label": "商机",
+          "type": ""
+        },
+        "field_Gx1d0__c": {
+          "enabled": true,
+          "label": "客户联系人",
+          "type": ""
+        },
+        "field_OPcl2__c": {
+          "enabled": true,
+          "label": "签到日期",
+          "type": ""
+        },
+        "field_ROy6V__c": {
+          "enabled": true,
+          "label": "外勤是否有效（大于20分钟，小于240分钟）",
+          "type": ""
+        },
+        "field_bb4Gb__c": {
+          "enabled": true,
+          "label": "关联销售线索",
+          "type": ""
+        },
+        "field_cdqww__c": {
+          "enabled": true,
+          "label": "拜访目的",
+          "type": ""
+        },
+        "field_hY4z2__c": {
+          "enabled": true,
+          "label": "签到时分秒格式化",
+          "type": ""
+        },
+        "field_ipk28__c": {
+          "enabled": true,
+          "label": "备注",
+          "type": ""
+        },
+        "field_rbCnE__c": {
+          "enabled": true,
+          "label": "经销商",
+          "type": ""
+        },
+        "field_w4J9j__c": {
+          "enabled": true,
+          "label": "客户业务类型",
+          "type": ""
+        },
+        "finish_date": {
+          "enabled": true,
+          "label": "完成日期",
+          "type": ""
+        },
+        "finish_time": {
+          "enabled": true,
+          "label": "完成时间",
+          "type": ""
+        },
+        "last_modified_by": {
+          "enabled": true,
+          "label": "最后修改人",
+          "type": ""
+        },
+        "last_modified_time": {
+          "enabled": true,
+          "label": "最后修改时间",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "高级外勤编号",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人主属部门",
+          "type": ""
+        },
+        "property_manager_id__c": {
+          "enabled": true,
+          "label": "管家号",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "relevant_team": {
+          "enabled": true,
+          "label": "相关团队",
+          "type": ""
+        },
+        "select_ids": {
+          "enabled": true,
+          "label": "关联选择项Id",
+          "type": ""
+        }
+      },
+      "DeliveryNoteObj": {
+        "sales_order_id": {
+          "enabled": true,
+          "label": "销售订单编号",
+          "type": ""
+        },
+        "field_B1nUt__c": {
+          "enabled": true,
+          "label": "任务完成条数",
+          "type": ""
+        },
+        "status": {
+          "enabled": true,
+          "label": "状态",
+          "type": ""
+        },
+        "field_Hv7P2__c": {
+          "enabled": true,
+          "label": "关联客户",
+          "type": ""
+        },
+        "field_wdTsl__c": {
+          "enabled": true,
+          "label": "市",
+          "type": ""
+        },
+        "field_4o210__c": {
+          "enabled": true,
+          "label": "ERP发货单号",
+          "type": ""
+        },
+        "last_modified_time": {
+          "enabled": true,
+          "label": "最后修改时间",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "field_ZMbU2__c": {
+          "enabled": true,
+          "label": "发货数量",
+          "type": ""
+        },
+        "account_id": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "country__c": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "ship_to_add": {
+          "enabled": true,
+          "label": "收货地址",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人所在部门",
+          "type": ""
+        },
+        "field_UWpvc__c": {
+          "enabled": true,
+          "label": "口扫发货数量（计算，给订单统计用）",
+          "type": ""
+        },
+        "field_q0Mbn__c": {
+          "enabled": true,
+          "label": "口扫发货数量",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "field_l831n__c": {
+          "enabled": true,
+          "label": "诊所省",
+          "type": ""
+        },
+        "field_1g8V1__c": {
+          "enabled": true,
+          "label": "CT发货数量",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "delivery_date": {
+          "enabled": true,
+          "label": "发货日期",
+          "type": ""
+        },
+        "field_3JmQx__c": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "发货单编号",
+          "type": ""
+        },
+        "_id": {
+          "enabled": true,
+          "label": "ID",
+          "type": ""
+        },
+        "field_YK1e6__c": {
+          "enabled": true,
+          "label": "客户类型",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "field_sc5wu__c": {
+          "enabled": true,
+          "label": "负责人所在大区",
+          "type": ""
+        },
+        "contract_province__c": {
+          "enabled": true,
+          "label": "合同省",
+          "type": ""
+        },
+        "field_2s2Ca__c": {
+          "enabled": true,
+          "label": "诊所市",
+          "type": ""
+        },
+        "field_o3hi1__c": {
+          "enabled": true,
+          "label": "ERP订单号",
+          "type": ""
+        },
+        "field_l2p3Y__c": {
+          "enabled": true,
+          "label": "发货产品类型",
+          "type": ""
+        },
+        "last_modified_by": {
+          "enabled": true,
+          "label": "最后修改人",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        }
+      },
+      "DeliveryNoteProductObj": {
+        "field_U8Q1U__c": {
+          "enabled": true,
+          "label": "完成数量",
+          "type": ""
+        },
+        "customer__c": {
+          "enabled": true,
+          "label": "客户",
+          "type": ""
+        },
+        "field_onugi__c": {
+          "enabled": true,
+          "label": "规格型号（del）",
+          "type": ""
+        },
+        "field_1wcwl__c": {
+          "enabled": true,
+          "label": "大区",
+          "type": ""
+        },
+        "delivery_num": {
+          "enabled": true,
+          "label": "本次发货数",
+          "type": ""
+        },
+        "field_qa2cP__c": {
+          "enabled": true,
+          "label": "价税合计",
+          "type": ""
+        },
+        "product_id": {
+          "enabled": true,
+          "label": "产品名称",
+          "type": ""
+        },
+        "sales_order_id": {
+          "enabled": true,
+          "label": "销售订单编号",
+          "type": ""
+        },
+        "sales_order_product_id": {
+          "enabled": true,
+          "label": "订单产品编号",
+          "type": ""
+        },
+        "specification_model__c": {
+          "enabled": true,
+          "label": "规格型号",
+          "type": ""
+        },
+        "field_8Uhk7__c": {
+          "enabled": true,
+          "label": "产品规格",
+          "type": ""
+        },
+        "field_eHO42__c": {
+          "enabled": true,
+          "label": "存货代码",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "field_b898h__c": {
+          "enabled": true,
+          "label": "发货客户",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "field_z2hoj__c": {
+          "enabled": true,
+          "label": "产品编码",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "_id": {
+          "enabled": true,
+          "label": "ID",
+          "type": ""
+        },
+        "delivery_note_id": {
+          "enabled": true,
+          "label": "发货单编号",
+          "type": ""
+        },
+        "field_gd51J__c": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "field_ulDoL__c": {
+          "enabled": true,
+          "label": "产品分类（函数使用,勿删！）",
+          "type": ""
+        },
+        "remark": {
+          "enabled": true,
+          "label": "备注",
+          "type": ""
+        },
+        "field_r84jl__c": {
+          "enabled": true,
+          "label": "是否口扫以旧换新",
+          "type": ""
+        },
+        "field_9yB9g__c": {
+          "enabled": true,
+          "label": "口扫任务完成量",
+          "type": ""
+        },
+        "field_dx0q2__c": {
+          "enabled": true,
+          "label": "设备序列号",
+          "type": ""
+        },
+        "product_category__c": {
+          "enabled": true,
+          "label": "产品分类",
+          "type": ""
+        },
+        "field_133tT__c": {
+          "enabled": true,
+          "label": "ERP出库单号",
+          "type": ""
+        },
+        "field_M348t__c": {
+          "enabled": true,
+          "label": "含税单价",
+          "type": ""
+        },
+        "order_product_amount": {
+          "enabled": true,
+          "label": "订单产品数量",
+          "type": ""
+        },
+        "field_2u2xf__c": {
+          "enabled": true,
+          "label": "产品型号",
+          "type": ""
+        },
+        "delivery_money": {
+          "enabled": true,
+          "label": "本次发货金额",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "last_modified_time": {
+          "enabled": true,
+          "label": "最后修改时间",
+          "type": ""
+        },
+        "field_Aa49V__c": {
+          "enabled": true,
+          "label": "发货日期",
+          "type": ""
+        },
+        "erp_order_id__c": {
+          "enabled": true,
+          "label": "ERP订单号",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "last_modified_by": {
+          "enabled": true,
+          "label": "最后修改人",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "order_by": {
+          "enabled": true,
+          "label": "序号",
+          "type": ""
+        },
+        "field_zjMu2__c": {
+          "enabled": true,
+          "label": "订单发货数",
+          "type": ""
+        },
+        "field_haO56__c": {
+          "enabled": true,
+          "label": "订单产品业务类型",
+          "type": ""
+        }
+      },
+      "NewOpportunityObj": {
+        "account_id": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "authorization_end_date__c": {
+          "enabled": true,
+          "label": "授权结束日期",
+          "type": ""
+        },
+        "authorization_remark__c": {
+          "enabled": true,
+          "label": "授权备注",
+          "type": ""
+        },
+        "authorization_start_date__c": {
+          "enabled": true,
+          "label": "授权开始日期",
+          "type": ""
+        },
+        "classification_of_win_reas__c": {
+          "enabled": true,
+          "label": "赢单原因分类",
+          "type": ""
+        },
+        "company_entity__c": {
+          "enabled": true,
+          "label": "公司主体",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "dingtalk_auth_order_no__c": {
+          "enabled": true,
+          "label": "钉钉授权单号",
+          "type": ""
+        },
+        "expected_winning_time__c": {
+          "enabled": true,
+          "label": "预计赢单时间节点(计算)",
+          "type": ""
+        },
+        "expected_winning_time_a__c": {
+          "enabled": true,
+          "label": "商机等级",
+          "type": ""
+        },
+        "field_1W1bo__c": {
+          "enabled": true,
+          "label": "区",
+          "type": ""
+        },
+        "field_2n0XN__c": {
+          "enabled": true,
+          "label": "输单原因描述",
+          "type": ""
+        },
+        "field_38w2I__c": {
+          "enabled": true,
+          "label": "备注",
+          "type": ""
+        },
+        "field_73Hu8__c": {
+          "enabled": true,
+          "label": "输单原因分类",
+          "type": ""
+        },
+        "field_82gy3__c": {
+          "enabled": true,
+          "label": "商机来源经销商",
+          "type": ""
+        },
+        "field_93sb1__c": {
+          "enabled": true,
+          "label": "市",
+          "type": ""
+        },
+        "field_H75ee__c": {
+          "enabled": true,
+          "label": "意向台数",
+          "type": ""
+        },
+        "field_SS8XX__c": {
+          "enabled": true,
+          "label": "是否招投标项目",
+          "type": ""
+        },
+        "field_Xl59P__c": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "field_fEKk5__c": {
+          "enabled": true,
+          "label": "意向产品（多选）",
+          "type": ""
+        },
+        "field_k2xsC__c": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        },
+        "field_key_opportunity_label__c": {
+          "enabled": true,
+          "label": "重点商机标签",
+          "type": ""
+        },
+        "field_lc64y__c": {
+          "enabled": true,
+          "label": "跟进周期",
+          "type": ""
+        },
+        "field_qud1G__c": {
+          "enabled": true,
+          "label": "商机来源（标签）",
+          "type": ""
+        },
+        "field_ry1mH__c": {
+          "enabled": true,
+          "label": "商机描述",
+          "type": ""
+        },
+        "field_swY25__c": {
+          "enabled": true,
+          "label": "输单日期",
+          "type": ""
+        },
+        "field_z0ZQc__c": {
+          "enabled": true,
+          "label": "输单主要原因",
+          "type": ""
+        },
+        "field_zBrLw__c": {
+          "enabled": true,
+          "label": "分销商（客户对象）",
+          "type": ""
+        },
+        "first_authorization_date__c": {
+          "enabled": true,
+          "label": "首次授权日期",
+          "type": ""
+        },
+        "hospital_level__c": {
+          "enabled": true,
+          "label": "医院等级",
+          "type": ""
+        },
+        "is_campaign_list__c": {
+          "enabled": true,
+          "label": "是否战役清单",
+          "type": ""
+        },
+        "is_original_sent_by_post__c": {
+          "enabled": true,
+          "label": "是否邮寄原件",
+          "type": ""
+        },
+        "is_zhenying_shipment_win__c": {
+          "enabled": true,
+          "label": "是否其他商机发货赢单",
+          "type": ""
+        },
+        "leads_id": {
+          "enabled": true,
+          "label": "主线索",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "lost_reason": {
+          "enabled": true,
+          "label": "输单原因",
+          "type": ""
+        },
+        "main_reason_for_winning_th__c": {
+          "enabled": true,
+          "label": "赢单主要原因",
+          "type": ""
+        },
+        "multiple_choice_2__c": {
+          "enabled": true,
+          "label": "商机条件",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "商机名称",
+          "type": ""
+        },
+        "opportunity_type__c": {
+          "enabled": true,
+          "label": "商机类型",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "partner_id": {
+          "enabled": true,
+          "label": "经销商",
+          "type": ""
+        },
+        "project_name__c": {
+          "enabled": true,
+          "label": "项目名称",
+          "type": ""
+        },
+        "project_number__c": {
+          "enabled": true,
+          "label": "项目编号",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "relevant_team": {
+          "enabled": true,
+          "label": "相关团队",
+          "type": ""
+        },
+        "sales_stage": {
+          "enabled": true,
+          "label": "商机阶段",
+          "type": ""
+        },
+        "sales_status": {
+          "enabled": true,
+          "label": "阶段状态",
+          "type": ""
+        },
+        "stg_changed_time": {
+          "enabled": true,
+          "label": "阶段变更时间",
+          "type": ""
+        },
+        "tender_announcement__c": {
+          "enabled": true,
+          "label": "招标公告",
+          "type": ""
+        },
+        "tender_date__c": {
+          "enabled": true,
+          "label": "招标日期",
+          "type": ""
+        },
+        "this_project_authorized_ag__c": {
+          "enabled": true,
+          "label": "该项目授权代理商名称",
+          "type": ""
+        }
+      },
+      "LeadsObj": {
+        "project_name__c": {
+          "enabled": true,
+          "label": "项目名称",
+          "type": ""
+        },
+        "attribute__c": {
+          "enabled": true,
+          "label": "属性",
+          "type": ""
+        },
+        "field_Yebz4__c": {
+          "enabled": true,
+          "label": "企查查注册时间",
+          "type": ""
+        },
+        "life_status_before_invalid": {
+          "enabled": true,
+          "label": "作废前生命状态",
+          "type": ""
+        },
+        "customer_nature__c": {
+          "enabled": true,
+          "label": "客户性质",
+          "type": ""
+        },
+        "tel": {
+          "enabled": true,
+          "label": "联系人电话",
+          "type": ""
+        },
+        "assigned_time": {
+          "enabled": true,
+          "label": "领取/分配时间",
+          "type": ""
+        },
+        "field_4lSz4__c": {
+          "enabled": true,
+          "label": "分配时间",
+          "type": ""
+        },
+        "biz_status": {
+          "enabled": true,
+          "label": "状态",
+          "type": ""
+        },
+        "project_number__c": {
+          "enabled": true,
+          "label": "项目编号",
+          "type": ""
+        },
+        "field_X2H09__c": {
+          "enabled": true,
+          "label": "用户类型",
+          "type": ""
+        },
+        "back_reason": {
+          "enabled": true,
+          "label": "销售人员退回原因",
+          "type": ""
+        },
+        "field_WC48O__c": {
+          "enabled": true,
+          "label": "地址信息",
+          "type": ""
+        },
+        "field_4MY92__c": {
+          "enabled": true,
+          "label": "意向产品",
+          "type": ""
+        },
+        "last_follower": {
+          "enabled": true,
+          "label": "最后跟进人",
+          "type": ""
+        },
+        "region__c": {
+          "enabled": true,
+          "label": "大区",
+          "type": ""
+        },
+        "address": {
+          "enabled": true,
+          "label": "地址",
+          "type": ""
+        },
+        "last_modified_time": {
+          "enabled": true,
+          "label": "最后修改时间",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "source": {
+          "enabled": true,
+          "label": "信息来源",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人主属部门",
+          "type": ""
+        },
+        "field_KFaxR__c": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "field_4g2T2__c": {
+          "enabled": true,
+          "label": "区",
+          "type": ""
+        },
+        "field_nCgeH__c": {
+          "enabled": true,
+          "label": "来源渠道",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "relevant_team": {
+          "enabled": true,
+          "label": "相关团队",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "last_follow_time": {
+          "enabled": true,
+          "label": "最后跟进时间",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "客户名称",
+          "type": ""
+        },
+        "field_Ja642__c": {
+          "enabled": true,
+          "label": "线索清洗状态",
+          "type": ""
+        },
+        "field_nXmk1__c": {
+          "enabled": true,
+          "label": "定位",
+          "type": ""
+        },
+        "_id": {
+          "enabled": true,
+          "label": "ID",
+          "type": ""
+        },
+        "business_opportunity__c": {
+          "enabled": true,
+          "label": "商机",
+          "type": ""
+        },
+        "field_2rY6b__c": {
+          "enabled": true,
+          "label": "详细地址",
+          "type": ""
+        },
+        "field_oRbye__c": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        },
+        "remark": {
+          "enabled": true,
+          "label": "备注",
+          "type": ""
+        },
+        "field_nOpxz__c": {
+          "enabled": true,
+          "label": "联系人姓名",
+          "type": ""
+        },
+        "department": {
+          "enabled": true,
+          "label": "部门",
+          "type": ""
+        },
+        "information_release_time__c": {
+          "enabled": true,
+          "label": "信息发布日期",
+          "type": ""
+        },
+        "leads_stage_changed_time": {
+          "enabled": true,
+          "label": "线索阶段变更时间",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "completed_result": {
+          "enabled": true,
+          "label": "处理结果",
+          "type": ""
+        },
+        "field_9jJ6M__c": {
+          "enabled": true,
+          "label": "市",
+          "type": ""
+        },
+        "mobile": {
+          "enabled": true,
+          "label": "手机",
+          "type": ""
+        },
+        "last_modified_by": {
+          "enabled": true,
+          "label": "最后修改人",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        }
+      },
+      "object_Hm58x__c": {
+        "field_1EX9X__c": {
+          "enabled": true,
+          "label": "CT数量",
+          "type": ""
+        },
+        "field_zCjIg__c": {
+          "enabled": true,
+          "label": "Customer Name 客户名称",
+          "type": ""
+        },
+        "field_j8s23__c": {
+          "enabled": true,
+          "label": "商机来源经销商级别",
+          "type": ""
+        },
+        "field_VegrQ__c": {
+          "enabled": true,
+          "label": "创建日期",
+          "type": ""
+        },
+        "field_o1bpn__c": {
+          "enabled": true,
+          "label": "国家",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "field_2LIUc__c": {
+          "enabled": true,
+          "label": "合同类型",
+          "type": ""
+        },
+        "field_5s214__c": {
+          "enabled": true,
+          "label": "诊所",
+          "type": ""
+        },
+        "field_9muZk__c": {
+          "enabled": true,
+          "label": "合同产品类型",
+          "type": ""
+        },
+        "field_qX7WX__c": {
+          "enabled": true,
+          "label": "审批状态",
+          "type": ""
+        },
+        "owner_department": {
+          "enabled": true,
+          "label": "负责人主属部门",
+          "type": ""
+        },
+        "field_B1r6Q__c": {
+          "enabled": true,
+          "label": "市",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "field_1nY0h__c": {
+          "enabled": true,
+          "label": "对应商机",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "data_own_department": {
+          "enabled": true,
+          "label": "归属部门",
+          "type": ""
+        },
+        "field_G14gs__c": {
+          "enabled": true,
+          "label": "政策申请内容",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "Contract Name合同名称",
+          "type": ""
+        },
+        "_id": {
+          "enabled": true,
+          "label": "ID",
+          "type": ""
+        },
+        "field_a25Dw__c": {
+          "enabled": true,
+          "label": "合同编号",
+          "type": ""
+        },
+        "field_7brys__c": {
+          "enabled": true,
+          "label": "是否有经销商",
+          "type": ""
+        },
+        "field_bD1X0__c": {
+          "enabled": true,
+          "label": "经销商（客户对象）",
+          "type": ""
+        },
+        "field_YK1e6__c": {
+          "enabled": true,
+          "label": "客户类型",
+          "type": ""
+        },
+        "owner": {
+          "enabled": true,
+          "label": "负责人",
+          "type": ""
+        },
+        "field_0nsjD__c": {
+          "enabled": true,
+          "label": "商机来源经销商",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        },
+        "field_6g25p__c": {
+          "enabled": true,
+          "label": "省",
+          "type": ""
+        }
+      },
+      "DeviceObj": {
+        "after_sales_version_attrib__c": {
+          "enabled": true,
+          "label": "售后版本属性",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "device_code": {
+          "enabled": true,
+          "label": "设备序列号",
+          "type": ""
+        },
+        "device_customer_id": {
+          "enabled": true,
+          "label": "客户",
+          "type": ""
+        },
+        "device_product_id": {
+          "enabled": true,
+          "label": "产品",
+          "type": ""
+        },
+        "field_07R6s__c": {
+          "enabled": true,
+          "label": "是否还在保修期内",
+          "type": ""
+        },
+        "field_2n8z4__c": {
+          "enabled": true,
+          "label": "客户所在区",
+          "type": ""
+        },
+        "field_3Q6Ar__c": {
+          "enabled": true,
+          "label": "验收日期",
+          "type": ""
+        },
+        "field_3qh2q__c": {
+          "enabled": true,
+          "label": "是否培训完成",
+          "type": ""
+        },
+        "field_9t5q2__c": {
+          "enabled": true,
+          "label": "是否调试完成",
+          "type": ""
+        },
+        "field_B87MW__c": {
+          "enabled": true,
+          "label": "安装工程师",
+          "type": ""
+        },
+        "field_Pp314__c": {
+          "enabled": true,
+          "label": "设备版本",
+          "type": ""
+        },
+        "field_S9we8__c": {
+          "enabled": true,
+          "label": "客户性质",
+          "type": ""
+        },
+        "field_d63gO__c": {
+          "enabled": true,
+          "label": "规格型号",
+          "type": ""
+        },
+        "field_iu67Z__c": {
+          "enabled": true,
+          "label": "客户所在市",
+          "type": ""
+        },
+        "field_j2si1__c": {
+          "enabled": true,
+          "label": "设备使用状态",
+          "type": ""
+        },
+        "field_o0o11__c": {
+          "enabled": true,
+          "label": "保修截止日期",
+          "type": ""
+        },
+        "field_t51qW__c": {
+          "enabled": true,
+          "label": "客户大区",
+          "type": ""
+        },
+        "field_yghN1__c": {
+          "enabled": true,
+          "label": "客户所在省",
+          "type": ""
+        },
+        "install_time": {
+          "enabled": true,
+          "label": "安装日期",
+          "type": ""
+        },
+        "production_time": {
+          "enabled": true,
+          "label": "生产日期",
+          "type": ""
+        },
+        "single_choice__c": {
+          "enabled": true,
+          "label": "设备所属区域",
+          "type": ""
+        }
+      },
+      "CasesObj": {
+        "account_id": {
+          "enabled": true,
+          "label": "客户",
+          "type": ""
+        },
+        "after_sales_version_proper__c": {
+          "enabled": true,
+          "label": "售后版本属性",
+          "type": ""
+        },
+        "cases_status": {
+          "enabled": true,
+          "label": "状态",
+          "type": ""
+        },
+        "create_time": {
+          "enabled": true,
+          "label": "创建时间",
+          "type": ""
+        },
+        "created_by": {
+          "enabled": true,
+          "label": "创建人",
+          "type": ""
+        },
+        "field_0pJ21__c": {
+          "enabled": true,
+          "label": "后台服务部署时间",
+          "type": ""
+        },
+        "field_2KHhm__c": {
+          "enabled": true,
+          "label": "工程师路程签到开始时间",
+          "type": ""
+        },
+        "field_2X0Xx__c": {
+          "enabled": true,
+          "label": "工单后续处理方式",
+          "type": ""
+        },
+        "field_42ox0__c": {
+          "enabled": true,
+          "label": "客户性质",
+          "type": ""
+        },
+        "field_498Wj__c": {
+          "enabled": true,
+          "label": "在线处理开始时间",
+          "type": ""
+        },
+        "field_4DF01__c": {
+          "enabled": true,
+          "label": "到场时间",
+          "type": ""
+        },
+        "field_528F4__c": {
+          "enabled": true,
+          "label": "现场故障描述",
+          "type": ""
+        },
+        "field_5K32X__c": {
+          "enabled": true,
+          "label": "故障分类",
+          "type": ""
+        },
+        "field_5jXld__c": {
+          "enabled": true,
+          "label": "工程师响应时间",
+          "type": ""
+        },
+        "field_5nC3C__c": {
+          "enabled": true,
+          "label": "现场处理故障现象",
+          "type": ""
+        },
+        "field_6g5W8__c": {
+          "enabled": true,
+          "label": "工程师接单时间",
+          "type": ""
+        },
+        "field_6iF16__c": {
+          "enabled": true,
+          "label": "在线处理结束时间",
+          "type": ""
+        },
+        "field_7Ul1t__c": {
+          "enabled": true,
+          "label": "客户所在区",
+          "type": ""
+        },
+        "field_9lxb2__c": {
+          "enabled": true,
+          "label": "安装时间（设备）",
+          "type": ""
+        },
+        "field_EYmNl__c": {
+          "enabled": true,
+          "label": "客户所在省",
+          "type": ""
+        },
+        "field_Jzo4q__c": {
+          "enabled": true,
+          "label": "在线处理故障现象",
+          "type": ""
+        },
+        "field_KovaS__c": {
+          "enabled": true,
+          "label": "产品类型",
+          "type": ""
+        },
+        "field_Qom21__c": {
+          "enabled": true,
+          "label": "工程师现场修复时间",
+          "type": ""
+        },
+        "field_WdT76__c": {
+          "enabled": true,
+          "label": "现场工单开始处理时间",
+          "type": ""
+        },
+        "field_d4ak4__c": {
+          "enabled": true,
+          "label": "在线处理故障现象分类",
+          "type": ""
+        },
+        "field_eLrlc__c": {
+          "enabled": true,
+          "label": "在线处理故障标签delete",
+          "type": ""
+        },
+        "field_glcp__c": {
+          "enabled": true,
+          "label": "关联产品",
+          "type": ""
+        },
+        "field_h1o9L__c": {
+          "enabled": true,
+          "label": "后台服务",
+          "type": ""
+        },
+        "field_hyj6p__c": {
+          "enabled": true,
+          "label": "故障标签",
+          "type": ""
+        },
+        "field_j2xsU__c": {
+          "enabled": true,
+          "label": "现场工单结束处理时间",
+          "type": ""
+        },
+        "field_l0s8o__c": {
+          "enabled": true,
+          "label": "报单人",
+          "type": ""
+        },
+        "field_mw78Z__c": {
+          "enabled": true,
+          "label": "设备规格型号",
+          "type": ""
+        },
+        "field_o9kWk__c": {
+          "enabled": true,
+          "label": "现场处理结束时间",
+          "type": ""
+        },
+        "field_otxu1__c": {
+          "enabled": true,
+          "label": "响应时间",
+          "type": ""
+        },
+        "field_q280m__c": {
+          "enabled": true,
+          "label": "报单信息描述",
+          "type": ""
+        },
+        "field_t4c7c__c": {
+          "enabled": true,
+          "label": "客户现场修复时间",
+          "type": ""
+        },
+        "field_tdJSU__c": {
+          "enabled": true,
+          "label": "客户大区",
+          "type": ""
+        },
+        "field_ua2yr__c": {
+          "enabled": true,
+          "label": "工单结束时间",
+          "type": ""
+        },
+        "field_uf4uC__c": {
+          "enabled": true,
+          "label": "在线处理人员",
+          "type": ""
+        },
+        "field_v4664__c": {
+          "enabled": true,
+          "label": "现场处理开始时间",
+          "type": ""
+        },
+        "field_vZ46d__c": {
+          "enabled": true,
+          "label": "在线处理结果",
+          "type": ""
+        },
+        "field_wV7a7__c": {
+          "enabled": true,
+          "label": "客户所在市",
+          "type": ""
+        },
+        "field_workflowStatus__c": {
+          "enabled": true,
+          "label": "工单流程状态",
+          "type": ""
+        },
+        "field_xcfwry__c": {
+          "enabled": true,
+          "label": "服务工程师",
+          "type": ""
+        },
+        "field_y73K2__c": {
+          "enabled": true,
+          "label": "返程结束时间",
+          "type": ""
+        },
+        "field_yMJbo__c": {
+          "enabled": true,
+          "label": "设备序列号",
+          "type": ""
+        },
+        "field_yv4lq__c": {
+          "enabled": true,
+          "label": "现场处理故障现象分类",
+          "type": ""
+        },
+        "field_zddd8__c": {
+          "enabled": true,
+          "label": "现场处理人员",
+          "type": ""
+        },
+        "life_status": {
+          "enabled": true,
+          "label": "生命状态",
+          "type": ""
+        },
+        "name": {
+          "enabled": true,
+          "label": "工单编码",
+          "type": ""
+        },
+        "record_type": {
+          "enabled": true,
+          "label": "业务类型",
+          "type": ""
+        }
+      }
+    },
+    "creator_options": [],
+    "crm_objects": [
+      {
+        "name": "销售订单",
+        "api_name": "SalesOrderObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "发货单",
+        "api_name": "DeliveryNoteObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "发货单产品",
+        "api_name": "DeliveryNoteProductObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "高级外勤对象",
+        "api_name": "CheckinsObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "销售合同",
+        "api_name": "object_Hm58x__c",
+        "object_type": "custom"
+      },
+      {
+        "name": "客户",
+        "api_name": "AccountObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "销售线索",
+        "api_name": "LeadsObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "商机",
+        "api_name": "NewOpportunityObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "设备",
+        "api_name": "DeviceObj",
+        "object_type": "preset"
+      },
+      {
+        "name": "工单",
+        "api_name": "CasesObj",
+        "object_type": "preset"
+      }
+    ],
+    "product_type_options": [
+      "Matrix 5000 (15*9)标配版D",
+      "Matrix 5600 (15*15)",
+      "Matrix5600（二合一）",
+      "Matrix 6600 (16*16)",
+      "Matrix 7000（X光机）",
+      "Matrix 7000（面扫）",
+      "Matrix 7000（X光机+面扫）",
+      "Matrix 7600（X光机+面扫）",
+      "Dentrix 55 OEM",
+      "F200",
+      "F220C",
+      "R150",
+      "S10",
+      "S6500（技工版）",
+      "S6500（临床版）",
+      "S6500临床版推车",
+      "S6500扫描头附件（标准扫描头）",
+      "S6500扫描头附件（小扫描头）",
+      "IP板",
+      "X光机",
+      "牙医管家单账号",
+      "牙医管家基础版",
+      "牙医管家旗舰版"
+    ],
+    "admin_mobile": "15889740213"
+  },
+  "opportunity": {
+    "option_mappings": {
+      "field_fEKk5__c": {
+        "mappings": {
+          "cli2Wmtt4": "Dentrix 10",
+          "0Tj440fT2": "Dentrix 20",
+          "option1": "Dentrix 50",
+          "ScooR5Tcd": "Dentrix 55",
+          "Ik1HF4pgo": "Matrix 5000",
+          "OktMmkS69": "Matrix 5600",
+          "1u2CBz8mi": "Matrix 6600",
+          "option_matrix_7000_2__c": "Matrix 7000-2",
+          "option_matrix_7000__c": "Matrix 7000",
+          "option_matrix_7600__c": "Matrix 7600",
+          "option_matrix_7800__c": "Matrix 7800",
+          "121LOWwgg": "Dentrix 55 云CT",
+          "W76hXkH6l": "F200 (牙智宝)",
+          "9vheSMhDe": "S6000",
+          "T3bXt79o9": "S6000推车",
+          "5V2ajxk2T": "S6500",
+          "z5jU78C5n": "S6500推车",
+          "z8Qx0e7k5": "S7000",
+          "R184ujver": "S7000推车",
+          "21KncVzj3": "S10",
+          "option_ai_localized_deployment_so__c": "AI本地化部署软件",
+          "othe": "其他"
+        }
+      },
+      "record_type": {
+        "mappings": {
+          "default__c": "CBCT民营商机",
+          "record_PFG1w__c": "公立商机",
+          "record_q7U1T__c": "口扫商机"
+        }
+      }
+    },
+    "product_match_rows": [
+      {
+        "order_product": "cli2Wmtt4",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 10"
+      },
+      {
+        "order_product": "0Tj440fT2",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 20"
+      },
+      {
+        "order_product": "option1",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 50"
+      },
+      {
+        "order_product": "ScooR5Tcd",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 55"
+      },
+      {
+        "order_product": "Ik1HF4pgo",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5000"
+      },
+      {
+        "order_product": "OktMmkS69",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 5600"
+      },
+      {
+        "order_product": "1u2CBz8mi",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 6600"
+      },
+      {
+        "order_product": "option_matrix_7000_2__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000"
+      },
+      {
+        "order_product": "option_matrix_7000__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7000"
+      },
+      {
+        "order_product": "option_matrix_7600__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7600"
+      },
+      {
+        "order_product": "option_matrix_7800__c",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Matrix 7800"
+      },
+      {
+        "order_product": "121LOWwgg",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "model_spec": "Dentrix 55"
+      },
+      {
+        "order_product": "W76hXkH6l",
+        "product_name": "",
+        "model_spec": "F200"
+      },
+      {
+        "order_product": "9vheSMhDe",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6000"
+      },
+      {
+        "order_product": "T3bXt79o9",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6000"
+      },
+      {
+        "order_product": "5V2ajxk2T",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500"
+      },
+      {
+        "order_product": "z5jU78C5n",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S6500"
+      },
+      {
+        "order_product": "z8Qx0e7k5",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S7000"
+      },
+      {
+        "order_product": "R184ujver",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S7000"
+      },
+      {
+        "order_product": "21KncVzj3",
+        "product_name": "口腔数字印模仪",
+        "model_spec": "S10"
+      }
+    ],
+    "word_special_columns": [
+      {
+        "name": "授权开始日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "授权结束日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "招标日期",
+        "format": "{:%Y年%m月%d日}"
+      }
+    ],
+    "field_mapping_list": [
+      {
+        "api_name": "name",
+        "display_name": "商机名称"
+      },
+      {
+        "api_name": "account_id",
+        "display_name": "客户名称"
+      },
+      {
+        "api_name": "partner_id",
+        "display_name": "经销商"
+      },
+      {
+        "api_name": "field_fEKk5__c",
+        "display_name": "意向产品（多选）"
+      },
+      {
+        "api_name": "field_38w2I__c",
+        "display_name": "备注"
+      },
+      {
+        "api_name": "opportunity_type__c",
+        "display_name": "商机类型"
+      },
+      {
+        "api_name": "company_entity__c",
+        "display_name": "公司主体"
+      },
+      {
+        "api_name": "tender_date__c",
+        "display_name": "招标日期"
+      },
+      {
+        "api_name": "project_number__c",
+        "display_name": "项目编号"
+      },
+      {
+        "api_name": "project_name__c",
+        "display_name": "项目名称"
+      },
+      {
+        "api_name": "authorization_start_date__c",
+        "display_name": "授权开始日期"
+      },
+      {
+        "api_name": "authorization_end_date__c",
+        "display_name": "授权结束日期"
+      },
+      {
+        "api_name": "is_original_sent_by_post__c",
+        "display_name": "是否邮寄原件"
+      },
+      {
+        "api_name": "authorization_remark__c",
+        "display_name": "授权备注"
+      },
+      {
+        "api_name": "tender_announcement__c",
+        "display_name": "招标公告"
+      },
+      {
+        "api_name": "dingtalk_auth_order_no__c",
+        "display_name": "钉钉授权单号"
+      },
+      {
+        "api_name": "create_time",
+        "display_name": "创建时间"
+      },
+      {
+        "api_name": "created_by",
+        "display_name": "创建人"
+      },
+      {
+        "api_name": "owner",
+        "display_name": "负责人"
+      },
+      {
+        "api_name": "life_status",
+        "display_name": "生命状态"
+      },
+      {
+        "api_name": "record_type",
+        "display_name": "业务类型"
+      },
+      {
+        "api_name": "this_project_authorized_ag__c",
+        "display_name": "该项目授权代理商名称"
+      },
+      {
+        "api_name": "end_user_accurate_name__c",
+        "display_name": "终端用户准确名称"
+      }
+    ],
+    "word_field_mapping": {
+      "终端用户准确名称": "customers",
+      "该项目授权代理商名称": "authorizedcustomers",
+      "项目名称": "thenameoftheproject",
+      "项目编号": "itemnumber",
+      "授权开始日期": "startdate",
+      "授权结束日期": "enddate",
+      "产品名称": "Productname",
+      "规格型号": "Specification",
+      "招标日期": "AuthorizationDate"
+    }
+  }
+}

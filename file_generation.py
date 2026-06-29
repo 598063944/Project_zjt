@@ -2,6 +2,7 @@
 from core import *
 from common import *
 from common import FilterPanel  # Explicit import for FilterPanel migration
+from common import messagebox, frameless_input_text, frameless_message_box
 import common  # 显式导入，用于访问模块级私有函数
 choice = None  # 全局功能选择标识，在后台线程中设置
 
@@ -21,7 +22,10 @@ file_generation.py — 文件生成 Mixin（Excel → 合同）
 import os
 
 # QtWebEngine 必须在 QApplication 创建前导入
-import PyQt6.QtWebEngineWidgets  # noqa: F401
+try:
+    import PyQt6.QtWebEngineWidgets  # noqa: F401
+except ImportError:
+    pass  # 精简版打包时可能不包含 WebEngine
 
 from pathlib import Path  # 路径处理
 import copy
@@ -122,9 +126,23 @@ class file_generationMixin:
                 self.data_search_input.setText(search_text)
                 self.data_search_input.blockSignals(False)
 
-        if hasattr(self, 'output_frame'):
-            self.output_frame.setVisible(self.output_visible)
+        if hasattr(self, '_output_dialog'):
+            if self.output_visible:
+                self._output_dialog.show()
+            else:
+                self._output_dialog.hide()
             self.toggle_output_btn.setText("隐藏" if self.output_visible else "显示")
+            # 从 RuntimeState（个人配置文件）恢复窗口大小和透明度
+            rs_size = self.runtime_state.get("output_window_size")
+            if rs_size and len(rs_size) >= 2:
+                self._output_dialog.resize(int(rs_size[0]), int(rs_size[1]))
+            rs_opacity = self.runtime_state.get("output_opacity")
+            if rs_opacity is not None:
+                self._output_dialog.setWindowOpacity(max(0.1, min(1.0, float(rs_opacity) / 100.0)))
+                if hasattr(self, "output_opacity_nav_btn"):
+                    self.output_opacity_nav_btn.setText(
+                        "\u2299" if rs_opacity >= 100 else str(int(rs_opacity)) + "%"
+                    )
 
         selected_operation = contract_state.get('selected_operation')
         if hasattr(self, 'operation_combo') and selected_operation is not None:
@@ -402,8 +420,10 @@ class file_generationMixin:
         from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QSplitter
         self.data_table = QTableWidget()
         install_table_edit_context_menu(self.data_table)
-        self.table_header = CheckBoxHeader(self.data_table)
+        self.table_header = CheckBoxAutoFilterHeader(self.data_table)
         self.table_header.toggled.connect(self.on_header_select_all_toggled)
+        self.table_header.filter_changed.connect(self._on_data_table_filter_changed)
+        self.table_header._data_provider = self._get_data_autofilter_values
         self.data_table.setHorizontalHeader(self.table_header)
         self.data_table.setColumnCount(0)
         self.data_table.setRowCount(0)
@@ -1002,7 +1022,7 @@ class file_generationMixin:
         presets = self.config.get('file_gen_filter_presets', [])
         if not isinstance(presets, list):
             return
-        reply = QMessageBox.question(self, '确认删除', f'确定删除方案「{name}」吗？')
+        reply = frameless_message_box(self, '确认删除', f'确定删除方案「{name}」吗？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:
             return
         self.config['file_gen_filter_presets'] = [p for p in presets if p.get('name') != name]
@@ -1029,7 +1049,7 @@ class file_generationMixin:
     def _save_data_filter_preset(self):
         """保存文件生成筛选条件为方案（存储在 config['file_gen_filter_presets']）"""
         conditions = self._collect_data_filter_conditions()
-        name, ok = QInputDialog.getText(self, "保存筛选方案", "请输入方案名称：")
+        name, ok = frameless_input_text(self, "保存筛选方案", "请输入方案名称：")
         if not ok or not name or not name.strip():
             return
         name = name.strip()
@@ -1038,7 +1058,7 @@ class file_generationMixin:
             presets = []
         existing = next((i for i, p in enumerate(presets) if p.get('name') == name), None)
         if existing is not None:
-            reply = QMessageBox.question(self, '确认覆盖', f'方案「{name}」已存在，是否覆盖？')
+            reply = frameless_message_box(self, '确认覆盖', f'方案「{name}」已存在，是否覆盖？', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes:
                 return
             presets[existing] = {'name': name, 'conditions': conditions}
@@ -1046,7 +1066,7 @@ class file_generationMixin:
             presets.append({'name': name, 'conditions': conditions})
         self.config['file_gen_filter_presets'] = presets
         save_config(self.config)
-        QMessageBox.information(self, "成功", f"方案「{name}」已保存。")
+        frameless_message_box(self, "成功", f"方案「{name}」已保存。")
 
 
     def _refresh_data_exposed_tags(self):
@@ -1612,6 +1632,9 @@ class file_generationMixin:
                 condition_filtered_rows = filtered
             self.current_filtered_rows = condition_filtered_rows
 
+        # 4. 列头筛选（AutoFilter）
+        self.current_filtered_rows = self._apply_data_autofilter(headers, self.current_filtered_rows)
+
         self._refresh_current_table_page()
 
 
@@ -1673,6 +1696,10 @@ class file_generationMixin:
             self.data_table.setColumnCount(len(display_headers))
             self.data_table.setHorizontalHeaderLabels(display_headers)
             self.data_table.setRowCount(len(page_rows))
+
+            # ✅ 重建后重新安装 AutoFilter 表头
+            if hasattr(self, 'table_header'):
+                self.data_table.setHorizontalHeader(self.table_header)
 
             # ✅ 关键修复：重建表格后必须重新设置ResizeMode，否则clear()/setColumnCount()会重置为默认值
             header = self.data_table.horizontalHeader()
@@ -1841,6 +1868,64 @@ class file_generationMixin:
         return start_date, end_date
 
 
+    # ────────────── AutoFilter 列头筛选 ──────────────────────────
+
+    def _apply_data_autofilter(self, headers, data_entries):
+        """根据列头筛选器的筛选状态过滤数据行"""
+        if not hasattr(self, 'table_header') or not self.table_header.is_filter_active():
+            return data_entries
+        state = self.table_header.get_filter_state()
+        # 构建 source_header_name → source_data_index 映射
+        header_to_idx = {h: i for i, h in enumerate(headers)}
+        visible = getattr(self, 'current_visible_headers', None) or headers
+        filtered = []
+        for entry in data_entries:
+            row_data = entry[1] if isinstance(entry, tuple) else entry
+            skip = False
+            for display_col, excluded in state.items():
+                if not excluded or display_col < 1:
+                    continue
+                col_name = visible[display_col - 1] if display_col - 1 < len(visible) else None
+                if not col_name:
+                    continue
+                src_idx = header_to_idx.get(col_name)
+                if src_idx is None or src_idx >= len(row_data):
+                    continue
+                if str(row_data[src_idx] or '') in excluded:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append(entry)
+        return filtered
+
+    def _on_data_table_filter_changed(self):
+        """列头筛选器变化时回调"""
+        self.current_page = 1
+        self._update_data_table(
+            getattr(self, 'current_source_headers', []),
+            getattr(self, '_current_raw_data_rows', [])
+        )
+
+    def _get_data_autofilter_values(self, col):
+        """data_provider：获取指定显示列在全部筛选后数据中的唯一值"""
+        headers = getattr(self, 'current_source_headers', [])
+        visible = getattr(self, 'current_visible_headers', None) or headers
+        if col < 1 or col - 1 >= len(visible):
+            return []
+        col_name = visible[col - 1]
+        header_to_idx = {h: i for i, h in enumerate(headers)}
+        src_idx = header_to_idx.get(col_name)
+        if src_idx is None:
+            return []
+        data = getattr(self, 'current_filtered_rows', [])
+        values = set()
+        for entry in data:
+            row_data = entry[1] if isinstance(entry, tuple) else entry
+            if src_idx < len(row_data):
+                values.add(str(row_data[src_idx] or ''))
+        return sorted(values)
+
+
     def _apply_date_filter(self, headers, data_rows):
         """应用日期筛选，返回筛选后的数据行"""
         start_date, end_date = self._get_active_filter_date_range()
@@ -2006,39 +2091,28 @@ class file_generationMixin:
         """追加文本到输出窗口"""
         append_user_operation_record(text)
         # 副窗口：排除数据加载日志和过程细节，仅显示生成结果
-        t = str(text)
-        _show_in_sub = True
-        if t.startswith('[') or t.startswith('  ') or t.startswith('\t'):
-            _show_in_sub = False
-        elif any(t.startswith(p) for p in ('处理页面', '原文件名', '新文件名', '页面',
-                                             '水印', '当前字体', '成功设置', '尝试加载',
-                                             '字体 ', '使用备用', 'MediaBox', 'CropBox',
-                                             '旋转角度', '选中的文件')):
-            _show_in_sub = False
         def safe_append():
-            if hasattr(self, 'output_text'):
-                self.output_text.append(text)
-                self.output_text.ensureCursorVisible()
-            if hasattr(self, 'sub_output_text') and not self.output_visible and _show_in_sub:
-                self.sub_output_text.append(text)
-                self.sub_output_text.ensureCursorVisible()
+            if hasattr(self, '_output_text'):
+                self._output_text.append(str(text))
+                self._output_text.ensureCursorVisible()
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(0, safe_append)
 
 
     def on_clear_output(self):
        """清除输出窗口内容"""
-       self.output_text.clear()
-       if hasattr(self, 'sub_output_text'):
-           self.sub_output_text.clear()
+       if hasattr(self, '_output_text') and self._output_text:
+           self._output_text.clear()
 
     def on_toggle_output(self):
         """切换输出窗口显隐"""
         self.output_visible = not getattr(self, 'output_visible', True)
-        if hasattr(self, 'output_frame'):
-            self.output_frame.setVisible(self.output_visible)
-        if hasattr(self, 'sub_output_frame'):
-            self.sub_output_frame.setVisible(not self.output_visible)
+        if hasattr(self, '_output_dialog'):
+            if self.output_visible:
+                self._output_dialog.show()
+            else:
+                self._output_dialog.hide()
+
         if hasattr(self, 'toggle_output_btn'):
             self.toggle_output_btn.setText("隐藏" if self.output_visible else "显示")
 

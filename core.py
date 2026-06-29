@@ -15,12 +15,30 @@ def load_config():
         return _m.load_config()
     return {}
 
+def load_common_config():
+    """加载系统配置文件（从 __main__ 延迟获取）"""
+    import sys as _sys
+    _m = _sys.modules.get('__main__')
+    if _m is not None and hasattr(_m, 'load_common_config'):
+        return _m.load_common_config()
+    return {}
+
 def load_user_runtime_state():
     import sys as _sys
     _m = _sys.modules.get('__main__')
     if _m is not None and hasattr(_m, 'load_user_runtime_state'):
         return _m.load_user_runtime_state()
     return {}
+
+def resolve_app_path(path_value):
+    """???????? __main__ ????? from __main__ import * ??????"""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _m = _sys.modules.get('__main__')
+    if _m is not None and hasattr(_m, 'resolve_app_path'):
+        return _m.resolve_app_path(path_value)
+    # fallback: treat as relative to current directory
+    return _Path(path_value) if path_value else _Path()
 
 def deep_merge_dict(a, b):
     import sys as _sys
@@ -47,6 +65,13 @@ def save_config(config, immediate=False):
     if _m is not None and hasattr(_m, 'save_config'):
         return _m.save_config(config, immediate=immediate)
 
+def save_config_with_delay(config):
+    """延迟保存配置文件（从 __main__ 延迟获取，避免时序问题）"""
+    import sys as _sys
+    _m = _sys.modules.get('__main__')
+    if _m is not None and hasattr(_m, 'save_config_with_delay'):
+        return _m.save_config_with_delay(config)
+
 class _LazyOperationLog:
     def __getattr__(self, name):
         import sys as _s
@@ -67,6 +92,13 @@ def flush_pending_config():
     _m = _sys.modules.get('__main__')
     if _m is not None and hasattr(_m, 'flush_pending_config'):
         return _m.flush_pending_config()
+
+def show_multi_select_dropdown(parent, mappings, current_value='', anchor=None):
+    """显示多选下拉弹窗（从 __main__ 延迟获取）"""
+    import sys as _sys
+    _m = _sys.modules.get('__main__')
+    if _m is not None and hasattr(_m, 'show_multi_select_dropdown'):
+        return _m.show_multi_select_dropdown(parent, mappings, current_value=current_value, anchor=anchor)
  
 class _LazyAppConfig:
     def __getattr__(self, name):
@@ -84,3 +116,12 @@ AppConfig = _LazyAppConfig()
 
 # 显式重新导出（确保名称可用）
 __all__ = [name for name in dir() if not name.startswith("_")]
+
+
+def __getattr__(name):
+    """延迟从 __main__ 获取任何未导入的变量（解决 from __main__ import * 的时序问题）"""
+    import sys as _sys
+    _m = _sys.modules.get('__main__')
+    if _m is not None and hasattr(_m, name):
+        return getattr(_m, name)
+    raise AttributeError(f"module 'core' has no attribute {name!r}")

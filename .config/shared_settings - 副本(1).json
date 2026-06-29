@@ -1,0 +1,12 @@
+{
+  "business_rules": {
+    "field_mapping": {},
+    "crm_option_mappings": {}
+  },
+  "fxiaoke": {
+    "admin_mobile": "15889740213",
+    "crm_object_fields": {
+      "NewOpportunityObj": {}
+    }
+  }
+}
