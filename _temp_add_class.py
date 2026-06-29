@@ -426,7 +426,6 @@ DEFAULT_SOURCES = [
     {'name': '销售订单', 'api_name': 'SalesOrderObj'},
     {'name': '发货单', 'api_name': 'DeliveryNoteObj'},
     {'name': '发货单产品', 'api_name': 'DeliveryNoteProductObj'},
-    {'name': '公立项目授权', 'api_name': 'public_project_authorizati__c'},
 ]
 
 # CRM API 筛选操作符
@@ -21870,11 +21869,10 @@ class ReportDetailPage(QWidget):
     refreshDataRequested = pyqtSignal(str)
     syncDone = pyqtSignal(bool, str, object)  # (ok, msg, stats)
 
-    refreshDataReady = pyqtSignal(object, object, object)  # (folder_data, all_reports, search)
     def __init__(self, db: ReportDatabase = None, parent=None,
-                 save_config_fn=None, load_config_fn=None,
-                 app_config: dict = None,
-                 save_filters_fn=None):
+         save_config_fn=None, load_config_fn=None,
+         app_config: dict = None,
+         save_filters_fn=None):
         super().__init__(parent)
         self._db = db
         self._report_id = ""
@@ -21886,7 +21884,6 @@ class ReportDetailPage(QWidget):
         self._save_filters_fn = save_filters_fn
         self._bg_processing = False  # 后台数据加载标志
 
-        self.refreshDataReady.connect(self._on_refresh_data_ready)
         self.syncDone.connect(self._on_sync_done)
         self._setup_ui()
         self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
@@ -22347,10 +22344,13 @@ class ReportDetailPage(QWidget):
             _light_msgbox(self, QMessageBox.Icon.Warning, "同步失败", msg)
         else:
             _show_sync_toast(self, stats)
-"""
-  │        │                          │  ⑤ 预览 (右下)       │
-  └────────┴───────────────────────────┴─────────────────────┘
-"""
+    def _update_bg_progress(self):
+        bg_active = False
+        if hasattr(self, '_preview') and hasattr(self._preview, '_bg_processing'):
+            bg_active = self._preview._bg_processing
+        if hasattr(self, '_sync_btn') and not self._sync_btn.isEnabled():
+            bg_active = True
+        self._bg_progress.setVisible(bg_active)
 
 import logging
 import os
@@ -22392,13 +22392,6 @@ def _light_msgbox(parent, icon, title, text):
 
 
 
-    def _update_bg_progress(self):
-        bg_active = False
-        if hasattr(self, '_preview') and hasattr(self._preview, '_bg_processing'):
-            bg_active = self._preview._bg_processing
-        if hasattr(self, '_sync_btn') and not self._sync_btn.isEnabled():
-            bg_active = True
-        self._bg_progress.setVisible(bg_active)
 
 class RefreshThread(QThread):
     """后台刷新线程"""
@@ -24838,7 +24831,6 @@ class ReportEditorPage(QWidget):
 - 发货单产品(DeliveryNoteProductObj): 发货单中的产品明细行
 - 客户(AccountObj): 客户主数据
 - 联系人(ContactObj): 客户联系人信息
-- 公立项目授权(public_project_authorizati__c): 公立学校项目授权
 
 ## 常见关联模式
 - 商机 → 销售订单: 通过 sales_order_id / order_id 关联
@@ -31216,8 +31208,7 @@ class ReportManager:
                 {'name': '发货单产品', 'api_name': 'DeliveryNoteProductObj'},
                 {'name': '客户', 'api_name': 'AccountObj'},
                 {'name': '联系人', 'api_name': 'ContactObj'},
-                {'name': '公立项目授权', 'api_name': 'public_project_authorizati__c'},
-            ]
+                        ]
 
         meta = {}
         for obj in crm_objs:
@@ -33724,3 +33715,4 @@ class custom_report_pageMixin:
     def _refresh_custom_report_main_source_options(self, *args, **kwargs): pass
     def _refresh_custom_report_preset_combo(self, *args, **kwargs): pass
     def _save_custom_report_builder_state(self, *args, **kwargs): pass
+# temp end

@@ -1,0 +1,270 @@
+{
+  "business_rules": {
+    "crm_option_mappings": {},
+    "field_mapping": {}
+  },
+  "fxiaoke": {
+    "admin_mobile": "15889740213",
+    "crm_object_fields": {
+      "NewOpportunityObj": {}
+    }
+  },
+  "opportunity": {
+    "option_mappings": {
+      "record_type": {
+        "mappings": {
+          "default__c": "CBCT民营商机",
+          "record_PFG1w__c": "公立商机",
+          "record_q7U1T__c": "口扫商机"
+        }
+      },
+      "field_fEKk5__c": {
+        "mappings": {
+          "othe": "其他",
+          "option1": "Dentrix 50",
+          "0Tj440fT2": "Dentrix 20",
+          "121LOWwgg": "Dentrix 55 云CT",
+          "1u2CBz8mi": "Matrix 6600",
+          "21KncVzj3": "S10",
+          "5V2ajxk2T": "S6500",
+          "9vheSMhDe": "S6000",
+          "Ik1HF4pgo": "Matrix 5000",
+          "OktMmkS69": "Matrix 5600",
+          "R184ujver": "S7000推车",
+          "ScooR5Tcd": "Dentrix 55",
+          "T3bXt79o9": "S6000推车",
+          "W76hXkH6l": "F200 (牙智宝)",
+          "cli2Wmtt4": "Dentrix 10",
+          "z5jU78C5n": "S6500推车",
+          "z8Qx0e7k5": "S7000",
+          "option_matrix_7000__c": "Matrix 7000",
+          "option_matrix_7600__c": "Matrix 7600",
+          "option_matrix_7800__c": "Matrix 7800",
+          "option_matrix_7000_2__c": "Matrix 7000-2",
+          "option_ai_localized_deployment_so__c": "AI本地化部署软件"
+        }
+      }
+    },
+    "product_match_rows": [
+      {
+        "model_spec": "Dentrix 10",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "cli2Wmtt4"
+      },
+      {
+        "model_spec": "Dentrix 20",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "0Tj440fT2"
+      },
+      {
+        "model_spec": "Dentrix 50",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "option1"
+      },
+      {
+        "model_spec": "Dentrix 55",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "ScooR5Tcd"
+      },
+      {
+        "model_spec": "Matrix 5000",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "Ik1HF4pgo"
+      },
+      {
+        "model_spec": "Matrix 5600",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "OktMmkS69"
+      },
+      {
+        "model_spec": "Matrix 6600",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "1u2CBz8mi"
+      },
+      {
+        "model_spec": "Matrix 7000",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "option_matrix_7000_2__c"
+      },
+      {
+        "model_spec": "Matrix 7000",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "option_matrix_7000__c"
+      },
+      {
+        "model_spec": "Matrix 7600",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "option_matrix_7600__c"
+      },
+      {
+        "model_spec": "Matrix 7800",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "option_matrix_7800__c"
+      },
+      {
+        "model_spec": "Dentrix 55",
+        "product_name": "口腔颌面锥形束计算机体层摄影设备",
+        "order_product": "121LOWwgg"
+      },
+      {
+        "model_spec": "F200",
+        "product_name": "",
+        "order_product": "W76hXkH6l"
+      },
+      {
+        "model_spec": "S6000",
+        "product_name": "口腔数字印模仪",
+        "order_product": "9vheSMhDe"
+      },
+      {
+        "model_spec": "S6000",
+        "product_name": "口腔数字印模仪",
+        "order_product": "T3bXt79o9"
+      },
+      {
+        "model_spec": "S6500",
+        "product_name": "口腔数字印模仪",
+        "order_product": "5V2ajxk2T"
+      },
+      {
+        "model_spec": "S6500",
+        "product_name": "口腔数字印模仪",
+        "order_product": "z5jU78C5n"
+      },
+      {
+        "model_spec": "S7000",
+        "product_name": "口腔数字印模仪",
+        "order_product": "z8Qx0e7k5"
+      },
+      {
+        "model_spec": "S7000",
+        "product_name": "口腔数字印模仪",
+        "order_product": "R184ujver"
+      },
+      {
+        "model_spec": "S10",
+        "product_name": "口腔数字印模仪",
+        "order_product": "21KncVzj3"
+      }
+    ],
+    "field_mapping_list": [
+      {
+        "api_name": "name",
+        "display_name": "商机名称"
+      },
+      {
+        "api_name": "account_id",
+        "display_name": "客户名称"
+      },
+      {
+        "api_name": "partner_id",
+        "display_name": "经销商"
+      },
+      {
+        "api_name": "field_fEKk5__c",
+        "display_name": "意向产品（多选）"
+      },
+      {
+        "api_name": "field_38w2I__c",
+        "display_name": "备注"
+      },
+      {
+        "api_name": "opportunity_type__c",
+        "display_name": "商机类型"
+      },
+      {
+        "api_name": "company_entity__c",
+        "display_name": "公司主体"
+      },
+      {
+        "api_name": "tender_date__c",
+        "display_name": "招标日期"
+      },
+      {
+        "api_name": "project_number__c",
+        "display_name": "项目编号"
+      },
+      {
+        "api_name": "project_name__c",
+        "display_name": "项目名称"
+      },
+      {
+        "api_name": "authorization_start_date__c",
+        "display_name": "授权开始日期"
+      },
+      {
+        "api_name": "authorization_end_date__c",
+        "display_name": "授权结束日期"
+      },
+      {
+        "api_name": "is_original_sent_by_post__c",
+        "display_name": "是否邮寄原件"
+      },
+      {
+        "api_name": "authorization_remark__c",
+        "display_name": "授权备注"
+      },
+      {
+        "api_name": "tender_announcement__c",
+        "display_name": "招标公告"
+      },
+      {
+        "api_name": "dingtalk_auth_order_no__c",
+        "display_name": "钉钉授权单号"
+      },
+      {
+        "api_name": "create_time",
+        "display_name": "创建时间"
+      },
+      {
+        "api_name": "created_by",
+        "display_name": "创建人"
+      },
+      {
+        "api_name": "owner",
+        "display_name": "负责人"
+      },
+      {
+        "api_name": "life_status",
+        "display_name": "生命状态"
+      },
+      {
+        "api_name": "record_type",
+        "display_name": "业务类型"
+      },
+      {
+        "api_name": "this_project_authorized_ag__c",
+        "display_name": "该项目授权代理商名称"
+      },
+      {
+        "api_name": "end_user_accurate_name__c",
+        "display_name": "终端用户准确名称"
+      }
+    ],
+    "word_special_columns": [
+      {
+        "name": "授权开始日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "授权结束日期",
+        "format": "{:%Y年%m月%d日}"
+      },
+      {
+        "name": "招标日期",
+        "format": "{:%Y年%m月%d日}"
+      }
+    ],
+    "word_field_mapping": {
+      "产品名称": "Productname",
+      "招标日期": "AuthorizationDate",
+      "规格型号": "Specification",
+      "项目名称": "thenameoftheproject",
+      "项目编号": "itemnumber",
+      "授权开始日期": "startdate",
+      "授权结束日期": "enddate",
+      "终端用户准确名称": "customers",
+      "该项目授权代理商名称": "authorizedcustomers"
+    }
+  }
+}
