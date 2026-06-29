@@ -6571,17 +6571,28 @@ class SourceTableSyncer:
                 progress_callback('sync', f"已就绪: {table_name} ({results[table_name]['rows']} 行)", 10)
 
         total = len(crm_apis)
-        for i, api in enumerate(crm_apis):
-            if progress_callback:
-                progress_callback('sync', f"正在同步 {api} ({i+1}/{total})...",
-                                  int((i / total) * 40))  # 0-40% 用于同步阶段
+        if total == 0:
+            return results
 
-            # 子进度：对象内拉取进度
-            def _fetch_progress(fetched, obj_total, _api=api, _i=i, _n=total):
+        # ?????? CRM ??????????????
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+
+        results_lock = threading.Lock()
+        _completed = [0]  # mutable for closure
+
+        def _sync_one(api, idx):
+            """?????????? CRM ??"""
+            if progress_callback:
+                progress_callback('sync', f"???? {api} ({idx+1}/{total})...",
+                                  int((idx / total) * 40))
+
+            # ???????????
+            def _fetch_progress(fetched, obj_total):
                 if progress_callback and obj_total:
-                    pct = int(((_i + fetched / obj_total) / _n) * 40)
+                    pct = int((min(idx + 1, total) / total) * 40)
                     progress_callback('sync',
-                        f"正在同步 {_api} ({_i+1}/{_n}): {fetched}/{obj_total} 条", pct)
+                        f"???? {api}: {fetched}/{obj_total} ?", pct)
 
             t0 = time.time()
             rows, total_count, err = self._fetcher.fetch_object(
@@ -6589,38 +6600,56 @@ class SourceTableSyncer:
             duration = time.time() - t0
 
             if err:
-                results[api] = {'rows': 0, 'error': err, 'duration': duration}
+                with results_lock:
+                    _completed[0] += 1
                 if progress_callback:
-                    progress_callback('sync', f"{api} 同步失败: {err}",
-                                      int(((i + 1) / total) * 40))
-                continue
+                    progress_callback('sync', f"{api} ????: {err}",
+                                      int((_completed[0] / total) * 40))
+                return api, {'rows': 0, 'error': err, 'duration': duration}
 
             if progress_callback:
-                progress_callback('sync', f"正在写入 {api}: {len(rows)} 条...",
-                                  int(((i + 0.5) / total) * 40))
+                progress_callback('sync', f"???? {api}: {len(rows)} ?...",
+                                  int((min(idx + 1, total) / total) * 40))
 
-            # 增量写入 MySQL source 表（不清空，按 _id 比对更新）
+            # ???? MySQL source ??????? _id ?????
             if not self._db.ensure_source_table(api, sample_row=rows[0] if rows else None):
-                results[api] = {'rows': 0, 'error': f'建表失败: {api}', 'duration': duration}
+                with results_lock:
+                    _completed[0] += 1
                 if progress_callback:
-                    progress_callback('sync', f"{api} 建表失败",
-                                      int(((i + 1) / total) * 40))
-                continue
+                    progress_callback('sync', f"{api} ????",
+                                      int((_completed[0] / total) * 40))
+                return api, {'rows': 0, 'error': f'????: {api}', 'duration': duration}
             self._db.upsert_rows(api, rows)
 
-            results[api] = {
+            result = {
                 'rows': len(rows),
                 'total': total_count,
                 'error': None,
                 'duration': duration,
             }
 
+            with results_lock:
+                _completed[0] += 1
+
             if progress_callback:
-                progress_callback('sync', f"已同步 {api}: {len(rows)} 条",
-                                  int(((i + 1) / total) * 40))
+                progress_callback('sync', f"??? {api}: {len(rows)} ?",
+                                  int((_completed[0] / total) * 40))
+
+            return api, result
+
+        max_workers = min(total, 3)  # ?? 3 ?????? CRM API ??
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_sync_one, api, i): api
+                       for i, api in enumerate(crm_apis)}
+            for f in as_completed(futures):
+                try:
+                    api, result = f.result()
+                    results[api] = result
+                except Exception as e:
+                    api = futures.get(f, '?')
+                    results[api] = {'rows': 0, 'error': str(e), 'duration': 0}
 
         return results
-
     def sync_single(self, object_api: str,
                     max_records: int = 10000,
                     progress_callback: Callable = None) -> dict:
