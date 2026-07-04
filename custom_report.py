@@ -27,7 +27,7 @@ import sys
 
 
 from enum import Enum
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from typing import Optional
 import uuid
 class UILogHandler(logging.Handler):
@@ -3950,7 +3950,7 @@ class ReportDefinition:
     def __post_init__(self):
         # 反序列化时修复嵌套对象类型
         if self.joins and isinstance(self.joins[0], dict):
-            self.joins = [JoinDefinition(**j) if isinstance(j, dict) else j for j in self.joins]
+            self.joins = [JoinDefinition(**_safe_kwargs(j, JoinDefinition)) if isinstance(j, dict) else j for j in self.joins]
         if self.columns and isinstance(self.columns[0], dict):
             fixed = []
             for c in self.columns:
@@ -3959,12 +3959,12 @@ class ReportDefinition:
                     if 'source_object' in c and 'source_object_api' not in c:
                         c = dict(c)
                         c['source_object_api'] = c.pop('source_object')
-                    fixed.append(FieldColumn(**c))
+                    fixed.append(FieldColumn(**_safe_kwargs(c, FieldColumn)))
                 else:
                     fixed.append(c)
             self.columns = fixed
         if self.filters and isinstance(self.filters[0], dict):
-            self.filters = [FilterCondition(**f) if isinstance(f, dict) else f for f in self.filters]
+            self.filters = [FilterCondition(**_safe_kwargs(f, FilterCondition)) if isinstance(f, dict) else f for f in self.filters]
 
         # 兼容旧数据：ai_chat_messages → ai_conversations
         if self.ai_chat_messages and not self.ai_conversations:
@@ -4034,6 +4034,13 @@ def _serialize(obj):
     return obj
 
 
+
+def _safe_kwargs(data: dict, cls) -> dict:
+    """Safe kwargs for dataclass: only keep fields defined in cls, skip unknown keys."""
+    valid = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in valid}
+
+
 def _deserialize_report(data: dict) -> dict:
     """将 dict 转为 ReportDefinition 构造函数参数"""
     result = {}
@@ -4048,14 +4055,16 @@ def _deserialize_report(data: dict) -> dict:
                     if 'source_object' in c and 'source_object_api' not in c:
                         c = dict(c)
                         c['source_object_api'] = c.pop('source_object')
-                    fixed_cols.append(FieldColumn(**c))
+                    fixed_cols.append(FieldColumn(**_safe_kwargs(c, FieldColumn)))
                 else:
                     fixed_cols.append(c)
             result[k] = fixed_cols
         elif k == 'filters':
-            result[k] = [FilterCondition(**f) if isinstance(f, dict) else f for f in (v or [])]
+            result[k] = [FilterCondition(**_safe_kwargs(f, FilterCondition)) if isinstance(f, dict) else f for f in (v or [])]
         else:
             result[k] = v
+    valid = {f.name for f in fields(ReportDefinition)}
+    result = {k: v for k, v in result.items() if k in valid}
     return result
 
 
