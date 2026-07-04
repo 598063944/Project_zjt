@@ -31012,7 +31012,10 @@ class TableCard(QGraphicsObject):
         # 数据源（灰色小字，显示中文名 + API 名）
         painter.setPen(QColor("#999999"))
         painter.setFont(QFont("Microsoft YaHei", 8))
-        subtitle = f"{self.display_name}  [{self.object_api}]"
+        _api_display = self.object_api
+        if _api_display.startswith("ex_"):
+            _api_display = _api_display[3:]
+        subtitle = f"{self.display_name}  [{_api_display}]"
         fm = QFontMetrics(painter.font())
         elided_sub = fm.elidedText(subtitle, Qt.TextElideMode.ElideRight, CARD_WIDTH - 30)
         painter.drawText(QRectF(14, self._header_height - 12, CARD_WIDTH - 30, 12),
