@@ -29338,17 +29338,6 @@ class TableSelectorPanel(QWidget):
             except Exception:
                 pass
 
-            # 1b. sr_* 源表
-            try:
-                sr_tables = self._db.execute("SHOW TABLES LIKE 'sr_%'")
-                if sr_tables:
-                    for row in sr_tables:
-                        tname = list(row.values())[0] if row else ""
-                        if tname and tname.startswith("sr_") and tname not in [e["table_name"] for e in entries]:
-                            entries.append({"table_name": tname, "source_type": "crm"})
-            except Exception:
-                pass
-
             # 2. Excel 导入表
             if self._excel_repo:
                 for ds in self._excel_repo.list_all():
@@ -29425,6 +29414,9 @@ class TableSelectorPanel(QWidget):
                    if ds.mysql_table == table_name:
                        display_name = ds.name
                        break
+            # Strip ex_ prefix if no display_name found
+            if display_name == table_name and display_name.startswith('ex_'):
+                display_name = display_name[3:]
         else:
             display_name = table_name
             icon = "🗄️"
