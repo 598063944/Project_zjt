@@ -29349,6 +29349,17 @@ class TableSelectorPanel(QWidget):
                         except Exception:
                             pass
 
+            # 2b. ex_* 表（直接 MySQL 查询，补充 Excel 仓库中缺失的表）
+            try:
+                ex_tables = self._db.execute("SHOW TABLES LIKE 'ex_%'")
+                if ex_tables:
+                    for row in ex_tables:
+                        tname = list(row.values())[0] if row else ""
+                        if tname and tname not in [e["table_name"] for e in entries]:
+                            entries.append({"table_name": tname, "source_type": "excel"})
+            except Exception:
+                pass
+
             # 3. 内置直连表
             for known_table in ("部门员工",):
                 if known_table not in [e["table_name"] for e in entries]:
