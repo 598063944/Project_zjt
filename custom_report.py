@@ -21879,7 +21879,7 @@ class ReportDetailPage(QWidget):
     refreshDataRequested = pyqtSignal(str)
     syncDone = pyqtSignal(bool, str, object)  # (ok, msg, stats)
 
-    refreshDataReady = pyqtSignal(object, object, object)  # (folder_data, all_reports, search)
+
     def __init__(self, db: ReportDatabase = None, parent=None,
                  save_config_fn=None, load_config_fn=None,
                  app_config: dict = None,
@@ -21895,7 +21895,7 @@ class ReportDetailPage(QWidget):
         self._save_filters_fn = save_filters_fn
         self._bg_processing = False  # 后台数据加载标志
 
-        self.refreshDataReady.connect(self._on_refresh_data_ready)
+        
         self.syncDone.connect(self._on_sync_done)
         self._setup_ui()
         self.setStyleSheet("QToolTip { background-color: #FFFFFF; color: #333333; border: 1px solid #D9D9D9; border-radius: 4px; padding: 4px 6px; }")
