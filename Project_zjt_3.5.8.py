@@ -3497,7 +3497,6 @@ def is_admin(username, password):
 
 def show_login_register_dialog(skip_cache=False):
     """显示登录或注册界面。在没有显示设备时使用默认用户。"""
-    import sys; sys.excepthook = sys.__excepthook__
     from PyQt6.QtWidgets import QApplication
     app = QApplication.instance()
     if app is None:
@@ -21401,10 +21400,16 @@ class SettingsDialog(QFrame):
 
     def _on_crm_detail_value_cell_changed(self):
         """映射值编辑后自动保存"""
-        api_name = self.crm_detail_mapping_object_combo.currentData()
-        field_key = self.crm_detail_field_selector.currentData()
-        if api_name and field_key:
-            self._save_crm_detail_mapping_values(api_name, field_key)
+        if getattr(self, '_crm_cell_changing', False):
+            return
+        self._crm_cell_changing = True
+        try:
+            api_name = self.crm_detail_mapping_object_combo.currentData()
+            field_key = self.crm_detail_field_selector.currentData()
+            if api_name and field_key:
+                self._save_crm_detail_mapping_values(api_name, field_key)
+        finally:
+            self._crm_cell_changing = False
 
     def _on_add_crm_detail_value_row(self):
         """添加映射值行"""
