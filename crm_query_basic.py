@@ -10,6 +10,13 @@ token 和 EncodingAESKey 不用于这个查询接口，因此这里不使用。
 """
 
 from network import FXiaokeCRM
+import requests
+
+
+def perform_requests_request(method, url, **kwargs):
+    """简单封装：供独立脚本直接调用 CRM API。"""
+    kwargs.setdefault('timeout', 30)
+    return requests.request(method, url, **kwargs)
 
 
 def query_crm_basic(app_id, app_secret, permanent_code,
@@ -45,6 +52,8 @@ def query_crm_basic(app_id, app_secret, permanent_code,
 
 
 if __name__ == "__main__":
+    # perform_requests_request 已定义为此文件模块级函数，
+    # network.py → core.py 的懒委托会自动找到它。
     APP_ID = "FSAID_1323c1a"
     APP_SECRET = "e7f4188d14704299b375c91ddda92cb0"
     PERMANENT_CODE = "E8B8D8536B0385D035657AC2528928F0"
@@ -52,11 +61,11 @@ if __name__ == "__main__":
     CURRENT_OPEN_USER_ID = "请填写 currentOpenUserId"
     ADMIN_MOBILE = "15889740213"
 
-    DATA_OBJECT_API_NAME = "CasesObj"
+    DATA_OBJECT_API_NAME = "DeviceObj"
     LIMIT = 10
     FILTERS = [
         {
-            "field_name": "device_product_id",
+            "field_name": "device_name",
             "operator": "LIKE",
             "field_values": [13.012],
         }

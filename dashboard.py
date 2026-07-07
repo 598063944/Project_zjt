@@ -652,8 +652,8 @@ class DashboardMixin:
                 chart_options[cid] = {}
 
         # 确定 echarts HTTP URL
-        from bitable import _bitable_server_port
-        port = _bitable_server_port or 19000
+        from echarts_http import start_echarts_http
+        port = start_echarts_http() or 19000
         echarts_url = f"http://127.0.0.1:{port}/echarts"
 
         html = _build_dashboard_html(dashboard, chart_options, echarts_url)

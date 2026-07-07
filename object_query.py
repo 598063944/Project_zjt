@@ -765,18 +765,13 @@ class object_queryMixin:
         #   但如果筛选条件在设置中被修改过，则跳过缓存重新从 API 获取
         if not hasattr(self, '_obj_query_mem_cache'):
             self._obj_query_mem_cache = {}
-        filters_dirty = getattr(self, '_obj_query_filters_dirty', False)
-        if not filters_dirty and api_name in self._obj_query_mem_cache and self._obj_query_mem_cache[api_name]:
+        if api_name in self._obj_query_mem_cache and self._obj_query_mem_cache[api_name]:
             self.obj_query_all_data = self._obj_query_mem_cache[api_name]
             self.obj_query_current_page = 1
             self._reset_obj_query_field_mapping()
             self.obj_query_data_ready.emit(api_name)
             print(f"[DEBUG-对象查询] 💾 内存缓存命中 '{api_name}': {len(self.obj_query_all_data)} 条")
             return
-        if filters_dirty:
-            print(f"[DEBUG-对象查询] 🔄 筛选条件已变更，跳过内存缓存")
-            self._obj_query_filters_dirty = False
-            self._obj_query_mem_cache.pop(api_name, None)
 
         # 清空表格显示空白界面
         self.obj_query_all_data = []

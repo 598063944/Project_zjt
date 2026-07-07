@@ -5902,7 +5902,7 @@ class JoinSQLBuilder:
                     left_field = self._resolve_field(left_api, mk_obj.left_field)
                     right_field = self._resolve_field(right_api, mk_obj.right_field)
                     on_conditions.append(
-                        f"{left_alias}.{self._quote_ident(left_field)} = "
+                        f"{left_alias}.{self._quote_ident(left_field)} COLLATE utf8mb4_general_ci = "
                         f"{right_alias}.{self._quote_ident(right_field)}"
                     )
                     match_key_fields.append((left_field, right_field))
@@ -11145,7 +11145,7 @@ class DashboardListPage(QWidget):
         if not item:
             return
         row = item.row()
-        name_item = self._table.item(row, 1)
+        name_item = self._table.item(row, 0)  # 列0=表名
         if not name_item:
             return
         dashboard_id = name_item.data(Qt.ItemDataRole.UserRole)
@@ -22082,12 +22082,6 @@ class ReportDetailPage(QWidget):
         self._freshness_label.setStyleSheet("font-size: 11px; color: #8C6E00;")
         self._freshness_label.setWordWrap(True)
         freshness_layout.addWidget(self._freshness_label, 1)
-        self._freshness_refresh_btn = QPushButton("\u5237\u65b0\u6570\u636e")
-        self._freshness_refresh_btn.setFixedSize(70, 22)
-        self._freshness_refresh_btn.setStyleSheet("QPushButton { background:#1890FF; color:#FFF; border:none; border-radius:3px; font-size:11px; } QPushButton:hover { background:#1472C8; }")
-        self._freshness_refresh_btn.clicked.connect(lambda: self._refresh_btn.click() if hasattr(self, '_refresh_btn') else None)
-        self._freshness_refresh_btn.setVisible(False)
-        freshness_layout.addWidget(self._freshness_refresh_btn)
         self._freshness_frame = freshness_frame
         freshness_frame.setVisible(False)
         main_layout.addWidget(freshness_frame)
@@ -22108,7 +22102,8 @@ class ReportDetailPage(QWidget):
 
         self._bg_progress_timer = QTimer()
         self._bg_progress_timer.setInterval(300)
-        self._bg_progress_timer.timeout.connect(self._update_bg_progress)
+        if hasattr(self, '_update_bg_progress'):
+            self._bg_progress_timer.timeout.connect(self._update_bg_progress)
         self._bg_progress_timer.start()
 
 
@@ -22278,21 +22273,14 @@ class ReportDetailPage(QWidget):
         text = " | ".join(parts)
         if info["needs_refresh"]:
             self._freshness_icon.setText("\u26a0\ufe0f")
-            if info["result_exists"] and info["result_row_count"] > 0:
-                msg = "\u6570\u636e\u53ef\u80fd\u8fc7\u671f\uff01\u6e90\u8868\u4e0e\u7ed3\u679c\u8868\u884c\u6570\u4e0d\u4e00\u81f4\uff0c\u5efa\u8bae\u70b9\u51fb\u5237\u65b0\u6570\u636e"
-                self._freshness_frame.setStyleSheet("QFrame { background-color: #FFF2E8; border: 1px solid #FFCCC7; border-radius: 4px; padding: 4px 10px; }")
-                self._freshness_label.setStyleSheet("font-size: 11px; color: #CF1322;")
-            else:
-                msg = "\u6570\u636e\u672a\u52a0\u8f7d\uff01\u8bf7\u70b9\u51fb\u5237\u65b0\u6570\u636e\u751f\u6210\u7ed3\u679c\u8868"
-                self._freshness_frame.setStyleSheet("QFrame { background-color: #FFFBE6; border: 1px solid #FFE58F; border-radius: 4px; padding: 4px 10px; }")
-                self._freshness_label.setStyleSheet("font-size: 11px; color: #8C6E00;")
-            self._freshness_refresh_btn.setVisible(True)
+            msg = "\u6570\u636e\u672a\u52a0\u8f7d\uff01\u8bf7\u70b9\u51fb\u5237\u65b0\u6570\u636e\u751f\u6210\u7ed3\u679c\u8868"
+            self._freshness_frame.setStyleSheet("QFrame { background-color: #FFFBE6; border: 1px solid #FFE58F; border-radius: 4px; padding: 4px 10px; }")
+            self._freshness_label.setStyleSheet("font-size: 11px; color: #8C6E00;")
             full_text = msg + "  " + text
         else:
             self._freshness_icon.setText("\u2705")
             self._freshness_frame.setStyleSheet("QFrame { background-color: #F6FFED; border: 1px solid #B7EB8F; border-radius: 4px; padding: 4px 10px; }")
             self._freshness_label.setStyleSheet("font-size: 11px; color: #389E0D;")
-            self._freshness_refresh_btn.setVisible(False)
             full_text = "\u6570\u636e\u6700\u65b0  " + text
         self._freshness_label.setText(full_text)
         self._freshness_frame.setVisible(True)
@@ -22793,7 +22781,8 @@ class ReportEditorPage(QWidget):
 
         self._bg_progress_timer = QTimer()
         self._bg_progress_timer.setInterval(300)
-        self._bg_progress_timer.timeout.connect(self._update_bg_progress)
+        if hasattr(self, '_update_bg_progress'):
+            self._bg_progress_timer.timeout.connect(self._update_bg_progress)
         self._bg_progress_timer.start()
 
 
@@ -23468,6 +23457,14 @@ class ReportEditorPage(QWidget):
             _light_msgbox(self, QMessageBox.Icon.Warning, "刷新失败", str(e))
 
     def _on_add_mysql_table(self):
+        try:
+            self._on_add_mysql_table_impl()
+        except Exception as e:
+            frameless_message_box(self, "添加失败", f"添加 MySQL 表时出错: {e}")
+            import logging
+            logging.exception("[_on_add_mysql_table] 添加失败")
+
+    def _on_add_mysql_table_impl(self):
         """弹出 MySQL 表选择对话框，将选中的表添加到左侧面板。"""
         if not self._db or not self._db.available:
             _light_msgbox(self, QMessageBox.Icon.Warning, "数据库未连接",
@@ -24328,7 +24325,16 @@ class ReportEditorPage(QWidget):
     # ==================== 回调 ====================
 
     def _on_table_selected_from_panel(self, table_name: str, display_name: str,
-                                       fields: list, source_type: str = ''):
+                                   fields: list, source_type: str = ""):
+        try:
+            self._on_table_selected_from_panel_impl(table_name, display_name, fields, source_type)
+        except Exception as e:
+            frameless_message_box(self, "添加失败", f"添加表到画布时出错: {e}")
+            import logging
+            logging.exception("[_on_table_selected_from_panel] 添加失败")
+
+    def _on_table_selected_from_panel_impl(self, table_name: str, display_name: str,
+                                           fields: list, source_type: str = ""):
         """用户从左侧面板双击选择了一张表 → 添加到画布"""
         # 非 CRM 表直接用表名作为标识，CRM 表翻译为 API 名
         if source_type in ('excel', 'mysql'):
@@ -24348,8 +24354,12 @@ class ReportEditorPage(QWidget):
 
         # 构建字段数据：[(key, label, checked), ...]，使用中文显示名
         field_data = []
+        seen_labels = set()
         for col in fields:
             label = self._resolve_field_label(object_api, col)
+            if label in seen_labels:
+                continue  # Skip duplicate: same label from API name + Chinese name
+            seen_labels.add(label)
             field_data.append((col, label, False))
 
         # 通过 JoinCanvas 添加到画布
@@ -24404,7 +24414,7 @@ class ReportEditorPage(QWidget):
             # 先检查字段面板中是否已有此字段（之前设为隐藏的），有则恢复可见，避免追加到末尾破坏顺序
             existing_idx = None
             for i, c in enumerate(self._field_panel._columns):
-                if c.get('source_field') == field_key and c.get('source_object', '') == object_api:
+                if c.get('source_field') == field_key and (not c.get('source_object', '') or c.get('source_object', '') == object_api):
                     existing_idx = i
                     break
             if existing_idx is not None:
@@ -24418,7 +24428,7 @@ class ReportEditorPage(QWidget):
             # 编辑器模式：不删除列，只设为隐藏，保留原始顺序位置
             found = False
             for c in self._field_panel._columns:
-                if c.get('source_field') == field_key and c.get('source_object', '') == object_api:
+                if c.get('source_field') == field_key and (not c.get('source_object', '') or c.get('source_object', '') == object_api):
                     c['visible'] = False
                     found = True
                     break
@@ -29108,7 +29118,7 @@ class _MySQLTableDialog(QDialog):
     def _on_accept(self):
         row = self._table.currentRow()
         if row >= 0:
-            item = self._table.item(row, 1)
+            item = self._table.item(row, 0)  # 列0=表名
             if item:
                 self._selected_table = item.text()
         self.accept()

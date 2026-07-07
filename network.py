@@ -48,6 +48,14 @@ from urllib3.poolmanager import PoolManager
 
 from core import *
 
+def _safe_main_var(name):
+    """从 __main__ 模块安全获取变量值，避免函数体中的 NameError。"""
+    import sys as _sys
+    _m = _sys.modules.get('__main__')
+    if _m is None:
+        return '<N/A>'
+    return getattr(_m, name, '<N/A>')
+ 
 def __getattr__(name):
     """延迟从 __main__ 获取任何未导入的变量/函数（解决 from core import * 的时序问题）"""
     import sys as _s
@@ -92,7 +100,10 @@ class FXiaokeCRM:    #CRM订单字段
             else:
                 return False, result.get("errorMessage", "Unknown error")
         except Exception as e:
-            return False, f"{e} | verify={REQUESTS_VERIFY} ssl_ctx={REQUESTS_SSL_CONTEXT is not None} cert_src={_CERT_SOURCE}"
+            _v = _safe_main_var('REQUESTS_VERIFY')
+            _s_ctx = _safe_main_var('REQUESTS_SSL_CONTEXT')
+            _c = _safe_main_var('_CERT_SOURCE')
+            return False, f"{e} | verify={_v} ssl_ctx={_s_ctx is not None} cert_src={_c}"
 
     def get_open_user_id_by_mobile(self):
         """根据管理员手机号查询对应的 openUserId。"""
@@ -447,16 +458,21 @@ class MysqlCache:
             return f"❌ MySQL 连接失败: {self._last_error}"
         return "⚠️ MySQL 缓存未连接"
 
-    def _get_conn(self):
-        if self._conn and self._conn.open:
+    def _get_conn(self, use_local=True):
+        if use_local and self._conn and self._conn.open:
             return self._conn
-        cfg = load_config().get('mysql_config', {})
-        if not cfg.get('enabled'):
-            self._last_error = '未启用'
+        if not use_local and hasattr(self, '_cloud_conn') and self._cloud_conn and self._cloud_conn.open:
+            return self._cloud_conn
+        cfg_key = "local_mysql_config" if use_local else "mysql_config"
+        cfg = load_config().get(cfg_key, {})
+        if not cfg.get('enabled') and use_local:
+            cfg = load_config().get('mysql_config', {})
+        elif not cfg.get('enabled'):
+            self._last_error = f"{cfg_key} 未启用"
             return None
         import pymysql
         try:
-            self._conn = pymysql.connect(
+            conn = pymysql.connect(
                 host=cfg.get('host', '127.0.0.1'),
                 port=int(cfg.get('port', 3306)),
                 user=cfg.get('user', ''),
@@ -467,11 +483,18 @@ class MysqlCache:
                 cursorclass=pymysql.cursors.DictCursor,
                 autocommit=True,
             )
-            return self._conn
+            if use_local:
+                self._conn = conn
+            else:
+                self._cloud_conn = conn
+            return conn
         except Exception as e:
             self._last_error = str(e)
-            logging.error(f"[MysqlCache] 连接失败: {e}")
+            logging.error(f"[MysqlCache] {cfg_key} 连接失败: {e}")
             return None
+
+    def _get_cloud_conn(self):
+        return self._get_conn(use_local=False)
 
     def _table_name(self, api_name):
         return f"crm_cache_{api_name}"
@@ -515,34 +538,11 @@ class MysqlCache:
         if not conn or not self._ensure_table(api_name):
             return
         table = self._table_name(api_name)
-        import json, hashlib
-        skipped = 0
-        inserted = 0
-        updated = 0
-        seen_ids = set()  # 防止同批次 _id 重复导致 1062 主键冲突
         try:
             with conn.cursor() as cur:
-                # 确保 _hash 列存在且为 VARCHAR(40)（兼容旧表 VARCHAR(32)）
-                cur.execute(f"SHOW COLUMNS FROM `{table}` LIKE '_hash'")
-                col_info = cur.fetchone()
-                if not col_info:
-                    cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `_hash` VARCHAR(40) DEFAULT ''")
-                else:
-                    col_type = col_info.get('Type', '').lower()
-                    import re
-                    m = re.search(r'\d+', col_type)
-                    cur_len = int(m.group()) if m else 0
-                    if cur_len < 40:
-                        cur.execute(f"ALTER TABLE `{table}` MODIFY COLUMN `_hash` VARCHAR(40) DEFAULT ''")
-                upsert_sql = (
-                    f"INSERT INTO `{table}` (_id, data_json, _hash, cached_at) "
-                    f"VALUES (%s, %s, %s, NOW()) "
-                    f"ON DUPLICATE KEY UPDATE "
-                    f"data_json = IF(VALUES(`_hash`) != `_hash`, VALUES(data_json), data_json), "
-                    f"`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`), "
-                    f"cached_at = IF(VALUES(`_hash`) != `_hash`, NOW(), cached_at)"
-                )
-                batch = []
+                skipped = 0
+                inserted = 0
+                seen_ids = set()
                 for row in rows:
                     _id = str(row.get('_id', '')).strip()
                     if not _id:
@@ -554,15 +554,18 @@ class MysqlCache:
                     seen_ids.add(_id)
                     data_json = json.dumps(row, ensure_ascii=False)
                     row_hash = hashlib.sha1(data_json.encode('utf-8')).hexdigest()
-                    batch.append((_id, data_json, row_hash))
+                    cur.execute(
+                        f"INSERT INTO `{table}` (_id, data_json, _hash, cached_at) "
+                        f"VALUES (%s, %s, %s, NOW()) "
+                        f"ON DUPLICATE KEY UPDATE "
+                        f"data_json = IF(VALUES(`_hash`) != `_hash`, VALUES(data_json), data_json), "
+                        f"`_hash` = IF(VALUES(`_hash`) != `_hash`, VALUES(`_hash`), `_hash`), "
+                        f"cached_at = IF(VALUES(`_hash`) != `_hash`, NOW(), cached_at)",
+                        (_id, data_json, row_hash)
+                    )
                     inserted += 1
-                    if len(batch) >= 500:
-                        cur.executemany(upsert_sql, batch)
-                        batch.clear()
-                if batch:
-                    cur.executemany(upsert_sql, batch)
-                if skipped:
-                    logging.warning(f"[MysqlCache] JSON缓存表 {api_name}: {skipped} 条记录因 _id 为空被跳过")
+            if skipped:
+                logging.warning(f"[MysqlCache] JSON缓存表 {api_name}: {skipped} 条记录因 _id 为空被跳过")
             logging.info(f"[MysqlCache] JSON缓存表 {api_name}: 写入 {inserted} 条，跳过 {skipped} 条")
         except Exception as e:
             logging.error(f"[MysqlCache] 写入失败 {api_name}: {e}")
@@ -578,9 +581,9 @@ class MysqlCache:
         """
         if not rows:
             return False, "无数据"
-        conn = self._get_conn()
+        conn = self._get_cloud_conn()
         if not conn:
-            return False, self.status_message
+            return False, "云数据库未连接"
         import json, hashlib, uuid
         from custom_report import get_mysql_type_for_field, is_numeric_field_type, safe_numeric_value
         batch_id = uuid.uuid4().hex
@@ -632,6 +635,22 @@ class MysqlCache:
                                 cur.execute(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{h}` LONGTEXT")
                             except Exception:
                                 pass
+
+                # 清理不在新表头中的旧列
+                try:
+                    cur.execute("SHOW COLUMNS FROM `" + table_name + "`")
+                    _all_cols = {r["Field"] for r in cur.fetchall()}
+                    _keep_cols = {"_id", "_hash", "_sync_time", "_sync_batch_id"} | set(safe_cols)
+                    _drop_cols = _all_cols - _keep_cols
+                    for _c in _drop_cols:
+                        try:
+                            cur.execute("ALTER TABLE `" + table_name + "` DROP COLUMN `" + _c + "`")
+                            import logging
+                            logging.info("[MysqlCache] cleanup old col: " + _c)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
                 # 构建 upsert SQL（含批次标记）
                 upsert_cols = ['_id', '_hash', '_sync_time', '_sync_batch_id'] + safe_cols
@@ -739,6 +758,18 @@ class MysqlCache:
             except Exception:
                 pass
             self._conn = None
+        if hasattr(self, '_cloud_conn') and self._cloud_conn and self._cloud_conn.open:
+            try:
+                self._cloud_conn.close()
+            except Exception:
+                pass
+            self._cloud_conn = None
+        if hasattr(self, "_cloud_conn") and self._cloud_conn and self._cloud_conn.open:
+            try:
+                self._cloud_conn.close()
+            except Exception:
+                pass
+            self._cloud_conn = None
 
 
 class CRMCache:

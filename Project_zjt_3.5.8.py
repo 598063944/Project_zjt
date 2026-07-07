@@ -11,10 +11,8 @@ for _mod, _cls in [
     ('file_mover', 'file_moverMixin'),
     ('pdf_watermark', 'pdf_watermarkMixin'),
     ('object_query', 'object_queryMixin'),
-    ('bitable', 'BitableMixin'),
     ('dashboard', 'DashboardMixin'),
     ('department', 'departmentMixin'),
-    ('spreadsheet_page', 'SpreadsheetPageMixin'),
 ]:
     try:
         _m = importlib.import_module(_mod)
@@ -4741,11 +4739,9 @@ class MainFrame(
     file_moverMixin,
     pdf_watermarkMixin,
     object_queryMixin,
-    BitableMixin,
     DashboardMixin,
     departmentMixin,
     custom_report_pageMixin,
-    SpreadsheetPageMixin,
 ):
     """主窗口应用程序类"""
     # 定义信号用于在主线程中更新UI
@@ -5018,26 +5014,22 @@ class MainFrame(
             ("file_gen",    "create_excel_to_pdf_page",  None),
             ("crm_order",   "create_crm_order_page",     None),
             ("custom_rpt",  "create_custom_report_page", "custom_report_pageMixin"),
-            ("bitable",     "create_bitable_page",       "BitableMixin"),
             ("file_move",   "create_file_organize_page", None),
             ("pdf_watermark","create_pdf_watermark_page", "pdf_watermarkMixin"),   # 招投标/商机
             ("obj_query",   "create_object_query_page",  "object_queryMixin"),
             ("settings",    "create_settings_page",      None),
             ("department",  "create_department_page",    "departmentMixin"),
-            ("spreadsheet", "create_spreadsheet_page",   "SpreadsheetPageMixin"),
         ]
         _nav_defs = [
             # (icon, label, page_key, show_to_all)
             ("📄", "文件生成",   "file_gen",    True),
             ("📋", "订单转合同", "crm_order",   True),
             ("📊", "自定义报表", "custom_rpt",  False),
-            ("📊", "多维表格", "bitable",  False),
             ("📁", "文件移动",   "file_move",   True),
             ("🔖", "招投标授权", "pdf_watermark", True),   # 指向商机/PDF水印页面
             ("📦", "对象查询",   "obj_query",   False),
             ("⚙️", "设   置",   "settings",    True),
             ("🏢", "部门员工",   "department",  False),
-            ("🧮", "电子表格",   "spreadsheet", False),
         ]
         # 过滤可用页面（排除未加载的 mixin）
         _available_pages = []
@@ -5849,9 +5841,10 @@ class MainFrame(
         quick_filters = [f for f in filters if f.get('is_quick', False)]
         self._rebuild_quick_filter_tags(api_name, quick_filters)
         self._sync_quick_filters_to_settings(api_name)
-        self._obj_query_filters_dirty = True
+        # 清除内存缓存，确保下次加载使用新筛选条件
         if hasattr(self, '_obj_query_mem_cache'):
             self._obj_query_mem_cache.pop(api_name, None)
+
 
     def _is_quick_field_date(self, api_name, cond):
         """检测快捷筛选条件对应的字段是否为日期类型"""
@@ -5923,10 +5916,10 @@ class MainFrame(
         save_config(cfg, immediate=True)
         # 同步到设置页面
         self._sync_quick_filters_to_settings(api_name)
-        # 标记筛选条件已变更（下次加载时生效）
-        self._obj_query_filters_dirty = True
+        # 清除内存缓存，确保下次加载使用新筛选条件
         if hasattr(self, '_obj_query_mem_cache'):
             self._obj_query_mem_cache.pop(api_name, None)
+
 
     def _sync_quick_filters_to_settings(self, api_name):
         """✅【新增】反向同步：对象查询的快捷筛选变更 → 设置页面刷新"""
@@ -10816,17 +10809,17 @@ class MainFrame(
         """切换到指定页面"""
         # 权限检查：普通用户不能访问管理员页面
         is_admin_user = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
-        restricted_pages = {2, 3, 6, 8, 9}  # 自定义报表、多维表格、对象查询、部门员工、电子表格（仅管理员）
+        restricted_pages = {2, 5, 7}  # 自定义报表、对象查询、部门员工（仅管理员）
         if index in restricted_pages and not is_admin_user:
             return
 
         flush_pending_config()
 
         # ✅【2026-06-18 修复】页面名称列表与 content_stack 创建顺序一致
-        page_names = ["文件生成", "订单转合同", "自定义报表", "多维表格", "文件移动", "招投标授权", "对象查询", "设置", "部门员工", "电子表格"]
+        page_names = ["文件生成", "订单转合同", "自定义报表", "文件移动", "招投标授权", "对象查询", "设置", "部门员工"]
         page_name = page_names[index] if index < len(page_names) else f"页面{index}"
 
-        if index == 7:  # 设置页面
+        if index == 6:  # 设置页面
             if getattr(self, 'output_visible', False):
                 self.on_toggle_output()
                 self.output_auto_hidden_by_settings = True
@@ -10850,7 +10843,7 @@ class MainFrame(
                 QTimer.singleShot(100, self._crm_first_auto_load)
 
         # ✅【2026-06-18 修复】招投标授权（商机）首次自动加载 — index=5（pdf_watermark 页面）
-        if index == 5:  # 招投标授权页面
+        if index == 4:  # 招投标授权页面
             if not getattr(self, '_opportunity_first_load_completed', False):
                 print(f"\n[DEBUG-商机] 🎯 首次进入招投标授权页面，自动加载商机数据...")
                 self._opportunity_first_load_completed = True
@@ -10858,7 +10851,7 @@ class MainFrame(
                 QTimer.singleShot(200, self._opportunity_first_auto_load)
 
         # ✅【2026-05-12 修复】对象查询首次自动加载检测 — index=6（dashboard 移除后偏移）
-        if index == 6:  # 对象查询页面
+        if index == 5:  # 对象查询页面
             if not getattr(self, '_obj_query_first_auto_load_done', False):
                 print(f"\n[DEBUG-对象查询] 🎯 首次进入对象查询页面，准备自动加载数据...")
                 self._obj_query_first_auto_load_done = True
@@ -10906,17 +10899,6 @@ class MainFrame(
                     print(f"[DEBUG-对象查询] ⚠️ 无可用的业务对象")
                     if hasattr(self, 'obj_query_status_label'):
                         self.obj_query_status_label.setText("⚠️ 请先在设置中添加业务对象")
-            elif getattr(self, '_obj_query_filters_dirty', False):
-                # ✅ 筛选条件在设置中已修改 → 清除缓存并重新加载
-                print(f"[DEBUG-对象查询] 🔄 检测到筛选条件变更，清除缓存并重新加载")
-                self._obj_query_filters_dirty = False
-                if hasattr(self, '_obj_query_mem_cache'):
-                    self._obj_query_mem_cache.clear()
-                current_api = self.obj_query_object_combo.currentData() or ''
-                if current_api:
-                    self._reset_obj_query_field_mapping()
-                    self._pending_obj_query_api = current_api
-                    self._do_obj_query_load(current_api)
 
             # ✅ 每次切换到对象查询页面时，从配置同步加载条数（确保与设置页面一致）
             self._sync_load_count_spin_from_config()
@@ -10956,8 +10938,7 @@ class MainFrame(
                         self._refresh_custom_report_field_source_options()
                     except Exception:
                         pass
-            # 切换到多维表格页面时无需自动刷新（数据按需加载）
-
+ 
         if hasattr(self, 'nav_items_info'):
             for item in self.nav_items_info:
                 item['btn'].setChecked(item.get('page_idx') == index)
@@ -11043,23 +11024,26 @@ class MainFrame(
 
         # 2. 读取配置
         app_settings = self.config.get('app_settings', {})
-        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
-        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
+        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7]))
+        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(8)}))
 
-        # 迁移旧配置：11 页 → 10 页（仪表盘已合并到多维表格，原 index 4 移除）
-        _old_to_new = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9}
-        if len(button_order) > 10 and 4 in button_order:
-            button_order = [_old_to_new.get(x, -1) for x in button_order if x != 4]
+        # 迁移旧配置：仅当存在旧布局索引（>=8）时才执行 10 页 → 8 页迁移
+        if any(x >= 8 for x in button_order):
+            _old_to_new = {0: 0, 1: 1, 2: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7}
+            button_order = [_old_to_new.get(x, -1) for x in button_order if x not in {3, 9}]
             button_order = [x for x in button_order if x >= 0]
             new_visible = {}
             for k, v in button_visible.items():
-                new_k = _old_to_new.get(int(k))
-                if new_k is not None:
-                    new_visible[str(new_k)] = v
+                ik = int(k)
+                if ik in {3, 9}:
+                    continue
+                nk = _old_to_new.get(ik)
+                if nk is not None:
+                    new_visible[str(nk)] = v
             button_visible = new_visible
 
-        # 兼容旧配置：确保页面 5（招投标）、7（设置）、8（部门）、9（电子表格）始终存在
-        for pi in (5, 7, 8, 9):
+        # 兼容旧配置：确保页面 4（招投标）、6（设置）、7（部门）始终存在
+        for pi in (4, 6, 7):
             if pi not in button_order:
                 button_order.append(pi)
             if str(pi) not in button_visible:
@@ -11073,13 +11057,11 @@ class MainFrame(
             ("📄", "文件生成",   "file_gen"),
             ("📋", "订单转合同", "crm_order"),
             ("📊", "自定义报表", "custom_rpt"),
-            ("📊", "多维表格", "bitable"),
             ("📁", "文件移动",   "file_move"),
             ("🔖", "招投标授权", "pdf_watermark"),
             ("📦", "对象查询",   "obj_query"),
             ("⚙️", "设   置",   "settings"),
             ("🏢", "部门员工",   "department"),
-            ("🧮", "电子表格",   "spreadsheet"),
         ]
         pmap = getattr(self, '_page_idx_map', {})
         for icon, name, pk in _nav_defs_full:
@@ -11095,8 +11077,8 @@ class MainFrame(
                 continue  # 页面不存在
 
             # 权限过滤（与 _nav_defs 的 show_to_all 对应）
-            _admin_only_keys = {"custom_rpt", "obj_query", "bitable", "department", "spreadsheet"}
-            _nav_defs_admin_only = {2, 3, 6, 8, 9}  # nav_idx of admin-only entries
+            _admin_only_keys = {"custom_rpt", "obj_query", "department"}
+            _nav_defs_admin_only = {2, 5, 7}  # nav_idx of admin-only entries
             if nav_idx in _nav_defs_admin_only and not is_admin:
                 continue
 
@@ -11530,13 +11512,17 @@ class MainFrame(
                 if new_expanded != getattr(self, '_navbar_default_expanded', True):
                     self.set_navbar_default_expanded(new_expanded)
                 # 同步导航按钮配置
-                new_btn_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
-                new_btn_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
-                for pi in (7, 8, 9):
+                new_btn_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7]))
+                new_btn_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(8)}))
+                for pi in (6, 7):
                     if pi not in new_btn_order:
                         new_btn_order.append(pi)
                     if str(pi) not in new_btn_visible:
                         new_btn_visible[str(pi)] = True
+                # 确保设置按钮始终在最后
+                if 6 in new_btn_order:
+                    new_btn_order.remove(6)
+                    new_btn_order.append(6)
                 old_order = getattr(self, '_nav_button_order_cache', None)
                 old_visible = getattr(self, '_nav_button_visible_cache', None)
                 if new_btn_order != old_order or new_btn_visible != old_visible:
@@ -12575,51 +12561,62 @@ class SettingsDialog(QFrame):
         nav_buttons_mgmt_layout.setContentsMargins(0, 0, 0, 0)
         nav_buttons_mgmt_layout.setSpacing(4)
 
-        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
-        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(10)}))
+        button_order = list(app_settings.get('nav_button_order', [0, 1, 2, 3, 4, 5, 6, 7]))
+        button_visible = dict(app_settings.get('nav_button_visible', {str(i): True for i in range(8)}))
 
-        # 迁移旧配置：11 页 → 10 页（仪表盘已合并到多维表格，原 index 4 移除）
-        _old_to_new = {0: 0, 1: 1, 2: 2, 3: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9}
-        if len(button_order) > 10 and 4 in button_order:
-            button_order = [_old_to_new.get(x, -1) for x in button_order if x != 4]
+        # 迁移旧配置：仅当存在旧布局索引（>=8）时才执行 10 页 → 8 页迁移
+        if any(x >= 8 for x in button_order):
+            _old_to_new = {0: 0, 1: 1, 2: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7}
+            button_order = [_old_to_new.get(x, -1) for x in button_order if x not in {3, 9}]
             button_order = [x for x in button_order if x >= 0]
             new_visible = {}
             for k, v in button_visible.items():
-                new_k = _old_to_new.get(int(k))
-                if new_k is not None:
-                    new_visible[str(new_k)] = v
+                ik = int(k)
+                if ik in {3, 9}:
+                    continue
+                nk = _old_to_new.get(ik)
+                if nk is not None:
+                    new_visible[str(nk)] = v
             button_visible = new_visible
 
-        # 兼容旧配置：确保页面 5（招投标）、7（设置）、8（部门）、9（电子表格）始终存在
-        for pi in (5, 7, 8, 9):
+        # 兼容旧配置：确保页面 4（招投标）、6（设置）、7（部门）始终存在
+        for pi in (4, 6, 7):
             if pi not in button_order:
                 button_order.append(pi)
             if str(pi) not in button_visible:
                 button_visible[str(pi)] = True
 
-        # 非管理员过滤掉仅管理员可见的页面（自定义报表、多维表格、对象查询、部门员工、电子表格）
+        # 非管理员过滤掉仅管理员可见的页面（自定义报表、对象查询、部门员工）
         is_admin_user = (user_type == "admin" or current_user in ("Zengjiataoadmin", "001"))
         if not is_admin_user:
-            button_order = [idx for idx in button_order if idx not in {2, 3, 6, 8, 9}]
+            button_order = [idx for idx in button_order if idx not in {2, 5, 7}]
+
+        # 确保设置按钮始终在最后
+        if 6 in button_order:
+            button_order.remove(6)
+            button_order.append(6)
 
         btn_item_map = {
             0: ("📄", "文件生成"),
             1: ("📋", "订单转合同"),
             2: ("📊", "自定义报表"),
-            3: ("📊", "多维表格"),
-            4: ("📁", "文件移动"),
-            5: ("🔖", "招投标授权"),
-            6: ("📦", "对象查询"),
-            7: ("⚙️", "设   置"),
-            8: ("🏢", "部门员工"),
-            9: ("🧮", "电子表格"),
+            3: ("📁", "文件移动"),
+            4: ("🔖", "招投标授权"),
+            5: ("📦", "对象查询"),
+            6: ("⚙️", "设   置"),
+            7: ("🏢", "部门员工"),
         }
 
         def save_nav_buttons_config():
             config = load_config()
             if 'app_settings' not in config:
                 config['app_settings'] = {}
-            config['app_settings']['nav_button_order'] = list(button_order)
+            # 保存前确保设置按钮在最后
+            _save_order = list(button_order)
+            if 6 in _save_order:
+                _save_order.remove(6)
+                _save_order.append(6)
+            config['app_settings']['nav_button_order'] = _save_order
             config['app_settings']['nav_button_visible'] = dict(button_visible)
             save_config(config, immediate=False)
             self.apply_settings_immediately({'general'})
@@ -12633,7 +12630,7 @@ class SettingsDialog(QFrame):
 
             for i, page_idx in enumerate(button_order):
                 icon, name = btn_item_map.get(page_idx, ("?", "未知"))
-                is_settings = (page_idx == 7)
+                is_settings = (page_idx == 6)
                 is_first = (i == 0)
                 is_last = (i == len(button_order) - 1)
 
@@ -12644,12 +12641,16 @@ class SettingsDialog(QFrame):
 
                 up_btn = QPushButton("▲")
                 up_btn.setFixedSize(24, 24)
-                up_btn.setEnabled(not is_first)
+                up_btn.setEnabled(not is_first and not is_settings)
+                if is_settings:
+                    up_btn.setToolTip("设置按钮始终在最后，不可移动")
                 up_btn.clicked.connect(lambda checked, idx=i: move_row_up(idx))
 
                 down_btn = QPushButton("▼")
                 down_btn.setFixedSize(24, 24)
-                down_btn.setEnabled(not is_last)
+                down_btn.setEnabled(not is_last and not is_settings)
+                if is_settings:
+                    down_btn.setToolTip("设置按钮始终在最后，不可移动")
                 down_btn.clicked.connect(lambda checked, idx=i: move_row_down(idx))
 
                 cb = QCheckBox()
@@ -12681,21 +12682,21 @@ class SettingsDialog(QFrame):
                 })
 
         def move_row_up(i):
-            if i <= 0:
+            if i <= 0 or button_order[i] == 6:
                 return
             button_order[i], button_order[i - 1] = button_order[i - 1], button_order[i]
             save_nav_buttons_config()
             refresh_nav_button_rows()
 
         def move_row_down(i):
-            if i >= len(button_order) - 1:
+            if i >= len(button_order) - 1 or button_order[i] == 6:
                 return
             button_order[i], button_order[i + 1] = button_order[i + 1], button_order[i]
             save_nav_buttons_config()
             refresh_nav_button_rows()
 
         def toggle_button_visible(page_idx, checked):
-            if page_idx == 7:
+            if page_idx == 6:
                 return
             button_visible[str(page_idx)] = checked
             save_nav_buttons_config()
@@ -14244,11 +14245,157 @@ class SettingsDialog(QFrame):
         self.mysql_status_label.setStyleSheet("QLabel { color: #666; padding: 8px; font-size: 13px; }")
         tab_layout.addWidget(self.mysql_status_label)
 
+        # ====== 本地 MySQL 缓存 ======
+        local_mysql_group = QGroupBox("本地 MySQL 缓存")
+        local_mysql_layout = QFormLayout(local_mysql_group)
+        local_config = config.get('local_mysql_config', {})
+        self.local_mysql_enabled_checkbox = QCheckBox("启用本地 MySQL 缓存")
+        self.local_mysql_enabled_checkbox.setChecked(local_config.get('enabled', False))
+        self.local_mysql_enabled_checkbox.stateChanged.connect(self._on_local_mysql_enabled_toggled)
+        local_mysql_layout.addRow(self.local_mysql_enabled_checkbox)
+        self.local_mysql_host_entry = QLineEdit()
+        self.local_mysql_host_entry.setText(local_config.get('host', '127.0.0.1'))
+        local_mysql_layout.addRow("服务器地址:", self.local_mysql_host_entry)
+        self.local_mysql_port_entry = QLineEdit()
+        self.local_mysql_port_entry.setText(str(local_config.get('port', 3306)))
+        local_mysql_layout.addRow("端口:", self.local_mysql_port_entry)
+        self.local_mysql_user_entry = QLineEdit()
+        self.local_mysql_user_entry.setText(local_config.get('user', 'root'))
+        local_mysql_layout.addRow("用户名:", self.local_mysql_user_entry)
+        self.local_mysql_password_entry = PasswordEntry()
+        self.local_mysql_password_entry.setText(local_config.get('password', ''))
+        local_mysql_layout.addRow("密码:", self.local_mysql_password_entry)
+        self.local_mysql_db_entry = QLineEdit()
+        self.local_mysql_db_entry.setText(local_config.get('database', 'crm_cache'))
+        local_mysql_layout.addRow("数据库名称:", self.local_mysql_db_entry)
+        # 自动保存：所有字段变更时推迟 500ms 保存到配置文件
+        self.local_mysql_host_entry.textChanged.connect(self._debounced_save_local_mysql_config)
+        self.local_mysql_port_entry.textChanged.connect(self._debounced_save_local_mysql_config)
+        self.local_mysql_user_entry.textChanged.connect(self._debounced_save_local_mysql_config)
+        self.local_mysql_db_entry.textChanged.connect(self._debounced_save_local_mysql_config)
+        local_help = QLabel("本地 MySQL 仅用于缓存（MysqlCache 的 crm_cache_* 表）。\n云数据库用于永久存储（同步表/对象-* 表/报表表）。\n本地缓存未启用或不可用时，自动兗底使用云数据库。")
+        local_help.setWordWrap(True)
+        local_help.setStyleSheet("QLabel { color: #888; font-size: 11px; padding: 4px 0; }")
+        local_mysql_layout.addRow(local_help)
+        tab_layout.addWidget(local_mysql_group)
+        local_btn_frame = QFrame()
+        local_btn_layout = QHBoxLayout(local_btn_frame)
+        local_btn_layout.setAlignment(Qt.AlignCenter)
+        self.local_mysql_test_btn = QPushButton("测试本地连接")
+        self.local_mysql_test_btn.clicked.connect(self.on_test_local_mysql_connection)
+        local_btn_layout.addWidget(self.local_mysql_test_btn)
+        local_btn_layout.addSpacing(20)
+        self.local_mysql_save_btn = QPushButton("保存本地配置")
+        self.local_mysql_save_btn.clicked.connect(self._on_save_local_button_clicked)
+        local_btn_layout.addWidget(self.local_mysql_save_btn)
+        tab_layout.addWidget(local_btn_frame)
+        self.local_mysql_status_label = QLabel("")
+        self.local_mysql_status_label.setWordWrap(True)
+        self.local_mysql_status_label.setStyleSheet("QLabel { color: #666; padding: 8px; font-size: 13px; }")
+        tab_layout.addWidget(self.local_mysql_status_label)
         # 添加拉伸因子
         tab_layout.addStretch()
 
         self.notebook.addTab(tab, "MySQL配置")
 
+
+    def on_test_local_mysql_connection(self):
+        """测试本地 MySQL 连接（后台线程执行，不阻塞 UI）"""
+        host = self.local_mysql_host_entry.text().strip()
+        port_str = self.local_mysql_port_entry.text().strip()
+        user = self.local_mysql_user_entry.text().strip()
+        password = self.local_mysql_password_entry.get().strip()
+        db = self.local_mysql_db_entry.text().strip()
+        self.local_mysql_status_label.setText("正在测试本地连接...（60秒超时自动停止）")
+        self.local_mysql_status_label.setStyleSheet("QLabel { color: #0078D4; padding: 8px; font-size: 13px; }")
+        if hasattr(self, 'local_mysql_test_btn'):
+            self.local_mysql_test_btn.setEnabled(False)
+        import threading
+        def _test():
+            import pymysql
+            from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
+            try:
+                conn = pymysql.connect(
+                    host=host, port=int(port_str), user=user, password=password,
+                    database=db, charset='utf8mb4', connect_timeout=60,
+                    cursorclass=pymysql.cursors.DictCursor
+                )
+                version = conn.get_server_info()
+                conn.close()
+                msg = f"连接成功！服务器：{host}:{port_str} 数据库：{db} | MySQL版本：{version}"
+                QMetaObject.invokeMethod(
+                    self.local_mysql_status_label, "setText",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, msg)
+                )
+                QMetaObject.invokeMethod(
+                    self.local_mysql_status_label, "setStyleSheet",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, "QLabel { color: #52C41A; padding: 8px; font-size: 13px; }")
+                )
+            except Exception as e:
+                err = str(e)[:80]
+                QMetaObject.invokeMethod(
+                    self.local_mysql_status_label, "setText",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, f"连接失败: {err}")
+                )
+                QMetaObject.invokeMethod(
+                    self.local_mysql_status_label, "setStyleSheet",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, "QLabel { color: #FF4D4F; padding: 8px; font-size: 13px; }")
+                )
+            if hasattr(self, 'local_mysql_test_btn'):
+                QMetaObject.invokeMethod(
+                    self.local_mysql_test_btn, "setEnabled",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(bool, True)
+                )
+        t = threading.Thread(target=_test, daemon=True)
+        t.start()
+
+    def _debounced_save_local_mysql_config(self):
+        """推迟保存本地 MySQL 配置，停止输入 500ms 后自动保存"""
+        if not hasattr(self, "_local_mysql_save_timer") or self._local_mysql_save_timer is None:
+            from PyQt6.QtCore import QTimer
+            self._local_mysql_save_timer = QTimer(self)
+            self._local_mysql_save_timer.setSingleShot(True)
+            self._local_mysql_save_timer.timeout.connect(self._do_save_local_mysql_config)
+        self._local_mysql_save_timer.start(500)
+
+    def _do_save_local_mysql_config(self):
+        """安静保存本地 MySQL 配置到文件（不弹窗）"""
+        from core import save_config, load_config
+        cfg = load_config()
+        local_cfg = {
+            'enabled': self.local_mysql_enabled_checkbox.isChecked(),
+            'host': self.local_mysql_host_entry.text(),
+            'port': int(self.local_mysql_port_entry.text()),
+            'user': self.local_mysql_user_entry.text(),
+            'password': self.local_mysql_password_entry.get(),
+            'database': self.local_mysql_db_entry.text()
+        }
+        cfg['local_mysql_config'] = local_cfg
+        save_config(cfg, immediate=True)
+
+    def _on_save_local_button_clicked(self):
+        """保存本地 MySQL 配置并显示成功提示"""
+        self._do_save_local_mysql_config()
+        self.local_mysql_status_label.setText("本地配置已保存！")
+        self.local_mysql_status_label.setStyleSheet("QLabel { color: #52C41A; padding: 8px; font-size: 13px; }")
+
+    def _on_local_mysql_enabled_toggled(self, state):
+        """即时保存本地 MySQL 启用/关闭状态"""
+        enabled = bool(state)
+        config = load_config()
+        if 'local_mysql_config' not in config:
+            config['local_mysql_config'] = {}
+        config['local_mysql_config']['enabled'] = enabled
+        save_config(config, immediate=True)
+        status = "已启用" if enabled else "已关闭"
+        print(f"[MySQL配置] 本地缓存: {status}")
+        if hasattr(self, 'local_mysql_status_label'):
+            self.local_mysql_status_label.setText(f"本地 MySQL {status}（配置已保存）")
     def _on_mysql_enabled_toggled(self, state):
         """即时保存 MySQL 启用/关闭状态"""
         enabled = bool(state)
@@ -14364,6 +14511,14 @@ class SettingsDialog(QFrame):
             # 保存到配置文件
             config = load_config()
             config['mysql_config'] = mysql_config
+            config['local_mysql_config'] = {
+                'enabled': self.local_mysql_enabled_checkbox.isChecked(),
+                'host': self.local_mysql_host_entry.text(),
+                'port': int(self.local_mysql_port_entry.text()),
+                'user': self.local_mysql_user_entry.text(),
+                'password': self.local_mysql_password_entry.get(),
+                'database': self.local_mysql_db_entry.text()
+            }
             save_config_with_delay(config)
             # 同步更新 SettingsDialog 和 MainFrame 的 config 引用，防止任一方的后续保存操作覆盖 MySQL 配置
             self.config = config
@@ -19714,8 +19869,13 @@ class SettingsDialog(QFrame):
         # 清理空对象设置
         all_settings[api_name] = obj_settings
         self._settings_dirty = True
-        # 标记：筛选条件已修改，切换页面时需刷新
-        self._obj_query_filters_dirty = True
+        # 修改筛选条件后清除 MainFrame 的内存缓存（下次触发加载时重新获取，不自动触发CRM拉取）
+        mw = getattr(self, '_main_window', None)
+        if mw is None:
+            mw = getattr(MainFrame, 'instance', None) if 'MainFrame' in globals() else None
+        if mw and hasattr(mw, '_obj_query_mem_cache'):
+            mw._obj_query_mem_cache.pop(api_name, None)
+
         # 立即持久化到配置文件（不触发 CRM 数据加载）
         save_config(self.config, immediate=True)
 
@@ -24909,3 +25069,7 @@ if __name__ == "__main__":
         traceback.print_exc()
         print(f"ERROR: 程序启动失败: {e}")
         print(f"ERROR: Traceback: {traceback.format_exc()}")
+        # 确保设置按钮始终在最后
+        if 6 in button_order:
+            button_order.remove(6)
+            button_order.append(6)

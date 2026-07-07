@@ -86,7 +86,12 @@ def perform_requests_request(method, url, **kwargs):
     _m = _sys.modules.get('__main__')
     if _m is not None and hasattr(_m, 'perform_requests_request'):
         return _m.perform_requests_request(method, url, **kwargs)
- 
+    raise RuntimeError(
+        "perform_requests_request is not available when running from this script. "
+        "Run from the main application (Project_zjt_3.5.8.py) or define "
+        "perform_requests_request in the calling script."
+    )
+
 def flush_pending_config():
     import sys as _sys
     _m = _sys.modules.get('__main__')
