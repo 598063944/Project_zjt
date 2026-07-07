@@ -990,24 +990,18 @@ class object_queryMixin:
         crm_cfg_fields = cfg.get('fxiaoke', {}).get('crm_object_fields', {}).get(api_name, {})
         configured_fields = list(crm_cfg_fields.keys()) if crm_cfg_fields else []
         if not configured_fields:
-            self.obj_query_all_data = []
+            # 没有配置字段时，不传 field_projection，让 API 返回全部字段
+            field_projection = None
             self._obj_query_client_filters = []
-            if hasattr(self, 'obj_query_status_label'):
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.obj_query_status_label.setText(
-                    "⚠️ 未配置字段，请先在 设置→CRM设置→对象管理→字段配置 中添加字段"))
-            # 清空表格
-            if hasattr(self, 'obj_query_table'):
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.obj_query_table.setRowCount(0))
-            return
-        field_projection = list(dict.fromkeys(configured_fields))
-        # _id 为固定获取字段，所有对象始终请求
-        if '_id' not in field_projection:
-            field_projection.insert(0, '_id')
-        for f in list(field_projection):
-            if not f.endswith('__r') and f'{f}__r' not in field_projection:
-                field_projection.append(f'{f}__r')
+        else:
+            field_projection = list(dict.fromkeys(configured_fields))
+            # _id 为固定获取字段，所有对象始终请求
+            if '_id' not in field_projection:
+                field_projection.insert(0, '_id')
+            for f in list(field_projection):
+                if not f.endswith('__r') and f'{f}__r' not in field_projection:
+                    field_projection.append(f'{f}__r')
+
 
         # 从配置读取该对象的加载条数（默认使用全局 load_count，限制 1~10000）
         obj_settings = fx_cfg.get('obj_query_settings', {}).get(api_name, {})
