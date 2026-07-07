@@ -22,6 +22,18 @@ env/
 .config/users.json
 .config/admin.json
 .config/shared_settings.json
+.config/custom_reports*.json
+.config/user_cache.json
+*.db
+
+# Generated output
+projects/
+
+# Windows copy suffixes
+* (*).json
+
+# Temp fix scripts
+_fix_*.py
 
 # User runtime state
 User/RuntimeState/
