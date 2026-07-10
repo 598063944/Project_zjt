@@ -1415,7 +1415,7 @@ def _text(value, fmt):
                 return str(x)
         return value.apply(_fmt_one)
     else:
-        if value is None or (isinstance(value, float) and pd.isna(value)):
+        if value is None or pd.isna(value):
             return ''
         try:
             dt = _to_datetime(value)
@@ -2565,6 +2565,33 @@ def _textsplit(text, col_delim, row_delim=None):
     return _split(s)
 
 
+
+
+def _left_text(s, n=1):
+    s_str = s.astype(str)
+    if isinstance(n, pd.Series):
+        n_int = pd.to_numeric(n, errors='coerce').fillna(0).astype(int)
+        return pd.Series([s_str.iloc[i][:n_int.iloc[i]] for i in range(len(s_str))], index=s.index)
+    return s_str.str[:int(n)]
+
+
+def _right_text(s, n=1):
+    s_str = s.astype(str)
+    if isinstance(n, pd.Series):
+        n_int = pd.to_numeric(n, errors='coerce').fillna(0).astype(int)
+        return pd.Series([s_str.iloc[i][-n_int.iloc[i]:] for i in range(len(s_str))], index=s.index)
+    return s_str.str[-int(n):]
+
+
+def _mid_text(s, start, n):
+    s_str = s.astype(str)
+    if isinstance(start, pd.Series) or isinstance(n, pd.Series):
+        start_int = pd.to_numeric(start, errors='coerce').fillna(1).astype(int)
+        n_int = pd.to_numeric(n, errors='coerce').fillna(0).astype(int)
+        return pd.Series([s_str.iloc[i][start_int.iloc[i] - 1:start_int.iloc[i] - 1 + n_int.iloc[i]] for i in range(len(s_str))], index=s.index)
+    return s_str.str[int(start) - 1:int(start) - 1 + int(n)]
+
+
 # ==================== Excel 函数注册表 ====================
 _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     # --- 日期时间 ---
@@ -2632,9 +2659,9 @@ _EXCEL_FUNC_REGISTRY: dict[str, tuple[callable, int, int | None]] = {
     'QUOTIENT':  (_quotient, 2, 2),
 
     # --- 文本 ---
-    'LEFT':      (lambda s, n=1: s.astype(str).str[:n], 1, 2),
-    'RIGHT':     (lambda s, n=1: s.astype(str).str[-n:], 1, 2),
-    'MID':       (lambda s, start, n: s.astype(str).str[start - 1:start - 1 + n], 3, 3),
+    'LEFT':      (_left_text, 1, 2),
+    'RIGHT':     (_right_text, 1, 2),
+    'MID':       (_mid_text, 3, 3),
     'LEN':       (lambda s: s.astype(str).str.len(), 1, 1),
     'UPPER':     (lambda s: s.astype(str).str.upper(), 1, 1),
     'LOWER':     (lambda s: s.astype(str).str.lower(), 1, 1),
@@ -6879,6 +6906,22 @@ class ReportRefreshWorker:
         except Exception as e:
             logger.error(f"[ReportRefresh] 公式列后处理异常（不阻断）: {e}")
 
+        # 如果没有设置报表名称，则跳过 MySQL 元数据写入
+        name = (report.name or '').strip()
+        if not name:
+            logger.warning(f"[ReportRefresh] 报表名称为空，跳过 MySQL 元数据写入 report_id={report.id}")
+            # 仍然返回成功（拼表已完成），但不写元数据
+            duration = time.time() - t0
+            return {'success': True, 'row_count': 0, 'error': None, 'duration': duration}
+
+        # 如果没有设置 report.id，使用主表 _id 作为 MySQL id
+        report_id = (report.id or '').strip()
+        if not report_id:
+            report_id = f"{report.main_object_api}_id" if report.main_object_api else ""
+            logger.warning(f"[ReportRefresh] report.id 为空，使用主表 _id 作为 MySQL id: {report_id}")
+            report.id = report_id
+            report.result_table_name = ReportDatabase.result_table_name(report_id)
+
         # Phase 3: 更新元数据
         row_count = self._db.get_result_count(report.id)
         report.result_row_count = row_count
@@ -7242,7 +7285,7 @@ class ReportRefreshWorker:
                             if row_id is None:
                                 continue
                             val = row_data.get(display_name)
-                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                            if val is None or pd.isna(val):
                                 continue
                             val_str = str(val)
                             cases.append("WHEN %s THEN %s")
@@ -7318,7 +7361,7 @@ class ReportRefreshWorker:
                             if row_id is None:
                                 continue
                             val = row_data.get(display_name)
-                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                            if val is None or pd.isna(val):
                                 continue  # NULL 值不更新（保持原值）
                             val_str = str(val)
                             cases.append("WHEN %s THEN %s")
@@ -21151,6 +21194,8 @@ class PreviewTable(QWidget):
             )
             self.refreshDataReady.emit(rows, total)
         except Exception:
+            import logging as _logging
+            _logging.exception(f"[PreviewTable] 数据查询后台线程异常: report_id={report_id}")
             self.refreshDataReady.emit(None, -1)
 
     def _on_refresh_data_ready(self, rows, total):
@@ -21297,7 +21342,7 @@ class PreviewTable(QWidget):
             for r, row in enumerate(row_dicts):
                 for c, col_name in enumerate(cols):
                     val = row.get(col_name, '')
-                    if val is None or (isinstance(val, float) and pd.isna(val)):
+                    if val is None or pd.isna(val):
                         val = ''
                     text_val = str(val) if val != '' else ''
                     # 使用 logical_c 确保数据写入与列名对应的逻辑列（而非按 cols 索引）
@@ -22924,6 +22969,20 @@ class ReportEditorPage(QWidget):
         self._toggle_canvas_btn.clicked.connect(self._toggle_canvas_visibility)
         status_layout.addWidget(self._toggle_canvas_btn)
 
+        # 左侧报表列显示/隐藏按钮
+        self._report_col_visible = True
+        sep2 = QFrame()
+        sep2.setFixedWidth(1)
+        sep2.setStyleSheet("background-color: #E0E0E0;")
+        sep2.setFixedHeight(20)
+        status_layout.addWidget(sep2)
+        self._toggle_report_btn = QPushButton("隐藏报表")
+        self._toggle_report_btn.setFixedSize(80, 26)
+        self._toggle_report_btn.setStyleSheet("font-size: 12px; padding: 2px 6px;")
+        self._toggle_report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_report_btn.clicked.connect(self._toggle_report_column_visibility)
+        status_layout.addWidget(self._toggle_report_btn)
+
         layout.addWidget(status_bar)
 
         # 信号连接
@@ -23876,6 +23935,12 @@ class ReportEditorPage(QWidget):
             _light_msgbox(self, QMessageBox.Icon.Warning, "提示",
                 "请先创建或打开报表后再刷新数据。")
             return
+        # 检查报表名称
+        name = self._name_input.text().strip()
+        if not name:
+            _light_msgbox(self, QMessageBox.Icon.Warning, "提示",
+                "请输入报表名称后再刷新数据。")
+            return
 
         # 先保存配置
         try:
@@ -24654,12 +24719,19 @@ class ReportEditorPage(QWidget):
         self._bottom_status.setText(hint)
 
     def _toggle_canvas_visibility(self):
-        """切换画布（含左侧表选择面板）的显示/隐藏状态。"""
+        """切换画布的显示/隐藏状态。"""
         self._canvas_visible = not self._canvas_visible
         visible = self._canvas_visible
         self._canvas.setVisible(visible)
-        self._table_selector.setVisible(visible)
         self._toggle_canvas_btn.setText("隐藏画布" if visible else "显示画布")
+
+
+    def _toggle_report_column_visibility(self):
+        """切换左侧报表列（可用表面板）的显示/隐藏状态。"""
+        self._report_col_visible = not self._report_col_visible
+        visible = self._report_col_visible
+        self._table_selector.setVisible(visible)
+        self._toggle_report_btn.setText("隐藏报表" if visible else "展开")
 
     # ==================== AI 报表助手 ====================
 
@@ -29241,11 +29313,6 @@ class TableSelectorPanel(QWidget):
         bottom_layout.addWidget(self._count_label)
         bottom_layout.addStretch()
 
-        self._refresh_text = QLabel("<a href='#' style='color:#1890FF; text-decoration:none; font-size:11px;'>刷新</a>")
-        self._refresh_text.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._refresh_text.linkActivated.connect(lambda _: self.refresh())
-        bottom_layout.addWidget(self._refresh_text)
-
         layout.addWidget(bottom)
 
         # 样式
@@ -32644,7 +32711,22 @@ class ReportDatabase:
 
         # 筛选条件
         if filters:
+            display_cols_set = set(display_cols) if display_cols else set()
             for fc in filters:
+                # 解析字段名：结果表列名可能带 _1/_2 后缀，而筛选条件用的是原始字段名
+                field = fc.get('field_label', fc.get('field', ''))
+                if field and display_cols and field not in display_cols_set:
+                    resolved = None
+                    for dc in display_cols:
+                        if dc.startswith(field):
+                            resolved = dc
+                            break
+                    if resolved:
+                        fc = dict(fc)
+                        if 'field_label' in fc:
+                            fc['field_label'] = resolved
+                        else:
+                            fc['field'] = resolved
                 cond_sql, cond_params = self._build_filter_sql(fc)
                 if cond_sql:
                     where_parts.append(cond_sql)
@@ -33118,6 +33200,16 @@ class ReportDatabase:
     def save_report_meta(self, report_id: str, name: str, definition_json: str,
                          row_count: int = 0, refresh_time: str = None):
         """保存/更新报表元数据"""
+        # 拒绝空名称写入 MySQL
+        if not name or not name.strip():
+            import logging
+            logging.warning(f"[ReportDatabase] 报表名称为空，跳过 MySQL 写入 report_id={report_id}")
+            return
+        # 拒绝空 ID 写入 MySQL
+        if not report_id or not report_id.strip():
+            import logging
+            logging.warning(f"[ReportDatabase] report_id 为空，跳过 MySQL 写入 name={name}")
+            return
         refresh_time = refresh_time or ''
         self.ensure_meta_table()
         sql = """
@@ -33241,20 +33333,26 @@ class ReportDatabase:
 
         # 确定主键列：
         #   1. 用户指定的复合主键字段（sync_id_fields，拼接为 VARCHAR）
-        #   2. 指定的单列 (id_column，如 _id)
+        #   2. 指定的单列 (id_column，如 _id，检查 all_cols 而非 display_cols)
         #   3. _id（如有）
-        #   4. 回退 _row_id
+        #   4. 主表 _id（在所有列中查找）
+        #   5. 回退 _row_id
         use_composite_id = bool(sync_id_fields)
         if use_composite_id:
             # 直接使用刷新时预生成的「唯一ID」列作为主键
             pk_col = "唯一ID"
             is_row_id_pk = False
             target_pk = 'id'
-        elif id_column and id_column in display_cols:
+        elif id_column and id_column in all_cols:
             pk_col = id_column
             target_pk = 'id' if pk_col == '_id' else pk_col
             is_row_id_pk = False
-        elif '_id' in display_cols:
+        elif '_id' in all_cols:
+            pk_col = '_id'
+            target_pk = 'id'
+            is_row_id_pk = False
+        elif id_column is None and '_id' in all_cols:
+            # 如果没有设置 id_column 但结果表有 _id 列，自动使用
             pk_col = '_id'
             target_pk = 'id'
             is_row_id_pk = False
@@ -33262,6 +33360,10 @@ class ReportDatabase:
             pk_col = '_row_id'
             target_pk = pk_col
             is_row_id_pk = True
+
+        # 修正 display_cols：如果 pk_col 是 _id，将其从排除列表移回
+        if pk_col == '_id' and '_id' not in display_cols:
+            display_cols = ['_id'] + display_cols
 
         # 构建 WHERE 子句
         where_parts = []
@@ -33273,7 +33375,21 @@ class ReportDatabase:
             params.extend([f"%{search}%" for _ in conditions])
 
         if filters:
+            display_cols_set = set(display_cols)
             for fc in filters:
+                field = fc.get('field_label', fc.get('field', ''))
+                if field and field not in display_cols_set:
+                    resolved = None
+                    for dc in display_cols:
+                        if dc.startswith(field):
+                            resolved = dc
+                            break
+                    if resolved:
+                        fc = dict(fc)
+                        if 'field_label' in fc:
+                            fc['field_label'] = resolved
+                        else:
+                            fc['field'] = resolved
                 cond_sql, cond_params = self._build_filter_sql(fc)
                 if cond_sql:
                     where_parts.append(cond_sql)

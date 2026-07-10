@@ -910,6 +910,7 @@ COMMON_CONFIG_RULES = {
         'crm_field_mapping_list',
         'obj_query_settings',       # 对象查询设置（含默认筛选条件）
         'crm_object_fields',        # 对象字段配置（字段管理）
+        'crm_option_mappings',      # 字段明细映射（选项ID→显示文本）
     },
     # 商机/招投标字段映射与映射值（跨用户共享）
     'opportunity': {
@@ -19433,7 +19434,7 @@ class SettingsDialog(QFrame):
 
         op_combo = QComboBox(); op_combo.setFixedWidth(85); op_combo.setFixedHeight(24)
         op_combo.setStyleSheet("QComboBox { font-size: 11px; border: 1px solid #D9D9D9; border-radius: 3px; padding: 1px 2px; background: #FFF; }")
-        for label, key in [("包含", "contains"), ("不包含", "not_contains"), ("属于", "in"), ("等于", "eq"), ("不等于", "ne"), ("大于", "gt"), ("小于", "lt"), ("大于等于", "gte"), ("小于等于", "lte"), ("为空", "empty"), ("不为空", "not_empty")]:
+        for label, key in [("包含", "contains"), ("不包含", "not_contains"), ("属于", "in"), ("不属于", "not_in"), ("等于", "eq"), ("不等于", "ne"), ("大于", "gt"), ("小于", "lt"), ("大于等于", "gte"), ("小于等于", "lte"), ("为空", "empty"), ("不为空", "not_empty")]:
             op_combo.addItem(label, key)
         if condition.get('operator'):
             idx = op_combo.findData(condition['operator'])
@@ -19645,7 +19646,7 @@ class SettingsDialog(QFrame):
             if current_op is None or op_combo.findData(current_op) < 0:
                 current_op = 'date_range'
         else:
-            text_ops = [("包含", "contains"), ("不包含", "not_contains"), ("属于", "in"), ("等于", "eq"), ("不等于", "ne"), ("大于", "gt"), ("小于", "lt"), ("大于等于", "gte"), ("小于等于", "lte"), ("为空", "empty"), ("不为空", "not_empty")]
+            text_ops = [("包含", "contains"), ("不包含", "not_contains"), ("属于", "in"), ("不属于", "not_in"), ("等于", "eq"), ("不等于", "ne"), ("大于", "gt"), ("小于", "lt"), ("大于等于", "gte"), ("小于等于", "lte"), ("为空", "empty"), ("不为空", "not_empty")]
             for label, key in text_ops:
                 op_combo.addItem(label, key)
         # 恢复操作符选择
@@ -19675,9 +19676,9 @@ class SettingsDialog(QFrame):
             value_stack.setCurrentIndex(0)
             value_stack.setEnabled(True)
 
-        # 多选按钮：仅当操作符为"包含"且字段有映射时显示
+        # 多选按钮：仅当操作符为"属于"或"不属于"且字段有映射时显示
         if 'picker_btn' in ri:
-            ri['picker_btn'].setVisible(bool(mappings and op == 'in'))
+            ri['picker_btn'].setVisible(bool(mappings and op in ('in', 'not_in')))
 
     def _open_default_date_range(self, btn):
         """打开日期范围选择弹窗（与数据筛选/商机筛选一致）"""
@@ -20236,9 +20237,6 @@ class SettingsDialog(QFrame):
         self.apply_settings_immediately({'crm_objects'})
         print(f"[DEBUG-字段管理] ✅ 配置已保存到文件 | 路径: fxiaoke.crm_object_fields.{api_name}")
 
-        # ✅【新增】保存后立即刷新对象查询（让新配置立即生效）
-        self._refresh_obj_query_after_save(api_name)
-
     def _on_save_crm_field_management(self):
         """保存字段管理配置（2列格式）到 config。"""
         api_name = self.crm_field_mgmt_object_combo.currentData()
@@ -20259,7 +20257,7 @@ class SettingsDialog(QFrame):
             }
 
         self._save_crm_field_config_internal(api_name, fields_config)
-        frameless_message_box(self, "保存成功", f"已保存 {len(fields_config)} 个字段的配置。\n\n✅ 对象查询已自动刷新，新配置立即生效！")
+        frameless_message_box(self, "保存成功", f"已保存 {len(fields_config)} 个字段的配置。\n\n✅ 字段配置已保存到配置文件，新配置将在下次查询时生效（不会自动触发 CRM 数据刷新）。")
 
     def _refresh_obj_query_after_save(self, saved_api_name):
         """

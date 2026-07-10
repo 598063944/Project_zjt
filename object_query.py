@@ -769,6 +769,7 @@ class object_queryMixin:
             self.obj_query_all_data = self._obj_query_mem_cache[api_name]
             self.obj_query_current_page = 1
             self._reset_obj_query_field_mapping()
+            self._obj_query_loading_from_cache = True
             self.obj_query_data_ready.emit(api_name)
             print(f"[DEBUG-对象查询] 💾 内存缓存命中 '{api_name}': {len(self.obj_query_all_data)} 条")
             return
@@ -796,6 +797,7 @@ class object_queryMixin:
             self._reset_obj_query_field_mapping()
             self._obj_query_client_filters = self.config.get('fxiaoke', {}).get('obj_query_settings', {}).get(api_name, {}).get('filters', [])
             self._obj_query_mem_cache[api_name] = self.obj_query_all_data
+            self._obj_query_loading_from_cache = True
             self.obj_query_data_ready.emit(api_name)
             if hasattr(self, 'obj_query_source_label'):
                 self.obj_query_source_label.setText(f"📦 MySQL 缓存 | {len(cached_rows)} 条（后台刷新中…）")
@@ -858,7 +860,10 @@ class object_queryMixin:
             return
 
         # 自动同步到 MySQL（后台线程执行，不阻塞 UI）
-        if data and self._get_obj_query_sync_mode() == 'auto':
+        # 数据来自 MySQL 缓存时跳过自动同步：数据已在 MySQL 中，重复同步会产生误导的"同步完成"提示
+        is_cache_load = getattr(self, '_obj_query_loading_from_cache', False)
+        self._obj_query_loading_from_cache = False
+        if data and not is_cache_load and self._get_obj_query_sync_mode() == 'auto':
             display_name = self.obj_query_object_combo.currentText().strip()
             self.update_output.emit(f"[对象查询] 自动同步 MySQL 开始: '{api_name}' {len(data)} 条")
             self.task_manager.start(
@@ -2205,6 +2210,7 @@ class object_queryMixin:
         ("包含", "contains"), ("不包含", "not_contains"),
         ("等于", "eq"), ("不等于", "ne"),
         ("属于", "in"),
+        ("不属于", "not_in"),
         ("开头是", "starts_with"), ("结尾是", "ends_with"),
         ("为空", "empty"), ("不为空", "not_empty"),
     ]

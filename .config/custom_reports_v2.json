@@ -8,7 +8,7 @@
       "main_object_api": "DeliveryNoteObj",
       "joins": [
         {
-          "id": "19782ee9",
+          "id": "ca84a96f",
           "left_object_api": "DeliveryNoteObj",
           "right_object_api": "SalesOrderObj",
           "match_keys": [
@@ -24,7 +24,7 @@
       ],
       "columns": [
         {
-          "id": "14ae4074",
+          "id": "ae6acaec",
           "display_name": "发货年份",
           "source_object_api": "",
           "source_field": "",
@@ -41,7 +41,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "2afffccf",
+          "id": "06542ae0",
           "display_name": "发货月份",
           "source_object_api": "",
           "source_field": "",
@@ -58,7 +58,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "5982414c",
+          "id": "b3cdee9a",
           "display_name": "发货季度",
           "source_object_api": "",
           "source_field": "",
@@ -75,7 +75,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "83a93227",
+          "id": "a7148eb2",
           "display_name": "负责人所在大区",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "field_sc5wu__c",
@@ -92,7 +92,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "cd4e2ce2",
+          "id": "65191713",
           "display_name": "CT发货数量",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "field_1g8V1__c",
@@ -109,7 +109,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "d8a56d7b",
+          "id": "a6b3731f",
           "display_name": "商机来源经销商",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_2xgIX__c",
@@ -126,7 +126,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "88912c7e",
+          "id": "30ca6cbf",
           "display_name": "收货地址",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "ship_to_add",
@@ -143,7 +143,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "f92c6a5a",
+          "id": "e45772a9",
           "display_name": "发货产品类型",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "field_l2p3Y__c",
@@ -160,7 +160,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "1de5e467",
+          "id": "271c8a7c",
           "display_name": "生命状态",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "life_status",
@@ -177,7 +177,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "5fea146a",
+          "id": "6fe7c558",
           "display_name": "发货日期",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "delivery_date",
@@ -194,7 +194,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "d02454ab",
+          "id": "cff341aa",
           "display_name": "客户名称",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "account_id",
@@ -211,7 +211,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "df9b589e",
+          "id": "be729b6b",
           "display_name": "负责人所在部门",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "owner_department",
@@ -228,7 +228,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "41ecf07c",
+          "id": "c20de18f",
           "display_name": "销售订单编号",
           "source_object_api": "SalesOrderObj",
           "source_field": "name",
@@ -245,7 +245,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "7076c894",
+          "id": "5da3b7ca",
           "display_name": "负责人",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "owner",
@@ -262,7 +262,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "0ee342e3",
+          "id": "4ba78184",
           "display_name": "ERP订单号",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_2maFO__c",
@@ -279,7 +279,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "69f41b0a",
+          "id": "ef7d5c1e",
           "display_name": "客户类型",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_YK1e6__c",
@@ -296,7 +296,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "ae8299e1",
+          "id": "0d8aeb12",
           "display_name": "发货单编号",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "name",
@@ -313,7 +313,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "add90caa",
+          "id": "065c84b3",
           "display_name": "ERP发货单号",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "field_4o210__c",
@@ -330,7 +330,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "c4ae8d02",
+          "id": "e6f45503",
           "display_name": "商机",
           "source_object_api": "SalesOrderObj",
           "source_field": "new_opportunity_id",
@@ -347,7 +347,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "7d43e2e8",
+          "id": "1b9edef4",
           "display_name": "关联客户（分销商&诊所）",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_8pAwf__c",
@@ -364,7 +364,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "81f09e24",
+          "id": "92f5ab7f",
           "display_name": "市（商务统计合同用）",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_bSU2c__c",
@@ -381,7 +381,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "adc718c1",
+          "id": "ae5d2ce2",
           "display_name": "发货周",
           "source_object_api": "",
           "source_field": "",
@@ -398,7 +398,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "17f92e4b",
+          "id": "d1799939",
           "display_name": "省（商务统计合同用)",
           "source_object_api": "SalesOrderObj",
           "source_field": "province_for_business_stat__c",
@@ -432,22 +432,22 @@
       "date_end": "",
       "canvas_positions": {
         "DeliveryNoteObj": [
-          17.471315626045225,
-          -535.950384307075
+          -607.5286843739548,
+          -492.95038430707496
         ],
         "SalesOrderObj": [
-          -366.7078607939618,
-          -528.0216356948357
+          -174.7078607939618,
+          -470.0216356948358
         ]
       },
       "group_by_fields": [],
       "show_summary_row": false,
       "folder_path": "CT",
       "created_at": "2026-05-29 14:26:01",
-      "modified_at": "2026-06-09 13:42:11",
-      "version": 162,
+      "modified_at": "2026-06-30 23:27:45",
+      "version": 163,
       "result_table_name": "cr_305194561c9c",
-      "result_row_count": 2189,
+      "result_row_count": 2277,
       "last_refresh_time": "",
       "write_mode": "overwrite",
       "sync_id_fields": [],
@@ -931,7 +931,7 @@
       "main_object_api": "NewOpportunityObj",
       "joins": [
         {
-          "id": "a2e49e68",
+          "id": "c5da3025",
           "left_object_api": "NewOpportunityObj",
           "right_object_api": "SalesOrderObj",
           "match_keys": [
@@ -945,7 +945,7 @@
           "concat_separator": "、"
         },
         {
-          "id": "b6e630ea",
+          "id": "6d2fc225",
           "left_object_api": "SalesOrderObj",
           "right_object_api": "DeliveryNoteObj",
           "match_keys": [
@@ -961,7 +961,7 @@
       ],
       "columns": [
         {
-          "id": "9b81d346",
+          "id": "262624c5",
           "display_name": "创建年",
           "source_object_api": "",
           "source_field": "",
@@ -978,7 +978,7 @@
           "date_part_unit": "year"
         },
         {
-          "id": "9384b87d",
+          "id": "fd805c1b",
           "display_name": "创建月",
           "source_object_api": "",
           "source_field": "",
@@ -995,7 +995,7 @@
           "date_part_unit": "month"
         },
         {
-          "id": "68e0796f",
+          "id": "9fb4ee7c",
           "display_name": "创建周",
           "source_object_api": "",
           "source_field": "",
@@ -1012,7 +1012,7 @@
           "date_part_unit": "week"
         },
         {
-          "id": "d8ebf18b",
+          "id": "bb606d7d",
           "display_name": "创建季度",
           "source_object_api": "",
           "source_field": "",
@@ -1029,7 +1029,7 @@
           "date_part_unit": "quarter"
         },
         {
-          "id": "54c4663e",
+          "id": "267febfc",
           "display_name": "省简称",
           "source_object_api": "",
           "source_field": "",
@@ -1049,7 +1049,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "9fa14b5b",
+          "id": "f54f80c4",
           "display_name": "负责人",
           "source_object_api": "NewOpportunityObj",
           "source_field": "owner",
@@ -1066,7 +1066,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "6ddd94fb",
+          "id": "5b8d40e3",
           "display_name": "商机名称",
           "source_object_api": "NewOpportunityObj",
           "source_field": "name",
@@ -1083,7 +1083,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "ed4cbe5c",
+          "id": "f9a6b6ba",
           "display_name": "商机阶段",
           "source_object_api": "NewOpportunityObj",
           "source_field": "sales_stage",
@@ -1100,7 +1100,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "eb06d2f2",
+          "id": "582f042d",
           "display_name": "项目名称",
           "source_object_api": "NewOpportunityObj",
           "source_field": "project_name__c",
@@ -1117,7 +1117,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "8653fe11",
+          "id": "71920479",
           "display_name": "客户名称",
           "source_object_api": "NewOpportunityObj",
           "source_field": "account_id",
@@ -1134,7 +1134,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "b1a03055",
+          "id": "88194129",
           "display_name": "项目编号",
           "source_object_api": "NewOpportunityObj",
           "source_field": "project_number__c",
@@ -1151,7 +1151,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "4802d6cb",
+          "id": "ab79160f",
           "display_name": "钉钉授权单号",
           "source_object_api": "NewOpportunityObj",
           "source_field": "dingtalk_auth_order_no__c",
@@ -1168,7 +1168,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "83c78438",
+          "id": "9b37ee54",
           "display_name": "首次授权日期",
           "source_object_api": "NewOpportunityObj",
           "source_field": "first_authorization_date__c",
@@ -1185,7 +1185,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "4b7a4f97",
+          "id": "0998672e",
           "display_name": "生命状态",
           "source_object_api": "NewOpportunityObj",
           "source_field": "life_status",
@@ -1202,7 +1202,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "3426d887",
+          "id": "0c3d13d5",
           "display_name": "意向台数",
           "source_object_api": "NewOpportunityObj",
           "source_field": "field_H75ee__c",
@@ -1219,7 +1219,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "b79ad751",
+          "id": "ba224a14",
           "display_name": "医院等级",
           "source_object_api": "NewOpportunityObj",
           "source_field": "hospital_level__c",
@@ -1236,7 +1236,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "647e95bc",
+          "id": "0e25e649",
           "display_name": "授权备注",
           "source_object_api": "NewOpportunityObj",
           "source_field": "authorization_remark__c",
@@ -1253,7 +1253,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "3373933d",
+          "id": "85c07d0b",
           "display_name": "省",
           "source_object_api": "NewOpportunityObj",
           "source_field": "field_k2xsC__c",
@@ -1270,7 +1270,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "7b105789",
+          "id": "939de32d",
           "display_name": "业务类型",
           "source_object_api": "NewOpportunityObj",
           "source_field": "record_type",
@@ -1287,7 +1287,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "4d6376b5",
+          "id": "25a45fef",
           "display_name": "创建时间",
           "source_object_api": "NewOpportunityObj",
           "source_field": "create_time",
@@ -1304,7 +1304,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "7301dd6f",
+          "id": "c6587e6a",
           "display_name": "分销商（客户对象）",
           "source_object_api": "NewOpportunityObj",
           "source_field": "field_zBrLw__c",
@@ -1321,7 +1321,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "861d8824",
+          "id": "511ed7d6",
           "display_name": "该项目授权代理商名称",
           "source_object_api": "NewOpportunityObj",
           "source_field": "this_project_authorized_ag__c",
@@ -1338,7 +1338,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "82b8e2b4",
+          "id": "1385619b",
           "display_name": "商机描述",
           "source_object_api": "NewOpportunityObj",
           "source_field": "field_ry1mH__c",
@@ -1355,7 +1355,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "67780532",
+          "id": "844a331a",
           "display_name": "商机条件",
           "source_object_api": "NewOpportunityObj",
           "source_field": "multiple_choice_2__c",
@@ -1372,7 +1372,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "24242452",
+          "id": "29f94bf8",
           "display_name": "阶段状态",
           "source_object_api": "NewOpportunityObj",
           "source_field": "sales_status",
@@ -1389,7 +1389,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "2597ad30",
+          "id": "aa7f36b5",
           "display_name": "主线索",
           "source_object_api": "NewOpportunityObj",
           "source_field": "leads_id",
@@ -1406,7 +1406,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "8c1e8b68",
+          "id": "feb8b95d",
           "display_name": "省（商务统计合同用)",
           "source_object_api": "SalesOrderObj",
           "source_field": "province_for_business_stat__c",
@@ -1423,7 +1423,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "2284dfcc",
+          "id": "49f3e822",
           "display_name": "市（商务统计合同用）",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_bSU2c__c",
@@ -1440,7 +1440,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "c836f4e0",
+          "id": "65c10283",
           "display_name": "销售订单编号",
           "source_object_api": "SalesOrderObj",
           "source_field": "name",
@@ -1457,7 +1457,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "e9ed2359",
+          "id": "2445adf3",
           "display_name": "关联客户（分销商&诊所）",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_8pAwf__c",
@@ -1474,7 +1474,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "7d4a7951",
+          "id": "fb402b85",
           "display_name": "订单产品类型",
           "source_object_api": "SalesOrderObj",
           "source_field": "field_jv2dq__c",
@@ -1491,7 +1491,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "463b5876",
+          "id": "5622a674",
           "display_name": "发货单编号",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "name",
@@ -1508,7 +1508,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "9d769186",
+          "id": "227500dd",
           "display_name": "发货日期",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "delivery_date",
@@ -1525,7 +1525,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "8cbdcc07",
+          "id": "4ae051a0",
           "display_name": "CT发货数量",
           "source_object_api": "DeliveryNoteObj",
           "source_field": "field_1g8V1__c",
@@ -1542,7 +1542,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "10a87403",
+          "id": "31111334",
           "display_name": "创建人",
           "source_object_api": "NewOpportunityObj",
           "source_field": "created_by",
@@ -1594,8 +1594,8 @@
       "date_end": "",
       "canvas_positions": {
         "NewOpportunityObj": [
-          -265.743982838134,
-          -445.3149506813774
+          -405.743982838134,
+          -570.3149506813775
         ],
         "SalesOrderObj": [
           -45.17844330472208,
@@ -1613,7 +1613,7 @@
       "modified_at": "2026-06-10 21:06:50",
       "version": 44,
       "result_table_name": "cr_d513983480e6",
-      "result_row_count": 10272,
+      "result_row_count": 2886,
       "last_refresh_time": "",
       "write_mode": "overwrite",
       "sync_id_fields": [
@@ -3791,9 +3791,9 @@
       "main_object_api": "DeviceObj",
       "joins": [
         {
-          "id": "6e39ac84",
+          "id": "fc68a670",
           "left_object_api": "DeviceObj",
-          "right_object_api": "ex_1ce4c0e0",
+          "right_object_api": "ex_售后工程师区域",
           "match_keys": [
             {
               "left_field": "field_yghN1__c",
@@ -3805,9 +3805,9 @@
           "concat_separator": "、"
         },
         {
-          "id": "64296fe9",
+          "id": "aeeba43b",
           "left_object_api": "DeviceObj",
-          "right_object_api": "ex_ce9f9908",
+          "right_object_api": "ex_销售区域",
           "match_keys": [
             {
               "left_field": "field_yghN1__c",
@@ -3821,7 +3821,7 @@
       ],
       "columns": [
         {
-          "id": "02a5b042",
+          "id": "533a0d7b",
           "display_name": "设备序列号",
           "source_object_api": "DeviceObj",
           "source_field": "device_code",
@@ -3838,7 +3838,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "1ba32aef",
+          "id": "5b96f8bf",
           "display_name": "安装日期（年）",
           "source_object_api": "",
           "source_field": "",
@@ -3855,7 +3855,7 @@
           "date_part_unit": "year"
         },
         {
-          "id": "7bb4f9a7",
+          "id": "a9efdcc4",
           "display_name": "安装日期（月）",
           "source_object_api": "",
           "source_field": "",
@@ -3872,7 +3872,7 @@
           "date_part_unit": "month"
         },
         {
-          "id": "d4c91709",
+          "id": "80673a0c",
           "display_name": "安装日期（周）",
           "source_object_api": "",
           "source_field": "",
@@ -3889,7 +3889,7 @@
           "date_part_unit": "week"
         },
         {
-          "id": "83228ceb",
+          "id": "3faad232",
           "display_name": "安装日期（季度）",
           "source_object_api": "",
           "source_field": "",
@@ -3906,29 +3906,12 @@
           "date_part_unit": "quarter"
         },
         {
-          "id": "96367354",
-          "display_name": "安装日期-月份",
-          "source_object_api": "",
-          "source_field": "",
-          "visible": true,
-          "sort_order": 5,
-          "column_width": null,
-          "computation_type": "formula",
-          "aggregate_func": "",
-          "formula_expression": "=TEXT([安装日期],\"MM月\")",
-          "field_format": "text",
-          "address_source_fields": [],
-          "address_target_level": "",
-          "date_part_source_field": "",
-          "date_part_unit": ""
-        },
-        {
-          "id": "ea100d21",
+          "id": "9bb68417",
           "display_name": "机型系列",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 6,
+          "sort_order": 5,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -3940,12 +3923,12 @@
           "date_part_unit": ""
         },
         {
-          "id": "a87167f9",
+          "id": "1be5a20a",
           "display_name": "合并设备机型",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 7,
+          "sort_order": 6,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -3957,10 +3940,27 @@
           "date_part_unit": ""
         },
         {
-          "id": "966ca290",
+          "id": "5a30d722",
           "display_name": "客户",
           "source_object_api": "DeviceObj",
           "source_field": "device_customer_id",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d9242141",
+          "display_name": "客户大区",
+          "source_object_api": "DeviceObj",
+          "source_field": "field_t51qW__c",
           "visible": true,
           "sort_order": 8,
           "column_width": null,
@@ -3974,24 +3974,28 @@
           "date_part_unit": ""
         },
         {
-          "id": "9d8cdc83",
-          "display_name": "客户大区",
-          "source_object_api": "DeviceObj",
-          "source_field": "field_t51qW__c",
+          "id": "6761284a",
+          "display_name": "省（简称）",
+          "source_object_api": "",
+          "source_field": "",
           "visible": true,
           "sort_order": 9,
           "column_width": null,
-          "computation_type": "direct",
+          "computation_type": "address_extract",
           "aggregate_func": "",
           "formula_expression": "",
           "field_format": "text",
-          "address_source_fields": [],
-          "address_target_level": "",
+          "address_source_fields": [
+            "客户所在省",
+            "客户所在市",
+            "客户所在区"
+          ],
+          "address_target_level": "province_short",
           "date_part_source_field": "",
           "date_part_unit": ""
         },
         {
-          "id": "c826f85a",
+          "id": "1e483b5f",
           "display_name": "客户所在省",
           "source_object_api": "DeviceObj",
           "source_field": "field_yghN1__c",
@@ -4008,7 +4012,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "fc25ef19",
+          "id": "c0f3846a",
           "display_name": "客户所在市",
           "source_object_api": "DeviceObj",
           "source_field": "field_iu67Z__c",
@@ -4025,7 +4029,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "421c9a74",
+          "id": "3c4f1253",
           "display_name": "客户所在区",
           "source_object_api": "DeviceObj",
           "source_field": "field_2n8z4__c",
@@ -4042,7 +4046,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "717e2813",
+          "id": "93c5537f",
           "display_name": "客户性质",
           "source_object_api": "DeviceObj",
           "source_field": "field_S9we8__c",
@@ -4059,7 +4063,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "c20f5485",
+          "id": "e54cff95",
           "display_name": "产品",
           "source_object_api": "DeviceObj",
           "source_field": "device_product_id",
@@ -4076,7 +4080,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "84c40a03",
+          "id": "40113412",
           "display_name": "规格型号",
           "source_object_api": "DeviceObj",
           "source_field": "field_d63gO__c",
@@ -4093,7 +4097,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "b43b527f",
+          "id": "2d251596",
           "display_name": "售后版本属性",
           "source_object_api": "DeviceObj",
           "source_field": "after_sales_version_attrib__c",
@@ -4110,7 +4114,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "23c3b1bd",
+          "id": "5d38f18b",
           "display_name": "安装日期",
           "source_object_api": "DeviceObj",
           "source_field": "install_time",
@@ -4127,7 +4131,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "ac051671",
+          "id": "bf513910",
           "display_name": "保修截止日期",
           "source_object_api": "DeviceObj",
           "source_field": "field_o0o11__c",
@@ -4144,7 +4148,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "a4d2d99c",
+          "id": "0178d55f",
           "display_name": "设备使用状态",
           "source_object_api": "DeviceObj",
           "source_field": "field_j2si1__c",
@@ -4161,7 +4165,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "9dc7c5f6",
+          "id": "a0daca86",
           "display_name": "验收日期",
           "source_object_api": "DeviceObj",
           "source_field": "field_3Q6Ar__c",
@@ -4178,7 +4182,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "562bcdcd",
+          "id": "4b906914",
           "display_name": "安装工程师",
           "source_object_api": "DeviceObj",
           "source_field": "field_B87MW__c",
@@ -4195,7 +4199,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "de81863b",
+          "id": "2e319eb5",
           "display_name": "设备所属区域",
           "source_object_api": "DeviceObj",
           "source_field": "single_choice__c",
@@ -4212,7 +4216,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "cf3907e7",
+          "id": "52f7af44",
           "display_name": "设备版本",
           "source_object_api": "DeviceObj",
           "source_field": "field_Pp314__c",
@@ -4229,7 +4233,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "70672ac2",
+          "id": "0918261a",
           "display_name": "是否还在保修期内",
           "source_object_api": "DeviceObj",
           "source_field": "field_07R6s__c",
@@ -4246,7 +4250,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "fb192fba",
+          "id": "876c4c4c",
           "display_name": "创建时间",
           "source_object_api": "DeviceObj",
           "source_field": "create_time",
@@ -4263,10 +4267,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "baffd8cf",
-          "display_name": "售后大区",
-          "source_object_api": "ex_ce9f9908",
-          "source_field": "售后大区",
+          "id": "864ce6de",
+          "display_name": "销售大区",
+          "source_object_api": "ex_销售区域",
+          "source_field": "销售大区",
           "visible": true,
           "sort_order": 26,
           "column_width": null,
@@ -4280,10 +4284,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "e61a31c9",
-          "display_name": "售后大区负责人",
-          "source_object_api": "ex_ce9f9908",
-          "source_field": "售后大区负责人",
+          "id": "08beff7c",
+          "display_name": "售后大区",
+          "source_object_api": "ex_售后工程师区域",
+          "source_field": "售后大区",
           "visible": true,
           "sort_order": 27,
           "column_width": null,
@@ -4297,16 +4301,33 @@
           "date_part_unit": ""
         },
         {
-          "id": "466589b6",
-          "display_name": "销售大区",
-          "source_object_api": "ex_1ce4c0e0",
-          "source_field": "销售大区",
+          "id": "539951be",
+          "display_name": "售后大区负责人",
+          "source_object_api": "ex_售后工程师区域",
+          "source_field": "售后大区负责人",
           "visible": true,
           "sort_order": 28,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
           "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "85b1793c",
+          "display_name": "安装日期-月份",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 29,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "TEXT([安装日期],\"mm月\")",
           "field_format": "text",
           "address_source_fields": [],
           "address_target_level": "",
@@ -4341,6 +4362,15 @@
           "field_label": "设备使用状态",
           "expose": false,
           "is_date_field": false
+        },
+        {
+          "field_api": "field_07R6s__c",
+          "operator": "IN",
+          "value": "保修中；过保",
+          "target_object_api": "DeviceObj",
+          "field_label": "是否还在保修期内",
+          "expose": false,
+          "is_date_field": false
         }
       ],
       "date_range_enabled": false,
@@ -4352,23 +4382,23 @@
           -318.9434628975265,
           -485.34628975265014
         ],
-        "ex_1ce4c0e0": [
+        "ex_售后工程师区域": [
           1.0565371024734986,
           -485.34628975265014
         ],
-        "ex_ce9f9908": [
-          -22.9434628975265,
-          -712.3462897526501
+        "ex_销售区域": [
+          -11.143462897526547,
+          -243.34628975265014
         ]
       },
       "group_by_fields": [],
       "show_summary_row": false,
-      "folder_path": "",
+      "folder_path": "售后报表",
       "created_at": "2026-06-27 15:59:56",
-      "modified_at": "2026-06-28 17:58:24",
-      "version": 23,
+      "modified_at": "2026-07-03 15:30:24",
+      "version": 32,
       "result_table_name": "cr_87d11005a51f",
-      "result_row_count": 8389,
+      "result_row_count": 8419,
       "last_refresh_time": "",
       "write_mode": "overwrite",
       "sync_id_fields": [
@@ -4442,9 +4472,9 @@
       "main_object_api": "CasesObj",
       "joins": [
         {
-          "id": "6e9710e8",
+          "id": "6416c193",
           "left_object_api": "CasesObj",
-          "right_object_api": "ex_1ce4c0e0",
+          "right_object_api": "ex_售后工程师区域",
           "match_keys": [
             {
               "left_field": "field_EYmNl__c",
@@ -4456,9 +4486,9 @@
           "concat_separator": "、"
         },
         {
-          "id": "f71022c5",
+          "id": "405e379f",
           "left_object_api": "CasesObj",
-          "right_object_api": "ex_ce9f9908",
+          "right_object_api": "ex_销售区域",
           "match_keys": [
             {
               "left_field": "field_EYmNl__c",
@@ -4472,7 +4502,7 @@
       ],
       "columns": [
         {
-          "id": "8b66d9dc",
+          "id": "c0b09ba1",
           "display_name": "A1工单编码",
           "source_object_api": "",
           "source_field": "",
@@ -4489,7 +4519,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "dc4bb68b",
+          "id": "eff62924",
           "display_name": "设备序列号",
           "source_object_api": "CasesObj",
           "source_field": "field_yMJbo__c",
@@ -4506,7 +4536,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "f0f05064",
+          "id": "0c9653b3",
           "display_name": "创建时间",
           "source_object_api": "CasesObj",
           "source_field": "create_time",
@@ -4523,7 +4553,7 @@
           "date_part_unit": ""
         },
         {
-          "id": "81938a33",
+          "id": "caa625b1",
           "display_name": "创建时间(年)",
           "source_object_api": "",
           "source_field": "",
@@ -4540,7 +4570,7 @@
           "date_part_unit": "year"
         },
         {
-          "id": "67c320cf",
+          "id": "afedba6f",
           "display_name": "创建时间(月)",
           "source_object_api": "",
           "source_field": "",
@@ -4557,29 +4587,12 @@
           "date_part_unit": "month"
         },
         {
-          "id": "c0e5f6a9",
-          "display_name": "创建时间-月份",
-          "source_object_api": "",
-          "source_field": "",
-          "visible": true,
-          "sort_order": 5,
-          "column_width": null,
-          "computation_type": "formula",
-          "aggregate_func": "",
-          "formula_expression": "=TEXT([创建时间],\"MM月\")",
-          "field_format": "text",
-          "address_source_fields": [],
-          "address_target_level": "",
-          "date_part_source_field": "",
-          "date_part_unit": ""
-        },
-        {
-          "id": "9ed7c67f",
+          "id": "cfeabcfe",
           "display_name": "创建时间(季度)",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 6,
+          "sort_order": 5,
           "column_width": null,
           "computation_type": "date_part",
           "aggregate_func": "",
@@ -4591,10 +4604,27 @@
           "date_part_unit": "quarter"
         },
         {
-          "id": "5d34d193",
-          "display_name": "售后大区",
+          "id": "2312eb93",
+          "display_name": "售后大区负责人",
           "source_object_api": "ex_ce9f9908",
-          "source_field": "售后大区",
+          "source_field": "售后大区负责人",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "4b30cc32",
+          "display_name": "售后大区负责人",
+          "source_object_api": "ex_售后工程师区域",
+          "source_field": "售后大区负责人",
           "visible": true,
           "sort_order": 7,
           "column_width": null,
@@ -4608,10 +4638,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "0e080dd1",
-          "display_name": "售后大区负责人",
-          "source_object_api": "ex_ce9f9908",
-          "source_field": "售后大区负责人",
+          "id": "7746dd01",
+          "display_name": "销售大区",
+          "source_object_api": "ex_1ce4c0e0",
+          "source_field": "销售大区",
           "visible": true,
           "sort_order": 8,
           "column_width": null,
@@ -4625,9 +4655,9 @@
           "date_part_unit": ""
         },
         {
-          "id": "3c8bdb01",
+          "id": "32c9e16d",
           "display_name": "销售大区",
-          "source_object_api": "ex_1ce4c0e0",
+          "source_object_api": "ex_销售区域",
           "source_field": "销售大区",
           "visible": true,
           "sort_order": 9,
@@ -4642,12 +4672,50 @@
           "date_part_unit": ""
         },
         {
-          "id": "1a71bb47",
-          "display_name": "故障数",
+          "id": "b103421c",
+          "display_name": "省（简称）",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
           "sort_order": 10,
+          "column_width": null,
+          "computation_type": "address_extract",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [
+            "客户所在省",
+            "客户所在市",
+            "客户所在区"
+          ],
+          "address_target_level": "province_short",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "90968e0c",
+          "display_name": "创建日期-月份",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "TEXT([创建时间],\"mm月\")",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "52a876ab",
+          "display_name": "故障数",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 12,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -4659,12 +4727,12 @@
           "date_part_unit": ""
         },
         {
-          "id": "751b5612",
+          "id": "4d51f8b9",
           "display_name": "90天安装故障工单",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 11,
+          "sort_order": 13,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -4676,12 +4744,12 @@
           "date_part_unit": ""
         },
         {
-          "id": "c1a8dd0d",
+          "id": "78249703",
           "display_name": "Next故障时间",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 12,
+          "sort_order": 14,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -4693,12 +4761,12 @@
           "date_part_unit": ""
         },
         {
-          "id": "7ce9d4bb",
+          "id": "4d49b68b",
           "display_name": "7天重复维修工单",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 13,
+          "sort_order": 15,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -4710,12 +4778,12 @@
           "date_part_unit": ""
         },
         {
-          "id": "fb8f20cf",
+          "id": "cd3948dd",
           "display_name": "90天重复维修工单",
           "source_object_api": "",
           "source_field": "",
           "visible": true,
-          "sort_order": 14,
+          "sort_order": 16,
           "column_width": null,
           "computation_type": "formula",
           "aggregate_func": "",
@@ -4727,44 +4795,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "168f0d22",
+          "id": "658112b8",
           "display_name": "工单编码",
           "source_object_api": "CasesObj",
           "source_field": "name",
-          "visible": true,
-          "sort_order": 15,
-          "column_width": null,
-          "computation_type": "direct",
-          "aggregate_func": "",
-          "formula_expression": "",
-          "field_format": "text",
-          "address_source_fields": [],
-          "address_target_level": "",
-          "date_part_source_field": "",
-          "date_part_unit": ""
-        },
-        {
-          "id": "7fe92022",
-          "display_name": "工程师接单时间",
-          "source_object_api": "CasesObj",
-          "source_field": "field_6g5W8__c",
-          "visible": true,
-          "sort_order": 16,
-          "column_width": null,
-          "computation_type": "direct",
-          "aggregate_func": "",
-          "formula_expression": "",
-          "field_format": "datetime",
-          "address_source_fields": [],
-          "address_target_level": "",
-          "date_part_source_field": "",
-          "date_part_unit": ""
-        },
-        {
-          "id": "c7f88670",
-          "display_name": "客户",
-          "source_object_api": "CasesObj",
-          "source_field": "account_id",
           "visible": true,
           "sort_order": 17,
           "column_width": null,
@@ -4778,27 +4812,27 @@
           "date_part_unit": ""
         },
         {
-          "id": "fa7b28ed",
-          "display_name": "客户性质",
+          "id": "c207d11a",
+          "display_name": "工程师接单时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_42ox0__c",
+          "source_field": "field_6g5W8__c",
           "visible": true,
           "sort_order": 18,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
           "formula_expression": "",
-          "field_format": "text",
+          "field_format": "datetime",
           "address_source_fields": [],
           "address_target_level": "",
           "date_part_source_field": "",
           "date_part_unit": ""
         },
         {
-          "id": "c6dce57e",
-          "display_name": "设备规格型号",
+          "id": "51f19b8e",
+          "display_name": "客户",
           "source_object_api": "CasesObj",
-          "source_field": "field_mw78Z__c",
+          "source_field": "account_id",
           "visible": true,
           "sort_order": 19,
           "column_width": null,
@@ -4812,10 +4846,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "70c37e57",
-          "display_name": "售后版本属性",
+          "id": "8178fb69",
+          "display_name": "客户性质",
           "source_object_api": "CasesObj",
-          "source_field": "after_sales_version_proper__c",
+          "source_field": "field_42ox0__c",
           "visible": true,
           "sort_order": 20,
           "column_width": null,
@@ -4829,10 +4863,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "c062bbd4",
-          "display_name": "产品类型",
-          "source_object_api": "CasesObj",
-          "source_field": "field_KovaS__c",
+          "id": "467cd9a3",
+          "display_name": "售后大区",
+          "source_object_api": "ex_ce9f9908",
+          "source_field": "售后大区",
           "visible": true,
           "sort_order": 21,
           "column_width": null,
@@ -4846,10 +4880,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "c04589f7",
-          "display_name": "业务类型",
-          "source_object_api": "CasesObj",
-          "source_field": "record_type",
+          "id": "939e9cb7",
+          "display_name": "售后大区",
+          "source_object_api": "ex_售后工程师区域",
+          "source_field": "售后大区",
           "visible": true,
           "sort_order": 22,
           "column_width": null,
@@ -4863,10 +4897,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "61657b50",
-          "display_name": "后台服务部署时间",
+          "id": "1d61c38d",
+          "display_name": "设备规格型号",
           "source_object_api": "CasesObj",
-          "source_field": "field_0pJ21__c",
+          "source_field": "field_mw78Z__c",
           "visible": true,
           "sort_order": 23,
           "column_width": null,
@@ -4880,10 +4914,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "1886a86e",
-          "display_name": "创建人",
+          "id": "2afae9e2",
+          "display_name": "售后版本属性",
           "source_object_api": "CasesObj",
-          "source_field": "created_by",
+          "source_field": "after_sales_version_proper__c",
           "visible": true,
           "sort_order": 24,
           "column_width": null,
@@ -4897,27 +4931,27 @@
           "date_part_unit": ""
         },
         {
-          "id": "5bc601ec",
-          "display_name": "安装时间（设备）",
+          "id": "6931320c",
+          "display_name": "产品类型",
           "source_object_api": "CasesObj",
-          "source_field": "field_9lxb2__c",
+          "source_field": "field_KovaS__c",
           "visible": true,
           "sort_order": 25,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
           "formula_expression": "",
-          "field_format": "datetime",
+          "field_format": "text",
           "address_source_fields": [],
           "address_target_level": "",
           "date_part_source_field": "",
           "date_part_unit": ""
         },
         {
-          "id": "d86e4030",
-          "display_name": "关联产品",
+          "id": "892762af",
+          "display_name": "业务类型",
           "source_object_api": "CasesObj",
-          "source_field": "field_glcp__c",
+          "source_field": "record_type",
           "visible": true,
           "sort_order": 26,
           "column_width": null,
@@ -4931,10 +4965,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "bfac5cdf",
-          "display_name": "客户大区",
+          "id": "0f7e4679",
+          "display_name": "后台服务部署时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_tdJSU__c",
+          "source_field": "field_0pJ21__c",
           "visible": true,
           "sort_order": 27,
           "column_width": null,
@@ -4948,10 +4982,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "ff5524f4",
-          "display_name": "客户所在省",
+          "id": "f011ac93",
+          "display_name": "创建人",
           "source_object_api": "CasesObj",
-          "source_field": "field_EYmNl__c",
+          "source_field": "created_by",
           "visible": true,
           "sort_order": 28,
           "column_width": null,
@@ -4965,27 +4999,27 @@
           "date_part_unit": ""
         },
         {
-          "id": "1012c7a2",
-          "display_name": "客户所在市",
+          "id": "a7acfd2b",
+          "display_name": "安装时间（设备）",
           "source_object_api": "CasesObj",
-          "source_field": "field_wV7a7__c",
+          "source_field": "field_9lxb2__c",
           "visible": true,
           "sort_order": 29,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
           "formula_expression": "",
-          "field_format": "text",
+          "field_format": "datetime",
           "address_source_fields": [],
           "address_target_level": "",
           "date_part_source_field": "",
           "date_part_unit": ""
         },
         {
-          "id": "02592bdb",
-          "display_name": "客户所在区",
+          "id": "b67da590",
+          "display_name": "关联产品",
           "source_object_api": "CasesObj",
-          "source_field": "field_7Ul1t__c",
+          "source_field": "field_glcp__c",
           "visible": true,
           "sort_order": 30,
           "column_width": null,
@@ -4999,10 +5033,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "387d6920",
-          "display_name": "报单信息描述",
+          "id": "f65549a0",
+          "display_name": "客户大区",
           "source_object_api": "CasesObj",
-          "source_field": "field_q280m__c",
+          "source_field": "field_tdJSU__c",
           "visible": true,
           "sort_order": 31,
           "column_width": null,
@@ -5016,10 +5050,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "d071c234",
-          "display_name": "响应时间",
+          "id": "a8971bfe",
+          "display_name": "客户所在省",
           "source_object_api": "CasesObj",
-          "source_field": "field_otxu1__c",
+          "source_field": "field_EYmNl__c",
           "visible": true,
           "sort_order": 32,
           "column_width": null,
@@ -5033,10 +5067,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "12e5aee0",
-          "display_name": "工程师响应时间",
+          "id": "406a0dad",
+          "display_name": "客户所在市",
           "source_object_api": "CasesObj",
-          "source_field": "field_5jXld__c",
+          "source_field": "field_wV7a7__c",
           "visible": true,
           "sort_order": 33,
           "column_width": null,
@@ -5050,10 +5084,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "336b5ef8",
-          "display_name": "在线处理开始时间",
+          "id": "cf4985d0",
+          "display_name": "客户所在区",
           "source_object_api": "CasesObj",
-          "source_field": "field_498Wj__c",
+          "source_field": "field_7Ul1t__c",
           "visible": true,
           "sort_order": 34,
           "column_width": null,
@@ -5067,10 +5101,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "a24240bf",
-          "display_name": "在线处理人员",
+          "id": "e7df3cdc",
+          "display_name": "报单信息描述",
           "source_object_api": "CasesObj",
-          "source_field": "field_uf4uC__c",
+          "source_field": "field_q280m__c",
           "visible": true,
           "sort_order": 35,
           "column_width": null,
@@ -5084,10 +5118,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "9a53f91c",
-          "display_name": "现场处理故障现象分类",
+          "id": "ebf09fe6",
+          "display_name": "响应时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_yv4lq__c",
+          "source_field": "field_otxu1__c",
           "visible": true,
           "sort_order": 36,
           "column_width": null,
@@ -5101,10 +5135,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "6a799144",
-          "display_name": "现场处理故障现象",
+          "id": "eb5b4159",
+          "display_name": "工程师响应时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_5nC3C__c",
+          "source_field": "field_5jXld__c",
           "visible": true,
           "sort_order": 37,
           "column_width": null,
@@ -5118,10 +5152,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "fd692a94",
-          "display_name": "在线处理故障现象分类",
+          "id": "c56c6e82",
+          "display_name": "在线处理开始时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_d4ak4__c",
+          "source_field": "field_498Wj__c",
           "visible": true,
           "sort_order": 38,
           "column_width": null,
@@ -5135,10 +5169,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "20e97f01",
-          "display_name": "在线处理故障现象",
+          "id": "eea5dbfb",
+          "display_name": "在线处理人员",
           "source_object_api": "CasesObj",
-          "source_field": "field_Jzo4q__c",
+          "source_field": "field_uf4uC__c",
           "visible": true,
           "sort_order": 39,
           "column_width": null,
@@ -5152,10 +5186,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "d7a6c4a0",
-          "display_name": "在线处理结束时间",
+          "id": "c59ca5b4",
+          "display_name": "现场处理故障现象分类",
           "source_object_api": "CasesObj",
-          "source_field": "field_6iF16__c",
+          "source_field": "field_yv4lq__c",
           "visible": true,
           "sort_order": 40,
           "column_width": null,
@@ -5169,10 +5203,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "c9f35691",
-          "display_name": "在线处理结果",
+          "id": "113c569b",
+          "display_name": "现场处理故障现象",
           "source_object_api": "CasesObj",
-          "source_field": "field_vZ46d__c",
+          "source_field": "field_5nC3C__c",
           "visible": true,
           "sort_order": 41,
           "column_width": null,
@@ -5186,10 +5220,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "aad72b85",
-          "display_name": "现场处理人员",
+          "id": "66ce7c0a",
+          "display_name": "在线处理故障现象分类",
           "source_object_api": "CasesObj",
-          "source_field": "field_zddd8__c",
+          "source_field": "field_d4ak4__c",
           "visible": true,
           "sort_order": 42,
           "column_width": null,
@@ -5203,10 +5237,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "2009868e",
-          "display_name": "工程师路程签到开始时间",
+          "id": "e0b6630e",
+          "display_name": "在线处理故障现象",
           "source_object_api": "CasesObj",
-          "source_field": "field_2KHhm__c",
+          "source_field": "field_Jzo4q__c",
           "visible": true,
           "sort_order": 43,
           "column_width": null,
@@ -5220,10 +5254,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "d0608d49",
-          "display_name": "现场处理开始时间",
+          "id": "469fdd6d",
+          "display_name": "在线处理结束时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_v4664__c",
+          "source_field": "field_6iF16__c",
           "visible": true,
           "sort_order": 44,
           "column_width": null,
@@ -5237,10 +5271,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "552713f4",
-          "display_name": "现场故障描述",
+          "id": "5889fa6b",
+          "display_name": "在线处理结果",
           "source_object_api": "CasesObj",
-          "source_field": "field_528F4__c",
+          "source_field": "field_vZ46d__c",
           "visible": true,
           "sort_order": 45,
           "column_width": null,
@@ -5254,10 +5288,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "87c3ad92",
-          "display_name": "到场时间",
+          "id": "1a899d28",
+          "display_name": "现场处理人员",
           "source_object_api": "CasesObj",
-          "source_field": "field_4DF01__c",
+          "source_field": "field_zddd8__c",
           "visible": true,
           "sort_order": 46,
           "column_width": null,
@@ -5271,10 +5305,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "3718c673",
-          "display_name": "工程师现场修复时间",
+          "id": "11575ec1",
+          "display_name": "工程师路程签到开始时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_Qom21__c",
+          "source_field": "field_2KHhm__c",
           "visible": true,
           "sort_order": 47,
           "column_width": null,
@@ -5288,10 +5322,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "518fae58",
-          "display_name": "客户现场修复时间",
+          "id": "7697a697",
+          "display_name": "现场处理开始时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_t4c7c__c",
+          "source_field": "field_v4664__c",
           "visible": true,
           "sort_order": 48,
           "column_width": null,
@@ -5305,10 +5339,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "06b4b094",
-          "display_name": "现场处理结束时间",
+          "id": "2115fe95",
+          "display_name": "现场故障描述",
           "source_object_api": "CasesObj",
-          "source_field": "field_o9kWk__c",
+          "source_field": "field_528F4__c",
           "visible": true,
           "sort_order": 49,
           "column_width": null,
@@ -5322,10 +5356,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "7e522910",
-          "display_name": "现场工单开始处理时间",
+          "id": "e873b5f9",
+          "display_name": "到场时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_WdT76__c",
+          "source_field": "field_4DF01__c",
           "visible": true,
           "sort_order": 50,
           "column_width": null,
@@ -5339,10 +5373,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "a6bf20e1",
-          "display_name": "现场工单结束处理时间",
+          "id": "70e7ef97",
+          "display_name": "工程师现场修复时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_j2xsU__c",
+          "source_field": "field_Qom21__c",
           "visible": true,
           "sort_order": 51,
           "column_width": null,
@@ -5356,10 +5390,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "fe851162",
-          "display_name": "工单结束时间",
+          "id": "6cbf4c3e",
+          "display_name": "客户现场修复时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_ua2yr__c",
+          "source_field": "field_t4c7c__c",
           "visible": true,
           "sort_order": 52,
           "column_width": null,
@@ -5373,10 +5407,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "620ea740",
-          "display_name": "返程结束时间",
+          "id": "ad37de80",
+          "display_name": "现场处理结束时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_y73K2__c",
+          "source_field": "field_o9kWk__c",
           "visible": true,
           "sort_order": 53,
           "column_width": null,
@@ -5390,10 +5424,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "8200ce2b",
-          "display_name": "状态",
+          "id": "8776b992",
+          "display_name": "现场工单开始处理时间",
           "source_object_api": "CasesObj",
-          "source_field": "cases_status",
+          "source_field": "field_WdT76__c",
           "visible": true,
           "sort_order": 54,
           "column_width": null,
@@ -5407,10 +5441,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "b62cfebe",
-          "display_name": "生命状态",
+          "id": "d0f43cad",
+          "display_name": "现场工单结束处理时间",
           "source_object_api": "CasesObj",
-          "source_field": "life_status",
+          "source_field": "field_j2xsU__c",
           "visible": true,
           "sort_order": 55,
           "column_width": null,
@@ -5424,10 +5458,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "8dc9ab1f",
-          "display_name": "工单流程状态",
+          "id": "5cb9842e",
+          "display_name": "服务工程师",
           "source_object_api": "CasesObj",
-          "source_field": "field_workflowStatus__c",
+          "source_field": "field_xcfwry__c",
           "visible": true,
           "sort_order": 56,
           "column_width": null,
@@ -5441,10 +5475,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "5b3bdcb5",
-          "display_name": "报单人",
+          "id": "8caad1f8",
+          "display_name": "工单结束时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_l0s8o__c",
+          "source_field": "field_ua2yr__c",
           "visible": true,
           "sort_order": 57,
           "column_width": null,
@@ -5458,10 +5492,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "7119384f",
-          "display_name": "服务工程师",
+          "id": "9b799d84",
+          "display_name": "返程结束时间",
           "source_object_api": "CasesObj",
-          "source_field": "field_xcfwry__c",
+          "source_field": "field_y73K2__c",
           "visible": true,
           "sort_order": 58,
           "column_width": null,
@@ -5475,16 +5509,16 @@
           "date_part_unit": ""
         },
         {
-          "id": "bf9b1e04",
-          "display_name": "工程师接单时间（转换）",
-          "source_object_api": "",
-          "source_field": "",
+          "id": "16a8b3b7",
+          "display_name": "状态",
+          "source_object_api": "CasesObj",
+          "source_field": "cases_status",
           "visible": true,
           "sort_order": 59,
           "column_width": null,
-          "computation_type": "formula",
+          "computation_type": "direct",
           "aggregate_func": "",
-          "formula_expression": "=IFERROR(DATE(YEAR([工程师接单时间]),MONTH([工程师接单时间]),DAY([工程师接单时间])),\"\")",
+          "formula_expression": "",
           "field_format": "text",
           "address_source_fields": [],
           "address_target_level": "",
@@ -5492,10 +5526,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "a8694b3c",
-          "display_name": "故障标签",
+          "id": "cc668dee",
+          "display_name": "生命状态",
           "source_object_api": "CasesObj",
-          "source_field": "field_hyj6p__c",
+          "source_field": "life_status",
           "visible": true,
           "sort_order": 60,
           "column_width": null,
@@ -5509,10 +5543,10 @@
           "date_part_unit": ""
         },
         {
-          "id": "fbb17c57",
-          "display_name": "故障分类",
+          "id": "16d3ce57",
+          "display_name": "工单流程状态",
           "source_object_api": "CasesObj",
-          "source_field": "field_5K32X__c",
+          "source_field": "field_workflowStatus__c",
           "visible": true,
           "sort_order": 61,
           "column_width": null,
@@ -5526,12 +5560,29 @@
           "date_part_unit": ""
         },
         {
-          "id": "b47b3bc6",
-          "display_name": "现场处理步骤",
-          "source_object_api": "CasesObj",
-          "source_field": "field_J2bX4__c",
+          "id": "af565950",
+          "display_name": "工程师接单时间（转换）",
+          "source_object_api": "",
+          "source_field": "",
           "visible": true,
           "sort_order": 62,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=IFERROR(DATE(YEAR([工程师接单时间]),MONTH([工程师接单时间]),DAY([工程师接单时间])),\"\")",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "f6a7299b",
+          "display_name": "报单人",
+          "source_object_api": "CasesObj",
+          "source_field": "field_l0s8o__c",
+          "visible": true,
+          "sort_order": 63,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
@@ -5543,12 +5594,63 @@
           "date_part_unit": ""
         },
         {
-          "id": "43500472",
+          "id": "942a0cf8",
+          "display_name": "故障标签",
+          "source_object_api": "CasesObj",
+          "source_field": "field_hyj6p__c",
+          "visible": true,
+          "sort_order": 64,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "03ae33ea",
+          "display_name": "故障分类",
+          "source_object_api": "CasesObj",
+          "source_field": "field_5K32X__c",
+          "visible": true,
+          "sort_order": 65,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e1f8e460",
+          "display_name": "现场处理步骤",
+          "source_object_api": "CasesObj",
+          "source_field": "field_J2bX4__c",
+          "visible": true,
+          "sort_order": 66,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "1ddc3095",
           "display_name": "工单后续处理方式",
           "source_object_api": "CasesObj",
           "source_field": "field_2X0Xx__c",
           "visible": true,
-          "sort_order": 63,
+          "sort_order": 67,
           "column_width": null,
           "computation_type": "direct",
           "aggregate_func": "",
@@ -5580,13 +5682,13 @@
           "is_date_field": false
         },
         {
-          "field_api": "field_mw78Z__c",
-          "operator": "NOT_CONTAINS",
-          "value": "F2",
+          "field_api": "create_time",
+          "operator": "DATE_RANGE",
+          "value": "2026-01-01~2026-12-31",
           "target_object_api": "CasesObj",
-          "field_label": "设备规格型号",
+          "field_label": "创建时间",
           "expose": false,
-          "is_date_field": false
+          "is_date_field": true
         }
       ],
       "date_range_enabled": false,
@@ -5595,26 +5697,26 @@
       "date_end": "",
       "canvas_positions": {
         "CasesObj": [
-          -7.061326445813876,
-          -2130.3975332378277
+          -130.0,
+          -702.0
         ],
-        "ex_1ce4c0e0": [
-          312.93867355418615,
-          -2131.3975332378277
+        "ex_售后工程师区域": [
+          190.0,
+          -702.0
         ],
-        "ex_ce9f9908": [
-          317.93867355418615,
-          -1856.3975332378277
+        "ex_销售区域": [
+          163.5,
+          -474.29999999999995
         ]
       },
       "group_by_fields": [],
       "show_summary_row": false,
-      "folder_path": "",
+      "folder_path": "售后报表",
       "created_at": "2026-06-27 17:38:35",
-      "modified_at": "2026-06-29 19:24:44",
-      "version": 28,
+      "modified_at": "2026-07-03 17:23:31",
+      "version": 35,
       "result_table_name": "cr_ba8629feda79",
-      "result_row_count": 10970,
+      "result_row_count": 11229,
       "last_refresh_time": "",
       "write_mode": "overwrite",
       "sync_id_fields": [
@@ -5633,6 +5735,10 @@
         {
           "direction": "asc",
           "field": "创建时间"
+        },
+        {
+          "direction": "asc",
+          "field": "A1工单编码"
         }
       ],
       "ai_conversations": [
@@ -5692,6 +5798,3123 @@
         }
       ],
       "ai_active_conversation_id": "987dc399",
+      "ai_chat_messages": []
+    },
+    "214e5fc64d2a": {
+      "id": "214e5fc64d2a",
+      "name": "公立商机-多维表格",
+      "description": "",
+      "main_object_api": "NewOpportunityObj",
+      "joins": [
+        {
+          "id": "ed5ca62e",
+          "left_object_api": "NewOpportunityObj",
+          "right_object_api": "ex_公立大区",
+          "match_keys": [
+            {
+              "left_field": "field_k2xsC__c",
+              "right_field": "省份"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        }
+      ],
+      "columns": [
+        {
+          "id": "0ba80424",
+          "display_name": "创建日期（年）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "year"
+        },
+        {
+          "id": "fee45aa4",
+          "display_name": "创建日期（月）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "month"
+        },
+        {
+          "id": "c699b65a",
+          "display_name": "创建时间-月份",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=text（[创建时间],\"mm月\")",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "0ab7163d",
+          "display_name": "创建日期（周）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "week"
+        },
+        {
+          "id": "f5ff2cab",
+          "display_name": "创建日期（季度）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "quarter"
+        },
+        {
+          "id": "d4926854",
+          "display_name": "省（简称）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "address_extract",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [
+            "省"
+          ],
+          "address_target_level": "province_short",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e5d4f751",
+          "display_name": "商机名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "name",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a96d950d",
+          "display_name": "意向产品（多选）",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_fEKk5__c",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b28710ff",
+          "display_name": "客户名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 8,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "870fd1a2",
+          "display_name": "创建时间",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "create_time",
+          "visible": true,
+          "sort_order": 9,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "1e1adf0d",
+          "display_name": "负责人",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "owner",
+          "visible": true,
+          "sort_order": 10,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "29c35747",
+          "display_name": "创建人",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "df3928d2",
+          "display_name": "商机阶段",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "sales_stage",
+          "visible": true,
+          "sort_order": 12,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b1e7ad33",
+          "display_name": "主线索",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "leads_id",
+          "visible": true,
+          "sort_order": 13,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "253555e1",
+          "display_name": "医院等级",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "hospital_level__c",
+          "visible": true,
+          "sort_order": 14,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "99e02731",
+          "display_name": "生命状态",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "life_status",
+          "visible": true,
+          "sort_order": 15,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "3f6dd354",
+          "display_name": "业务类型",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "record_type",
+          "visible": true,
+          "sort_order": 16,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "7d6d5d2c",
+          "display_name": "市",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_93sb1__c",
+          "visible": true,
+          "sort_order": 17,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "50f53c64",
+          "display_name": "经销商",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "partner_id",
+          "visible": true,
+          "sort_order": 18,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "68faaed2",
+          "display_name": "项目名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "project_name__c",
+          "visible": true,
+          "sort_order": 19,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b07d0591",
+          "display_name": "钉钉授权单号",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "dingtalk_auth_order_no__c",
+          "visible": true,
+          "sort_order": 20,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "9d2ecf8e",
+          "display_name": "首次授权日期",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "first_authorization_date__c",
+          "visible": true,
+          "sort_order": 21,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "deff041a",
+          "display_name": "是否招投标项目",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_SS8XX__c",
+          "visible": true,
+          "sort_order": 22,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a6faf78e",
+          "display_name": "分销商（客户对象）",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_zBrLw__c",
+          "visible": true,
+          "sort_order": 23,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "35ff99b1",
+          "display_name": "项目编号",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "project_number__c",
+          "visible": true,
+          "sort_order": 24,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "539e8cb1",
+          "display_name": "省",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_k2xsC__c",
+          "visible": true,
+          "sort_order": 25,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "95ceae29",
+          "display_name": "公立大区",
+          "source_object_api": "ex_公立大区",
+          "source_field": "公立大区",
+          "visible": true,
+          "sort_order": 26,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [
+        {
+          "field_api": "create_time",
+          "operator": "DATE_RANGE",
+          "value": "2026-01-01~2026-12-31",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "创建时间",
+          "expose": false,
+          "is_date_field": true
+        },
+        {
+          "field_api": "record_type",
+          "operator": "IN",
+          "value": "公立商机",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "业务类型",
+          "expose": false,
+          "is_date_field": false
+        },
+        {
+          "field_api": "life_status",
+          "operator": "NOT_IN",
+          "value": "作废",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "生命状态",
+          "expose": false,
+          "is_date_field": false
+        }
+      ],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "NewOpportunityObj": [
+          -122.59770709371418,
+          -461.69770709371403
+        ],
+        "ex_公立大区": [
+          197.40229290628582,
+          -461.69770709371403
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-06-30 12:20:00",
+      "modified_at": "2026-07-02 11:55:28",
+      "version": 9,
+      "result_table_name": "cr_214e5fc64d2a",
+      "result_row_count": 257,
+      "last_refresh_time": "",
+      "write_mode": "overwrite",
+      "sync_id_fields": [
+        "NewOpportunityObj|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [
+        {
+          "id": "987dc399",
+          "title": "工单编码",
+          "created_at": "2026-06-24 22:11",
+          "messages": [
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "您列出了当前报表中的列名称。请问您想要对这些列进行什么操作？\n\n例如：\n1. **调整列顺序** - 按照您列出的顺序重新排列\n2. **删除某些列** - 移除不需要显示的列\n3. **添加新列** - 从工单表或其他关联表中添加新字段\n4. **其他操作** - 如添加筛选、排序、分组等\n\n请告诉我您的具体需求，我会为您提供相应的操作指令。"
+            },
+            {
+              "role": "user",
+              "content": "按这个顺序排列，多余的字段排在后面"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"根据用户提供的字段列表顺序重新排列报表列，用户列出的62个字段按顺序排列，未列出的12个字段（如时间分拆字段、公式字段等）自动追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\"\n      ]\n    }\n  ]\n}\n```"
+            },
+            {
+              "role": "user",
+              "content": "重新调整顺序"
+            },
+            {
+              "role": "assistant",
+              "content": "您希望按什么顺序排列这些字段？请提供您想要的字段排列顺序，我会帮您调整。\n\n例如：\n1. **按业务逻辑分组** - 如：基础信息、设备信息、时间信息、处理过程、状态等\n2. **按重要性排序** - 最常用的字段排在前面\n3. **自定义顺序** - 您提供具体的字段顺序\n\n请告诉我您的需求或直接列出想要的顺序。"
+            },
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"按照用户提供的字段顺序重新排列报表列，用户列出的字段按顺序排列，未列出的字段（售后大区负责人、售后大区、创建时间年/月/季度、month、90天安装故障工单、Next故障时间）追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\",\n        \"售后大区负责人\",\n        \"售后大区\",\n        \"创建时间(年)\",\n        \"创建时间(月)\",\n        \"month\",\n        \"创建时间(季度)\",\n        \"90天安装故障工单\",\n        \"Next故障时间\"\n      ]\n    }\n  ]\n}\n```"
+            }
+          ],
+          "context_texts": []
+        },
+        {
+          "id": "7bac9743",
+          "title": "对话 2",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        },
+        {
+          "id": "520b95a6",
+          "title": "对话 3",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        }
+      ],
+      "ai_active_conversation_id": "987dc399",
+      "ai_chat_messages": []
+    },
+    "76200d6ab64e": {
+      "id": "76200d6ab64e",
+      "name": "招标授权-多维表格",
+      "description": "",
+      "main_object_api": "public_project_authorizati__c",
+      "joins": [
+        {
+          "id": "cc61fb6f",
+          "left_object_api": "public_project_authorizati__c",
+          "right_object_api": "NewOpportunityObj",
+          "match_keys": [
+            {
+              "left_field": "related_business_opportuni__c",
+              "right_field": "商机名称"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        },
+        {
+          "id": "9f16fb3f",
+          "left_object_api": "public_project_authorizati__c",
+          "right_object_api": "ex_公立大区",
+          "match_keys": [
+            {
+              "left_field": "field_4P3a2__c",
+              "right_field": "省份"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        },
+        {
+          "id": "b5cf8d1f",
+          "left_object_api": "NewOpportunityObj",
+          "right_object_api": "ex_商机阶段转换",
+          "match_keys": [
+            {
+              "left_field": "商机阶段",
+              "right_field": "民营阶段"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        }
+      ],
+      "columns": [
+        {
+          "id": "09dfdc01",
+          "display_name": "大区",
+          "source_object_api": "ex_408fda3a",
+          "source_field": "大区",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "69f097c3",
+          "display_name": "省简称",
+          "source_object_api": "ex_408fda3a",
+          "source_field": "省简称",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "8510962e",
+          "display_name": "销售负责",
+          "source_object_api": "ex_408fda3a",
+          "source_field": "销售负责",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "bf5471ba",
+          "display_name": "钉钉单据创建时间",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "dingtalk_document_create_t__c",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "734c0377",
+          "display_name": "项目名称",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "project_name__c",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "7b5fbea6",
+          "display_name": "审批编号",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "approval_number__c",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "507dcf3a",
+          "display_name": "所投产品型号(CBCT)",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "product_model_cbct__c",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "9715c380",
+          "display_name": "招标时间",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "tender_time__c",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "4438e747",
+          "display_name": "项目号",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "project_number__c",
+          "visible": true,
+          "sort_order": 8,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b334462b",
+          "display_name": "创建人",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "created_by",
+          "visible": false,
+          "sort_order": 9,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "06c0dcb4",
+          "display_name": "主属性",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "name",
+          "visible": true,
+          "sort_order": 10,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "0ee2be2c",
+          "display_name": "负责人",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "owner",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "acedbfe4",
+          "display_name": "是否中标",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "is_awarded__c",
+          "visible": true,
+          "sort_order": 12,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "94234bd6",
+          "display_name": "所投产品类型",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "product_type__c",
+          "visible": true,
+          "sort_order": 13,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "5e8c47be",
+          "display_name": "省简称",
+          "source_object_api": "ex_公立大区",
+          "source_field": "省简称",
+          "visible": true,
+          "sort_order": 14,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "49d671bb",
+          "display_name": "公立大区",
+          "source_object_api": "ex_公立大区",
+          "source_field": "公立大区",
+          "visible": true,
+          "sort_order": 15,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a980d4cb",
+          "display_name": "销售负责",
+          "source_object_api": "ex_公立大区",
+          "source_field": "销售负责",
+          "visible": true,
+          "sort_order": 16,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "ddff18c9",
+          "display_name": "公立阶段",
+          "source_object_api": "ex_商机阶段转换",
+          "source_field": "公立阶段",
+          "visible": true,
+          "sort_order": 17,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b6d08b50",
+          "display_name": "创建时间",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "create_time",
+          "visible": true,
+          "sort_order": 18,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "36b2ce18",
+          "display_name": "创建人",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 19,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "f273408b",
+          "display_name": "商机创建日期（年）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 20,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "year"
+        },
+        {
+          "id": "c59badab",
+          "display_name": "商机创建日期（月）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 21,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "month"
+        },
+        {
+          "id": "ce1ccd8a",
+          "display_name": "创建时间",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 22,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "公式(=TEXT([创建时间],\"mm月\"))",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "public_project_authorizati__c": [
+          -414.0236303347756,
+          -718.0748293934557
+        ],
+        "ex_公立大区": [
+          159.97636966522444,
+          -667.0748293934557
+        ],
+        "ex_商机阶段转换": [
+          199.9763696652244,
+          -338.07482939345573
+        ],
+        "NewOpportunityObj": [
+          -121.32363033477532,
+          -725.2748293934554
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-06-30 20:18:16",
+      "modified_at": "2026-07-04 20:05:07",
+      "version": 8,
+      "result_table_name": "cr_76200d6ab64e",
+      "result_row_count": 355,
+      "last_refresh_time": "",
+      "write_mode": "overwrite",
+      "sync_id_fields": [
+        "public_project_authorizati__c|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [
+        {
+          "id": "987dc399",
+          "title": "工单编码",
+          "created_at": "2026-06-24 22:11",
+          "messages": [
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "您列出了当前报表中的列名称。请问您想要对这些列进行什么操作？\n\n例如：\n1. **调整列顺序** - 按照您列出的顺序重新排列\n2. **删除某些列** - 移除不需要显示的列\n3. **添加新列** - 从工单表或其他关联表中添加新字段\n4. **其他操作** - 如添加筛选、排序、分组等\n\n请告诉我您的具体需求，我会为您提供相应的操作指令。"
+            },
+            {
+              "role": "user",
+              "content": "按这个顺序排列，多余的字段排在后面"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"根据用户提供的字段列表顺序重新排列报表列，用户列出的62个字段按顺序排列，未列出的12个字段（如时间分拆字段、公式字段等）自动追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\"\n      ]\n    }\n  ]\n}\n```"
+            },
+            {
+              "role": "user",
+              "content": "重新调整顺序"
+            },
+            {
+              "role": "assistant",
+              "content": "您希望按什么顺序排列这些字段？请提供您想要的字段排列顺序，我会帮您调整。\n\n例如：\n1. **按业务逻辑分组** - 如：基础信息、设备信息、时间信息、处理过程、状态等\n2. **按重要性排序** - 最常用的字段排在前面\n3. **自定义顺序** - 您提供具体的字段顺序\n\n请告诉我您的需求或直接列出想要的顺序。"
+            },
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"按照用户提供的字段顺序重新排列报表列，用户列出的字段按顺序排列，未列出的字段（售后大区负责人、售后大区、创建时间年/月/季度、month、90天安装故障工单、Next故障时间）追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\",\n        \"售后大区负责人\",\n        \"售后大区\",\n        \"创建时间(年)\",\n        \"创建时间(月)\",\n        \"month\",\n        \"创建时间(季度)\",\n        \"90天安装故障工单\",\n        \"Next故障时间\"\n      ]\n    }\n  ]\n}\n```"
+            }
+          ],
+          "context_texts": []
+        },
+        {
+          "id": "7bac9743",
+          "title": "对话 2",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        },
+        {
+          "id": "520b95a6",
+          "title": "对话 3",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        }
+      ],
+      "ai_active_conversation_id": "987dc399",
+      "ai_chat_messages": []
+    },
+    "aa4b3a9fcb4d": {
+      "id": "aa4b3a9fcb4d",
+      "name": "公立授权-多维表格",
+      "description": "",
+      "main_object_api": "public_project_authorizati__c",
+      "joins": [
+        {
+          "id": "4f766dc7",
+          "left_object_api": "public_project_authorizati__c",
+          "right_object_api": "ex_公立大区",
+          "match_keys": [
+            {
+              "left_field": "省",
+              "right_field": "省份"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        },
+        {
+          "id": "33421905",
+          "left_object_api": "public_project_authorizati__c",
+          "right_object_api": "NewOpportunityObj",
+          "match_keys": [
+            {
+              "left_field": "关联商机",
+              "right_field": "商机名称"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        },
+        {
+          "id": "8b7ba4a3",
+          "left_object_api": "NewOpportunityObj",
+          "right_object_api": "ex_07050a64",
+          "match_keys": [
+            {
+              "left_field": "商机阶段",
+              "right_field": "民营阶段"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        }
+      ],
+      "columns": [
+        {
+          "id": "92fbc01b",
+          "display_name": "审批编号",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "approval_number__c",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "4812c08c",
+          "display_name": "创建人",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "5e3e5a69",
+          "display_name": "相关团队",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "relevant_team",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "77f779b8",
+          "display_name": "主属性",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "name",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "033f29b9",
+          "display_name": "省",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "field_4P3a2__c",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "8039419d",
+          "display_name": "项目名称",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "project_name__c",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "ee7fa30a",
+          "display_name": "关联商机",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "related_business_opportuni__c",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "faecc09b",
+          "display_name": "生命状态",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "life_status",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e7d2c829",
+          "display_name": "钉钉单据创建时间",
+          "source_object_api": "public_project_authorizati__c",
+          "source_field": "dingtalk_document_create_t__c",
+          "visible": true,
+          "sort_order": 8,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "ec345b47",
+          "display_name": "公立大区",
+          "source_object_api": "ex_公立大区",
+          "source_field": "公立大区",
+          "visible": true,
+          "sort_order": 9,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "8dffa47e",
+          "display_name": "销售负责",
+          "source_object_api": "ex_公立大区",
+          "source_field": "销售负责",
+          "visible": true,
+          "sort_order": 10,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "3d956169",
+          "display_name": "省简称",
+          "source_object_api": "ex_公立大区",
+          "source_field": "省简称",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "dde9d9e0",
+          "display_name": "授权日期(年)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 12,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "钉钉单据创建时间",
+          "date_part_unit": "year"
+        },
+        {
+          "id": "0d73ca57",
+          "display_name": "授权日期(月)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 13,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "钉钉单据创建时间",
+          "date_part_unit": "month"
+        },
+        {
+          "id": "9a50bec7",
+          "display_name": "授权日期(季度)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 14,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "钉钉单据创建时间",
+          "date_part_unit": "quarter"
+        },
+        {
+          "id": "3efd0a3f",
+          "display_name": "授权日期-月份",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 15,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=TEXT([钉钉单据创建时间]，\"mm月\")",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "5e82d4ca",
+          "display_name": "商机阶段",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "sales_stage",
+          "visible": true,
+          "sort_order": 16,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d0c90d47",
+          "display_name": "阶段变更时间",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "stg_changed_time",
+          "visible": false,
+          "sort_order": 17,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "1ab52789",
+          "display_name": "客户名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 18,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "c7d3d83f",
+          "display_name": "意向产品（多选）",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_fEKk5__c",
+          "visible": true,
+          "sort_order": 19,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "60f5f6dd",
+          "display_name": "公立阶段",
+          "source_object_api": "ex_07050a64",
+          "source_field": "公立阶段",
+          "visible": true,
+          "sort_order": 20,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "167ffd77",
+          "display_name": "业务类型",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "record_type",
+          "visible": true,
+          "sort_order": 21,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [
+        {
+          "field_api": "钉钉单据创建时间",
+          "operator": "DATE_RANGE",
+          "value": "2026-01-01~2026-12-31",
+          "target_object_api": "public_project_authorizati__c",
+          "field_label": "钉钉单据创建时间",
+          "expose": false,
+          "is_date_field": true
+        },
+        {
+          "field_api": "关联商机",
+          "operator": "NOT_EMPTY",
+          "value": "",
+          "target_object_api": "public_project_authorizati__c",
+          "field_label": "关联商机",
+          "expose": false,
+          "is_date_field": false
+        },
+        {
+          "field_api": "业务类型",
+          "operator": "NOT_IN",
+          "value": "口扫商机；牙医管家商机",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "业务类型",
+          "expose": false,
+          "is_date_field": false
+        }
+      ],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "public_project_authorizati__c": [
+          -108.74554738897848,
+          -57.498428490227695
+        ],
+        "ex_公立大区": [
+          -129.99999999999997,
+          -541.0
+        ],
+        "NewOpportunityObj": [
+          259.7114317029974,
+          -529.0000000000001
+        ],
+        "ex_07050a64": [
+          652.3942385820972,
+          -350.985046635927
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-07-02 12:00:40",
+      "modified_at": "2026-07-02 13:00:21",
+      "version": 5,
+      "result_table_name": "cr_aa4b3a9fcb4d",
+      "result_row_count": 132,
+      "last_refresh_time": "",
+      "write_mode": "overwrite",
+      "sync_id_fields": [
+        "public_project_authorizati__c|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [
+        {
+          "id": "987dc399",
+          "title": "工单编码",
+          "created_at": "2026-06-24 22:11",
+          "messages": [
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "您列出了当前报表中的列名称。请问您想要对这些列进行什么操作？\n\n例如：\n1. **调整列顺序** - 按照您列出的顺序重新排列\n2. **删除某些列** - 移除不需要显示的列\n3. **添加新列** - 从工单表或其他关联表中添加新字段\n4. **其他操作** - 如添加筛选、排序、分组等\n\n请告诉我您的具体需求，我会为您提供相应的操作指令。"
+            },
+            {
+              "role": "user",
+              "content": "按这个顺序排列，多余的字段排在后面"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"根据用户提供的字段列表顺序重新排列报表列，用户列出的62个字段按顺序排列，未列出的12个字段（如时间分拆字段、公式字段等）自动追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\"\n      ]\n    }\n  ]\n}\n```"
+            },
+            {
+              "role": "user",
+              "content": "重新调整顺序"
+            },
+            {
+              "role": "assistant",
+              "content": "您希望按什么顺序排列这些字段？请提供您想要的字段排列顺序，我会帮您调整。\n\n例如：\n1. **按业务逻辑分组** - 如：基础信息、设备信息、时间信息、处理过程、状态等\n2. **按重要性排序** - 最常用的字段排在前面\n3. **自定义顺序** - 您提供具体的字段顺序\n\n请告诉我您的需求或直接列出想要的顺序。"
+            },
+            {
+              "role": "user",
+              "content": "工单编码\n客户\n客户性质\n设备规格型号\n售后版本属性\n产品类型\n设备序列号\n业务类型\n报单控制台版本\n报单韧件版本\n报单触摸屏版本\n后台服务\n后台服务版本\n控制台版本\n后台服务部署时间\n韧件版本\n设备控制台版本\n设备韧件版本\n创建人\n创建时间\n安装时间（设备）\n关联产品\n客户大区\n客户所在省\n客户所在市\n客户所在区\n报单信息描述\n响应时间\n工程师响应时间\n在线处理开始时间\n在线处理人员\n现场处理故障现象分类\n现场处理故障现象\n在线处理故障现象分类\n在线处理故障现象\n故障标签\n在线处理解决步骤old\n在线处理步骤new\n故障分类\n在线处理故障标签delete\n在线处理结束时间\n在线处理结果\n工程师接单时间\n现场处理人员\n工程师路程签到开始时间\n现场处理开始时间\n现场处理故障现象（旧）\n现场故障描述\n现场处理步骤\n现场处理故障现象分类（旧）\n到场时间\n工程师现场修复时间\n客户现场修复时间\n现场处理结束时间\n现场工单开始处理时间\n现场工单结束处理时间\n工单结束时间\n返程结束时间\n状态\n生命状态\n工单流程状态\n报单人\n服务工程师\n工单后续处理方式"
+            },
+            {
+              "role": "assistant",
+              "content": "```json\n{\n  \"explanation\": \"按照用户提供的字段顺序重新排列报表列，用户列出的字段按顺序排列，未列出的字段（售后大区负责人、售后大区、创建时间年/月/季度、month、90天安装故障工单、Next故障时间）追加到末尾。\",\n  \"actions\": [\n    {\n      \"action\": \"reorder_columns\",\n      \"order\": [\n        \"工单编码\",\n        \"客户\",\n        \"客户性质\",\n        \"设备规格型号\",\n        \"售后版本属性\",\n        \"产品类型\",\n        \"设备序列号\",\n        \"业务类型\",\n        \"报单控制台版本\",\n        \"报单韧件版本\",\n        \"报单触摸屏版本\",\n        \"后台服务\",\n        \"后台服务版本\",\n        \"控制台版本\",\n        \"后台服务部署时间\",\n        \"韧件版本\",\n        \"设备控制台版本\",\n        \"设备韧件版本\",\n        \"创建人\",\n        \"创建时间\",\n        \"安装时间（设备）\",\n        \"关联产品\",\n        \"客户大区\",\n        \"客户所在省\",\n        \"客户所在市\",\n        \"客户所在区\",\n        \"报单信息描述\",\n        \"响应时间\",\n        \"工程师响应时间\",\n        \"在线处理开始时间\",\n        \"在线处理人员\",\n        \"现场处理故障现象分类\",\n        \"现场处理故障现象\",\n        \"在线处理故障现象分类\",\n        \"在线处理故障现象\",\n        \"故障标签\",\n        \"在线处理解决步骤old\",\n        \"在线处理步骤new\",\n        \"故障分类\",\n        \"在线处理故障标签delete\",\n        \"在线处理结束时间\",\n        \"在线处理结果\",\n        \"工程师接单时间\",\n        \"现场处理人员\",\n        \"工程师路程签到开始时间\",\n        \"现场处理开始时间\",\n        \"现场处理故障现象（旧）\",\n        \"现场故障描述\",\n        \"现场处理步骤\",\n        \"现场处理故障现象分类（旧）\",\n        \"到场时间\",\n        \"工程师现场修复时间\",\n        \"客户现场修复时间\",\n        \"现场处理结束时间\",\n        \"现场工单开始处理时间\",\n        \"现场工单结束处理时间\",\n        \"工单结束时间\",\n        \"返程结束时间\",\n        \"状态\",\n        \"生命状态\",\n        \"工单流程状态\",\n        \"报单人\",\n        \"服务工程师\",\n        \"工单后续处理方式\",\n        \"售后大区负责人\",\n        \"售后大区\",\n        \"创建时间(年)\",\n        \"创建时间(月)\",\n        \"month\",\n        \"创建时间(季度)\",\n        \"90天安装故障工单\",\n        \"Next故障时间\"\n      ]\n    }\n  ]\n}\n```"
+            }
+          ],
+          "context_texts": []
+        },
+        {
+          "id": "7bac9743",
+          "title": "对话 2",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        },
+        {
+          "id": "520b95a6",
+          "title": "对话 3",
+          "created_at": "2026-06-24 22:14",
+          "messages": [],
+          "context_texts": []
+        }
+      ],
+      "ai_active_conversation_id": "987dc399",
+      "ai_chat_messages": []
+    },
+    "25186755c371": {
+      "id": "25186755c371",
+      "name": "售后提成计算",
+      "description": "",
+      "main_object_api": "CasesObj",
+      "joins": [
+        {
+          "id": "23b7c327",
+          "left_object_api": "CasesObj",
+          "right_object_api": "ex_售后现场工程师省份区域系数表",
+          "match_keys": [
+            {
+              "left_field": "field_EYmNl__c",
+              "right_field": "客户所在省"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        },
+        {
+          "id": "1531f518",
+          "left_object_api": "CasesObj",
+          "right_object_api": "ex_现场工程师职位",
+          "match_keys": [
+            {
+              "left_field": "field_zddd8__c",
+              "right_field": "现场处理人员"
+            }
+          ],
+          "join_type": "left",
+          "multi_match": "expand",
+          "concat_separator": "、"
+        }
+      ],
+      "columns": [
+        {
+          "id": "f6361749",
+          "display_name": "工单负责人",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=IF(COUNT(FIND(\"(已停用)\",[现场处理人员])), LEFT([现场处理人员], LEN([现场处理人员])-5), [现场处理人员])",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "105922a4",
+          "display_name": "日期(年)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "integer",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "工单结束时间",
+          "date_part_unit": "year"
+        },
+        {
+          "id": "96f904e7",
+          "display_name": "日期(月)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "integer",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "工单结束时间",
+          "date_part_unit": "month"
+        },
+        {
+          "id": "640ea421",
+          "display_name": "日期转换",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=DATE(YEAR([工单结束时间]),MONTH([工单结束时间]),1)",
+          "field_format": "date_ymd",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d37fd516",
+          "display_name": "工天计算",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=IFERROR(IFS([职位]=\"现场工程师\",IFS(AND([业务类型]=\"设备安装\",[是否调试完成]=\"是\",[是否培训完成]=\"是\"),3,AND([业务类型]=\"设备安装\",[是否调试完成]=\"是\",[是否培训完成]=\"否\"),2,AND([业务类型]=\"设备安装\",[是否调试完成]=\"否\",[是否培训完成]=\"否\"),1,AND([业务类型]=\"设备安装\", ISBLANK([是否调试完成]), ISBLANK([是否培训完成])),1,OR([业务类型]=\"设备升级\",[业务类型]=\"设备回访\",[业务类型]=\"协同工作\",[业务类型]=\"设备培训\",[业务类型]=\"市场支持\",[业务类型]=\"设备保养\",[业务类型]=\"口扫售后支持\"),1,[业务类型]=\"设备维修\",1.5,[业务类型]=\"设备移机\",3),[职位]=\"大区主管\",IFS(AND([业务类型]=\"设备安装\",[是否调试完成]=\"是\",[是否培训完成]=\"是\"),2.5,AND([业务类型]=\"设备安装\",[是否调试完成]=\"是\",[是否培训完成]=\"否\"),2,AND([业务类型]=\"设备安装\",[是否调试完成]=\"否\",[是否培训完成]=\"否\"),1,AND([业务类型]=\"设备安装\", ISBLANK([是否调试完成]), ISBLANK([是否培训完成])),1,OR([业务类型]=\"设备升级\",[业务类型]=\"设备回访\",[业务类型]=\"协同工作\",[业务类型]=\"设备培训\",[业务类型]=\"市场支持\",[业务类型]=\"设备保养\",[业务类型]=\"口扫售后支持\"),1,[业务类型]=\"设备维修\",2,[业务类型]=\"设备移机\",2.5)),0)*[区域系数]",
+          "field_format": "float",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "ff1c8937",
+          "display_name": "职位",
+          "source_object_api": "ex_现场工程师职位",
+          "source_field": "职位",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "843e3b94",
+          "display_name": "工天标准",
+          "source_object_api": "ex_现场工程师职位",
+          "source_field": "工天标准",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "25efd410",
+          "display_name": "售后大区",
+          "source_object_api": "ex_售后现场工程师省份区域系数表",
+          "source_field": "售后大区",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d772345c",
+          "display_name": "大区负责人",
+          "source_object_api": "ex_售后现场工程师省份区域系数表",
+          "source_field": "大区负责人",
+          "visible": true,
+          "sort_order": 8,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "0db33acc",
+          "display_name": "区域系数",
+          "source_object_api": "ex_售后现场工程师省份区域系数表",
+          "source_field": "区域系数",
+          "visible": true,
+          "sort_order": 9,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "float",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "c2c55c8a",
+          "display_name": "工单编码",
+          "source_object_api": "CasesObj",
+          "source_field": "name",
+          "visible": true,
+          "sort_order": 10,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "85078e92",
+          "display_name": "创建人",
+          "source_object_api": "CasesObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "59b90926",
+          "display_name": "现场处理人员",
+          "source_object_api": "CasesObj",
+          "source_field": "field_zddd8__c",
+          "visible": true,
+          "sort_order": 12,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "2957a105",
+          "display_name": "服务工程师",
+          "source_object_api": "CasesObj",
+          "source_field": "field_xcfwry__c",
+          "visible": true,
+          "sort_order": 13,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "bea92345",
+          "display_name": "创建时间",
+          "source_object_api": "CasesObj",
+          "source_field": "create_time",
+          "visible": true,
+          "sort_order": 14,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "5d0c829c",
+          "display_name": "生命状态",
+          "source_object_api": "CasesObj",
+          "source_field": "life_status",
+          "visible": true,
+          "sort_order": 15,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "1a4eec64",
+          "display_name": "客户所在市",
+          "source_object_api": "CasesObj",
+          "source_field": "field_wV7a7__c",
+          "visible": true,
+          "sort_order": 16,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "401c3d8d",
+          "display_name": "客户所在省",
+          "source_object_api": "CasesObj",
+          "source_field": "field_EYmNl__c",
+          "visible": true,
+          "sort_order": 17,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d3059c11",
+          "display_name": "关联产品",
+          "source_object_api": "CasesObj",
+          "source_field": "field_glcp__c",
+          "visible": true,
+          "sort_order": 18,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "8107b9a7",
+          "display_name": "设备序列号",
+          "source_object_api": "CasesObj",
+          "source_field": "field_yMJbo__c",
+          "visible": true,
+          "sort_order": 19,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e32e1e26",
+          "display_name": "在线处理故障现象分类",
+          "source_object_api": "CasesObj",
+          "source_field": "field_d4ak4__c",
+          "visible": true,
+          "sort_order": 20,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "6a7c3919",
+          "display_name": "现场处理故障现象分类",
+          "source_object_api": "CasesObj",
+          "source_field": "field_yv4lq__c",
+          "visible": true,
+          "sort_order": 21,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a46e7a9a",
+          "display_name": "业务类型",
+          "source_object_api": "CasesObj",
+          "source_field": "record_type",
+          "visible": true,
+          "sort_order": 22,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e4683494",
+          "display_name": "客户",
+          "source_object_api": "CasesObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 23,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "9b654e31",
+          "display_name": "是否培训完成",
+          "source_object_api": "CasesObj",
+          "source_field": "field_hMyo9__c",
+          "visible": true,
+          "sort_order": 24,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "7ff034cd",
+          "display_name": "是否调试完成",
+          "source_object_api": "CasesObj",
+          "source_field": "field_798jL__c",
+          "visible": true,
+          "sort_order": 25,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "cd29f3da",
+          "display_name": "是否验收",
+          "source_object_api": "CasesObj",
+          "source_field": "field_TklwX__c",
+          "visible": true,
+          "sort_order": 26,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a1c13e47",
+          "display_name": "验收日期",
+          "source_object_api": "CasesObj",
+          "source_field": "field_7nqx5__c",
+          "visible": true,
+          "sort_order": 27,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "f8414b35",
+          "display_name": "是否安装完成",
+          "source_object_api": "CasesObj",
+          "source_field": "field_1stcJ__c",
+          "visible": true,
+          "sort_order": 28,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "33269cae",
+          "display_name": "工单结束时间",
+          "source_object_api": "CasesObj",
+          "source_field": "field_ua2yr__c",
+          "visible": true,
+          "sort_order": 29,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [
+        {
+          "field_api": "life_status",
+          "operator": "NOT_IN",
+          "value": "作废",
+          "target_object_api": "CasesObj",
+          "field_label": "生命状态",
+          "expose": false,
+          "is_date_field": false
+        },
+        {
+          "field_api": "field_ua2yr__c",
+          "operator": "DATE_RANGE",
+          "value": "2026-01-01~2026-12-31",
+          "target_object_api": "CasesObj",
+          "field_label": "工单结束时间",
+          "expose": false,
+          "is_date_field": true
+        },
+        {
+          "field_api": "record_type",
+          "operator": "IN",
+          "value": "二次安装；协同工作；口扫售后支持；市场支持；设备保养；设备升级；设备回访；设备培训；设备安装；设备移机；设备维修",
+          "target_object_api": "CasesObj",
+          "field_label": "业务类型",
+          "expose": false,
+          "is_date_field": false
+        }
+      ],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "CasesObj": [
+          -130.0,
+          -910.0
+        ],
+        "ex_售后现场工程师省份区域系数表": [
+          256.50211451562916,
+          -678.5373532124752
+        ],
+        "ex_现场工程师职位": [
+          547.5562700964629,
+          189.87781350482322
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-07-07 09:11:04",
+      "modified_at": "2026-07-09 20:30:40",
+      "version": 18,
+      "result_table_name": "cr_25186755c371",
+      "result_row_count": 10769,
+      "last_refresh_time": "",
+      "write_mode": "incremental",
+      "sync_id_fields": [
+        "CasesObj|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [],
+      "ai_active_conversation_id": "",
+      "ai_chat_messages": []
+    },
+    "e69d62b6fcbc": {
+      "id": "e69d62b6fcbc",
+      "name": "公立商机-绩效计算",
+      "description": "",
+      "main_object_api": "NewOpportunityObj",
+      "joins": [],
+      "columns": [
+        {
+          "id": "c0919a30",
+          "display_name": "创建时间(年)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "integer",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "year"
+        },
+        {
+          "id": "a0195029",
+          "display_name": "创建时间(月)",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "integer",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "month"
+        },
+        {
+          "id": "858bf212",
+          "display_name": "创建季度",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "date_part",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "integer",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "创建时间",
+          "date_part_unit": "quarter"
+        },
+        {
+          "id": "a506eb5b",
+          "display_name": "日期转换",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "formula",
+          "aggregate_func": "",
+          "formula_expression": "=DATE(YEAR([创建时间]),MONTH([创建时间]),1)",
+          "field_format": "date_ymd",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "0669d797",
+          "display_name": "省（简称）",
+          "source_object_api": "",
+          "source_field": "",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "address_extract",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [
+            "省",
+            "市"
+          ],
+          "address_target_level": "province_short",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "588e3b3d",
+          "display_name": "商机名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "name",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "85726647",
+          "display_name": "商机阶段",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "sales_stage",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "083ca2ac",
+          "display_name": "分销商（客户对象）",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_zBrLw__c",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "86070d54",
+          "display_name": "经销商",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "partner_id",
+          "visible": true,
+          "sort_order": 8,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "156e4f92",
+          "display_name": "业务类型",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "record_type",
+          "visible": true,
+          "sort_order": 9,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e278606d",
+          "display_name": "负责人",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "owner",
+          "visible": true,
+          "sort_order": 10,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d77d48a1",
+          "display_name": "省",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_k2xsC__c",
+          "visible": true,
+          "sort_order": 11,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "1c3ea29f",
+          "display_name": "市",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_93sb1__c",
+          "visible": true,
+          "sort_order": 12,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "644bee1c",
+          "display_name": "医院等级",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "hospital_level__c",
+          "visible": true,
+          "sort_order": 13,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "bb7c0e99",
+          "display_name": "项目名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "project_name__c",
+          "visible": true,
+          "sort_order": 14,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "dfa79878",
+          "display_name": "项目编号",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "project_number__c",
+          "visible": true,
+          "sort_order": 15,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "e125e067",
+          "display_name": "钉钉授权单号",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "dingtalk_auth_order_no__c",
+          "visible": true,
+          "sort_order": 16,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "232ea2ca",
+          "display_name": "项目号",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "项目号",
+          "visible": true,
+          "sort_order": 17,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d29a7dd6",
+          "display_name": "创建时间",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "create_time",
+          "visible": true,
+          "sort_order": 18,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "496c8b03",
+          "display_name": "主线索",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "leads_id",
+          "visible": true,
+          "sort_order": 19,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "2e24f9bf",
+          "display_name": "生命状态",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "life_status",
+          "visible": true,
+          "sort_order": 20,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "3aeb4b74",
+          "display_name": "招标日期",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "tender_date__c",
+          "visible": true,
+          "sort_order": 21,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "96a12e9d",
+          "display_name": "招标公告",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "tender_announcement__c",
+          "visible": true,
+          "sort_order": 22,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a4bd3140",
+          "display_name": "阶段状态",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "sales_status",
+          "visible": true,
+          "sort_order": 23,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "4b4d4968",
+          "display_name": "阶段变更时间",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "stg_changed_time",
+          "visible": true,
+          "sort_order": 24,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "cef182a0",
+          "display_name": "商机描述",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "field_ry1mH__c",
+          "visible": true,
+          "sort_order": 25,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "6e65b14a",
+          "display_name": "商机类型",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "opportunity_type__c",
+          "visible": true,
+          "sort_order": 26,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "f22f7c1c",
+          "display_name": "客户名称",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 27,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "8ba515da",
+          "display_name": "创建人",
+          "source_object_api": "NewOpportunityObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 28,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "a7895f36",
+          "display_name": "医院部门",
+          "source_object_api": "NewOpportunityContactsObj",
+          "source_field": "hospital_department__c",
+          "visible": true,
+          "sort_order": 29,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "9885b8a0",
+          "display_name": "创建人",
+          "source_object_api": "ContactObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 30,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "992dba79",
+          "display_name": "医院部门",
+          "source_object_api": "ContactObj",
+          "source_field": "public_position__c",
+          "visible": true,
+          "sort_order": 31,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "fe78b306",
+          "display_name": "客户名称",
+          "source_object_api": "ContactObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 32,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [
+        {
+          "field_api": "record_type",
+          "operator": "IN",
+          "value": "公立商机",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "业务类型",
+          "expose": false,
+          "is_date_field": false
+        },
+        {
+          "field_api": "life_status",
+          "operator": "NOT_IN",
+          "value": "作废",
+          "target_object_api": "NewOpportunityObj",
+          "field_label": "生命状态",
+          "expose": false,
+          "is_date_field": false
+        }
+      ],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "NewOpportunityObj": [
+          -425.957998970628,
+          -613.6612013344395
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-07-10 09:32:47",
+      "modified_at": "2026-07-10 11:46:51",
+      "version": 9,
+      "result_table_name": "cr_e69d62b6fcbc",
+      "result_row_count": 257,
+      "last_refresh_time": "",
+      "write_mode": "overwrite",
+      "sync_id_fields": [
+        "NewOpportunityObj|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [],
+      "ai_active_conversation_id": "",
+      "ai_chat_messages": []
+    },
+    "8c90180ecd56": {
+      "id": "8c90180ecd56",
+      "name": "公立绩效-联系人",
+      "description": "",
+      "main_object_api": "ContactObj",
+      "joins": [],
+      "columns": [
+        {
+          "id": "75731897",
+          "display_name": "客户名称",
+          "source_object_api": "ContactObj",
+          "source_field": "account_id",
+          "visible": true,
+          "sort_order": 0,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "37c25655",
+          "display_name": "生命状态",
+          "source_object_api": "ContactObj",
+          "source_field": "life_status",
+          "visible": true,
+          "sort_order": 1,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "0e84f1d6",
+          "display_name": "关联商机",
+          "source_object_api": "ContactObj",
+          "source_field": "associated_business_opport__c",
+          "visible": true,
+          "sort_order": 2,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "dc977d11",
+          "display_name": "创建时间",
+          "source_object_api": "ContactObj",
+          "source_field": "create_time",
+          "visible": true,
+          "sort_order": 3,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "d866aef1",
+          "display_name": "创建人",
+          "source_object_api": "ContactObj",
+          "source_field": "created_by",
+          "visible": true,
+          "sort_order": 4,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "6826766d",
+          "display_name": "医院部门",
+          "source_object_api": "ContactObj",
+          "source_field": "public_position__c",
+          "visible": true,
+          "sort_order": 5,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "b46b99d0",
+          "display_name": "手机",
+          "source_object_api": "ContactObj",
+          "source_field": "mobile",
+          "visible": true,
+          "sort_order": 6,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        },
+        {
+          "id": "139aa623",
+          "display_name": "业务类型",
+          "source_object_api": "ContactObj",
+          "source_field": "record_type",
+          "visible": true,
+          "sort_order": 7,
+          "column_width": null,
+          "computation_type": "direct",
+          "aggregate_func": "",
+          "formula_expression": "",
+          "field_format": "text",
+          "address_source_fields": [],
+          "address_target_level": "",
+          "date_part_source_field": "",
+          "date_part_unit": ""
+        }
+      ],
+      "filters": [
+        {
+          "field_api": "创建时间",
+          "operator": "DATE_RANGE",
+          "value": "2026-01-01~2026-12-31",
+          "target_object_api": "ContactObj",
+          "field_label": "创建时间",
+          "expose": false,
+          "is_date_field": true
+        },
+        {
+          "field_api": "业务类型",
+          "operator": "IN",
+          "value": "公立联系人",
+          "target_object_api": "ContactObj",
+          "field_label": "业务类型",
+          "expose": false,
+          "is_date_field": false
+        }
+      ],
+      "date_range_enabled": false,
+      "date_field": "create_time",
+      "date_start": "",
+      "date_end": "",
+      "canvas_positions": {
+        "ContactObj": [
+          -130.88235294117646,
+          -151.58823529411762
+        ]
+      },
+      "group_by_fields": [],
+      "show_summary_row": false,
+      "folder_path": "",
+      "created_at": "2026-07-10 10:48:31",
+      "modified_at": "2026-07-10 10:54:39",
+      "version": 4,
+      "result_table_name": "cr_8c90180ecd56",
+      "result_row_count": 31,
+      "last_refresh_time": "",
+      "write_mode": "overwrite",
+      "sync_id_fields": [
+        "ContactObj|_id"
+      ],
+      "sync_id_separator": "_",
+      "sort_config": [],
+      "ai_conversations": [],
+      "ai_active_conversation_id": "",
       "ai_chat_messages": []
     }
   },
